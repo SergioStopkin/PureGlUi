@@ -1,0 +1,8 @@
+pkgconf
+glew
+cairo
+freetype
+fontconfig
+gtest
+jemalloc
+librsvg

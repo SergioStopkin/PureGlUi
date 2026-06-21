@@ -1,0 +1,7 @@
+{
+  "label": "BtnSome",
+  "icon": "1F519.svg",
+  "tooltip": "TipSomeAction",
+  "action": "Custom1",
+  "order": 6
+}

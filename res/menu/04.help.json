@@ -1,0 +1,81 @@
+{
+  "label": "help",
+  "order": 4,
+  "items": [
+    {
+      "label": "wikiPage",
+      "action": "WikiPage",
+      "dialog": {
+        "type": "InfoLink",
+        "title": "DialogWikiPageTitle",
+        "content": "DialogWikiPageContent",
+        "icon": "2139.svg",
+        "link": "DialogWikiPageLink"
+      }
+    },
+    {
+      "separator": true
+    },
+    {
+      "label": "systemInfo",
+      "action": "SystemInfo",
+      "dialog": {
+        "type": "Info",
+        "title": "DialogSystemInfoTitle",
+        "content": "DialogSystemInfoContent",
+        "icon": "2139.svg"
+      }
+    },
+    {
+      "separator": true
+    },
+    {
+      "label": "donate",
+      "action": "Donate",
+      "dialog": {
+        "type": "Info",
+        "title": "DialogDonateTitle",
+        "content": "DialogDonateContent",
+        "icon": "2139.svg"
+      }
+    },
+    {
+      "label": "about",
+      "action": "About",
+      "submenus": [
+        {
+          "label": "version",
+          "action": "Version",
+          "dialog": {
+            "type": "Info",
+            "title": "DialogVersionTitle",
+            "content": "DialogVersionContent",
+            "icon": "2139.svg"
+          }
+        },
+        {
+          "label": "authors",
+          "action": "Authors",
+          "dialog": {
+            "type": "Info",
+            "title": "DialogAuthorsTitle",
+            "content": "DialogAuthorsContent",
+            "icon": "2139.svg"
+          }
+        },
+        {
+          "label": "license",
+          "action": "License",
+          "dialog": {
+            "type": "Info",
+            "title": "DialogLicenseTitle",
+            "icon": "2139.svg",
+            "file": "COPYING",
+            "width": "600px",
+            "height": "400px"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "buttons": {
+    "Ok": {
+      "label": "BtnOk"
+    },
+    "Cancel": {
+      "label": "BtnCancel"
+    },
+    "Yes": {
+      "label": "BtnYes"
+    },
+    "No": {
+      "label": "BtnNo"
+    },
+    "Save": {
+      "label": "BtnSave"
+    },
+    "DontSave": {
+      "label": "BtnDontSave"
+    },
+    "Discard": {
+      "label": "BtnDiscard"
+    },
+    "CopyLink": {
+      "label": "BtnCopyLink"
+    }
+  },
+  "types": {
+    "Info": {
+      "buttons": [
+        "Ok"
+      ],
+      "primary": "Ok"
+    },
+    "InfoLink": {
+      "buttons": [
+        "CopyLink",
+        "Ok"
+      ],
+      "primary": "Ok"
+    },
+    "Confirm": {
+      "buttons": [
+        "No",
+        "Yes"
+      ],
+      "primary": "Yes"
+    },
+    "SaveConfirm": {
+      "buttons": [
+        "DontSave",
+        "Cancel",
+        "Save"
+      ],
+      "primary": "Save"
+    },
+    "Warning": {
+      "buttons": [
+        "Ok"
+      ],
+      "primary": "Ok"
+    }
+  }
+}

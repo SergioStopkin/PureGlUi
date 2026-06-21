@@ -1,0 +1,166 @@
+{
+  ":root": {
+    "--window-width": "1600px",
+    "--window-height": "1000px",
+    "--top-menu-height": "30px",
+    "--workspace-tab-height": "18px",
+    "--left-toolbar-width": "48px",
+    "--right-toolbar-width": "48px",
+    "--status-bar-height": "18px",
+    "--button-img-size": "24px",
+    "--button-icon-hover-shadow-x": "2px",
+    "--button-icon-hover-shadow-y": "2px",
+    "--button-icon-hover-shadow-blur": "4px",
+    "--button-icon-active-scale": "0.86",
+    "--fallback-char-width": "8px",
+    "--close-icon": "E24E.svg",
+    "--dock-grip-icon": "22EE.svg"
+  },
+  "top-menu": {
+    "height": "var(--top-menu-height)",
+    "margin": "0",
+    "padding": "0"
+  },
+  "top-menu-button-label": {
+    "padding": "0 16px"
+  },
+  "top-menu-button-label:hover": {
+    "border-radius": "16px"
+  },
+  "top-menu-button-label:active": {
+    "border-radius": "16px 16px 0px 0px"
+  },
+  "top-menu-dropdown": {
+    "width": "192px",
+    "border-radius": "0px 16px 16px 16px"
+  },
+  "top-menu-item": {
+    "padding": "6px 16px",
+    "line-height": "1.38",
+    "font-size": "14px",
+    "min-height": "1.38em"
+  },
+  "top-menu-item:hover": {
+    "margin": "3px",
+    "border-radius": "13px"
+  },
+  "top-menu-item-icon": {
+    "width": "16px"
+  },
+  "top-menu-separator": {
+    "height": "1px",
+    "margin": "0px 8px"
+  },
+  "theme-preview": {
+    "width": "90px",
+    "height": "20px",
+    "border-radius": "10px",
+    "right": "6px",
+    "split-angle": "82"
+  },
+  "left-toolbar": {
+    "width": "var(--left-toolbar-width)",
+    "margin": "0",
+    "padding": "0",
+    "top": "var(--top-menu-height)",
+    "bottom": "var(--status-bar-height)",
+    "left": "0"
+  },
+  "right-toolbar": {
+    "width": "var(--right-toolbar-width)",
+    "margin": "0",
+    "padding": "0",
+    "top": "var(--top-menu-height)",
+    "bottom": "var(--status-bar-height)",
+    "right": "0"
+  },
+  "workspace-tab": {
+    "height": "var(--workspace-tab-height)",
+    "width": "144px",
+    "min-width": "48px",
+    "margin": "0",
+    "padding": "0 16px",
+    "border-radius": "16px 16px 0 0"
+  },
+  "workspace-tab-close": {
+    "height": "9px",
+    "border-radius": "7px",
+    "margin": "2px",
+    "right": "8px",
+    "icon": "var(--close-icon)"
+  },
+  "workspace-tab-arrow": {
+    "width": "var(--workspace-tab-height)",
+    "height": "var(--workspace-tab-height)",
+    "icon-left": "25C0.svg",
+    "icon-right": "25B6.svg"
+  },
+  "workspace": {
+    "margin": "0",
+    "padding": "0",
+    "top": "var(--top-menu-height)",
+    "left": "var(--left-toolbar-width)",
+    "right": "var(--right-toolbar-width)",
+    "bottom": "var(--status-bar-height)"
+  },
+  "status-bar": {
+    "height": "var(--status-bar-height)",
+    "margin": "0",
+    "padding": "0",
+    "bottom": "0",
+    "left": "0",
+    "right": "0"
+  },
+  "dialog": {
+    "width": "360px",
+    "height": "300px",
+    "padding": "16px",
+    "border-radius": "16px"
+  },
+  "dialog-title": {
+    "height": "24px",
+    "margin-bottom": "16px"
+  },
+  "dialog-text": {
+    "margin-bottom": "16px"
+  },
+  "dialog-icon": {
+    "width": "22px",
+    "height": "22px",
+    "top": "6px",
+    "left": "6px"
+  },
+  "dialog-close": {
+    "height": "14px",
+    "margin": "4px",
+    "top": "6px",
+    "right": "6px",
+    "border-radius": "11px",
+    "icon": "var(--close-icon)"
+  },
+  "dialog-button": {
+    "height": "32px",
+    "padding": "8px",
+    "min-width": "70px",
+    "border-radius": "16px",
+    "shift": "3px"
+  },
+  "dialog-scrollbar": {
+    "width": "4px",
+    "right": "-8px",
+    "border-radius": "2px",
+    "min-thumb-height": "16px"
+  },
+  "dialog-scrollbar:hover": {
+    "width": "6px",
+    "right": "-9px",
+    "border-radius": "3px",
+    "min-thumb-height": "16px"
+  },
+  "dock-defaults": {
+    "grip-width": "6px",
+    "border-radius": "6px",
+    "click-threshold": "2px",
+    "grip-icon": "var(--dock-grip-icon)"
+  }
+}

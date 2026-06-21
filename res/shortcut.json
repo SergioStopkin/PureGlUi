@@ -1,0 +1,18 @@
+[
+  {
+    "action": "ExitApp",
+    "keys": "Ctrl + Q"
+  },
+  {
+    "action": "Reload",
+    "keys": "Ctrl + R"
+  },
+  {
+    "action": "OpenFile",
+    "keys": "Ctrl + O"
+  },
+  {
+    "action": "CloseTab",
+    "keys": "Ctrl + W"
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "label": "file",
+  "order": 1,
+  "items": [
+    {
+      "label": "open",
+      "action": "OpenFile",
+      "shortcut": "Ctrl+O"
+    },
+    {
+      "label": "save",
+      "action": "SaveFile",
+      "shortcut": "Ctrl+S",
+      "enabled": false
+    },
+    {
+      "separator": true
+    },
+    {
+      "label": "exit",
+      "action": "ExitApp",
+      "shortcut": "Ctrl+Q"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "None",
+  "order": 1,
+  "lights": {
+    "ambient": 1,
+    "directional": 1
+  }
+}

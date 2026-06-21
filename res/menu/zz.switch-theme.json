@@ -1,0 +1,6 @@
+{
+  "label": "BtnSome",
+  "icon": "theme-sun.svg",
+  "action": "SwitchThemeMode",
+  "order": 999
+}

@@ -1,0 +1,41 @@
+---
+Checks: '*,
+-abseil-*,
+-altera-id-dependent-backward-branch,
+-altera-unroll-loops,
+-bugprone-easily-swappable-parameters,
+-bugprone-implicit-widening-of-multiplication-result,
+-bugprone-narrowing-conversions,
+-bugprone-string-integer-assignment,
+-clang-diagnostic-c++17-extensions,
+-clang-diagnostic-ignored-optimization-argument,
+-cppcoreguidelines-avoid-magic-numbers,
+-cppcoreguidelines-avoid-non-const-global-variables,
+-cppcoreguidelines-macro-usage,
+-cppcoreguidelines-narrowing-conversions,
+-cppcoreguidelines-non-private-member-variables-in-classes,
+-cppcoreguidelines-special-member-functions,
+-cppcoreguidelines-virtual-class-destructor,
+-fuchsia-default-arguments-calls,
+-fuchsia-default-arguments-declarations,
+-fuchsia-multiple-inheritance,
+-fuchsia-overloaded-operator,
+-fuchsia-statically-constructed-objects,
+-hicpp-special-member-functions,
+-hicpp-use-nullptr,
+-llvm-header-guard,
+-llvmlibc-*,
+-misc-non-private-member-variables-in-classes,
+-modernize-use-nullptr,
+-modernize-use-trailing-return-type,
+-modernize-use-using,
+-performance-avoid-endl,
+-readability-function-cognitive-complexity,
+-readability-identifier-length,
+-readability-magic-numbers
+'
+
+WarningsAsErrors:   '*'
+FormatStyle:        webkit
+UseColor:           true
+...

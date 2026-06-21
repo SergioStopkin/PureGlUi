@@ -1,0 +1,6 @@
+{
+  "mesh": {
+    "linDeflection": 0.01,
+    "angDeflection": 0.1
+  }
+}

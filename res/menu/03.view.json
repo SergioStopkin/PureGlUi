@@ -1,0 +1,44 @@
+{
+  "label": "view",
+  "order": 3,
+  "items": [
+    {
+      "label": "reload",
+      "action": "Reload",
+      "shortcut": "Ctrl+R"
+    },
+    {
+      "separator": true
+    },
+    {
+      "label": "ambience",
+      "submenus": {
+        "auto": "ambience",
+        "action": "SetAmbience"
+      }
+    },
+    {
+      "label": "displayMode",
+      "submenus": [
+        {
+          "label": "shaded",
+          "action": "SetDisplayMode"
+        },
+        {
+          "label": "realistic",
+          "action": "SetDisplayMode"
+        }
+      ]
+    },
+    {
+      "separator": true
+    },
+    {
+      "label": "theme",
+      "submenus": {
+        "auto": "theme",
+        "action": "SwitchTheme"
+      }
+    }
+  ]
+}

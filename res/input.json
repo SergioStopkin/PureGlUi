@@ -1,0 +1,23 @@
+{
+  "scroll": {
+    "natural": true,
+    "speed": 16,
+    "smooth": 16,
+    "snapThreshold": 0.5
+  },
+  "keyAnimation": {
+    "delay": 0.12
+  },
+  "zoom": {
+    "step": 0.03,
+    "min": 12,
+    "max": 60
+  },
+  "rotation": {
+    "sensitivity": 0.3
+  },
+  "doubleClick": {
+    "intervalMs": 400,
+    "distancePx": 5
+  }
+}

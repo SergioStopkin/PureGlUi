@@ -1,0 +1,114 @@
+name: Develop
+
+on: [push, pull_request]
+
+jobs:
+  linux-all-steps:
+    if:       github.ref != 'refs/heads/release'
+    runs-on:  ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Cache apt archives
+        uses: actions/cache@v5
+        with:
+          path: /tmp/apt-archives
+          key:  apt-${{hashFiles('.github/dependencies/linux')}}
+
+      - name: Route apt downloads to the cache dir
+        run: |
+          sudo mkdir -p /tmp/apt-archives/partial
+          echo 'Dir::Cache::archives "/tmp/apt-archives";' | sudo tee /etc/apt/apt.conf.d/01cache
+
+      - name: Setup Dependencies
+        run:  ./dependency.sh
+
+      - name: Format Check
+        run:  ./format-check.sh
+
+      - name: CppCheck
+        run:  ./cppcheck.sh
+
+      - name: Build Develop
+        run:  ./build.sh dev
+
+      - name: Run with ASAN
+        run:  xvfb-run -a timeout --preserve-status --signal=INT 3 ./run.sh dev
+
+      - name: Clang Tidy
+        run:  ./clang-tidy.sh
+
+      - name: Build Tests
+        run:  ./build.sh test
+
+      - name: Run Tests
+        run:  xvfb-run -a ./run.sh test
+
+      # - name: Unit Tests Coverage
+      #   run:  ./unit-tests-coverage.sh
+
+  macos-build-only:
+    if:       github.ref != 'refs/heads/release'
+    runs-on:  macos-latest
+
+    # The runner image pre-taps aws/tap + azure/bicep (unused here); opt into the
+    # future Homebrew default so it silently ignores them instead of warning.
+    env:
+      HOMEBREW_REQUIRE_TAP_TRUST: 1
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Cache Homebrew downloads
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Caches/Homebrew
+          key:  brew-${{hashFiles('.github/dependencies/macos')}}
+
+      - name: Setup Dependencies
+        run:  ./dependency.sh
+
+      - name: Build Release
+        run:  ./build.sh rel
+
+  windows-build-only:
+    if:       github.ref != 'refs/heads/release'
+    runs-on:  windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Restore vcpkg cache
+        id:   vcpkg-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: C:/vcpkg/installed
+          key:  vcpkg-x64-windows-release-${{hashFiles('.github/dependencies/windows')}}
+
+      - name: Setup Dependencies
+        if:   steps.vcpkg-cache.outputs.cache-hit != 'true'
+        run:  ./dependency.sh
+
+      - name: Save vcpkg cache
+        if:   steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: C:/vcpkg/installed
+          key:  vcpkg-x64-windows-release-${{hashFiles('.github/dependencies/windows')}}
+
+      - name: Build Release
+        env:
+          VCPKG_TARGET_TRIPLET: x64-windows-release
+          CMAKE_TOOLCHAIN_FILE: C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          MSYS_NO_PATHCONV: 1
+        run:  ./build.sh rel

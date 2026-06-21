@@ -1,0 +1,22 @@
+{
+  "_comment": "Default icons + placement for UI roles. Two kinds of entries: aliases (icon ends in .svg) and roles (icon is the name of another entry). Resolution follows 'icon' recursively until a .svg is found. 'place' resolves the same way; explicit value at any level overrides the parent. Default place: left.",
+  "window-icon": {
+    "icon": "logo-2.svg"
+  },
+  "window-icon-symbolic": {
+    "icon": "logo-symbolic.svg"
+  },
+  "info": {
+    "icon": "2139.svg"
+  },
+  "warning": {
+    "icon": "26A0.svg"
+  },
+  "chevron": {
+    "icon": "25B6.svg"
+  },
+  "submenu": {
+    "icon": "chevron",
+    "place": "right"
+  }
+}

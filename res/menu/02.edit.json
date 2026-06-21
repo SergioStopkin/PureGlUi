@@ -1,0 +1,48 @@
+{
+  "label": "edit",
+  "order": 2,
+  "items": [
+    {
+      "label": "undo",
+      "action": "Undo",
+      "shortcut": "Ctrl+Z",
+      "enabled": false
+    },
+    {
+      "label": "redo",
+      "action": "Redo",
+      "shortcut": "Ctrl+Y",
+      "enabled": false
+    },
+    {
+      "separator": true
+    },
+    {
+      "label": "cut",
+      "action": "Cut",
+      "shortcut": "Ctrl+X",
+      "enabled": false
+    },
+    {
+      "label": "copy",
+      "action": "Copy",
+      "shortcut": "Ctrl+C",
+      "enabled": false
+    },
+    {
+      "label": "paste",
+      "action": "Paste",
+      "shortcut": "Ctrl+V",
+      "enabled": false
+    },
+    {
+      "separator": true
+    },
+    {
+      "label": "selectAll",
+      "action": "SelectAll",
+      "shortcut": "Ctrl+A",
+      "enabled": false
+    }
+  ]
+}

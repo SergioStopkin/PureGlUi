@@ -1,0 +1,6 @@
+[
+  { "id": "screw", "icon": "screw.svg", "tooltip": "Screw Tool", "action": "selectScrew" },
+  { "id": "ruby", "icon": "ruby.svg", "tooltip": "Ruby Tool", "action": "selectRuby" },
+  { "id": "bridge", "icon": "bridge.svg", "tooltip": "Bridge Tool", "action": "selectBridge" },
+  { "id": "gear", "icon": "gear.svg", "tooltip": "Gear Tool", "action": "selectGear" }
+]

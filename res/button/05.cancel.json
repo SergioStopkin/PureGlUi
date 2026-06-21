@@ -1,0 +1,7 @@
+{
+  "label": "BtnCancel",
+  "icon": "23E9.svg",
+  "tooltip": "TipCancel",
+  "action": "Custom2",
+  "order": 5
+}

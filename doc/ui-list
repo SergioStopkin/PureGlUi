@@ -1,0 +1,132 @@
+Here is a large catalog of names containing or ending with “UI”:
+
+### React
+
+* Material UI
+* Chakra UI
+* Shadcn UI
+* Headless UI
+* Radix UI
+* Base UI
+* Fluent UI
+* Evergreen UI
+* Mantine UI
+* NextUI
+* HeroUI
+* Geist UI
+* Reakit UI
+* Blueprint UI
+* Elastic UI
+* Orbit UI
+* Carbon UI
+* Ring UI
+
+### Vue
+
+* Element UI
+* Naive UI
+* PrimeVue UI
+* Vuetify UI
+* Quasar UI
+* View UI
+* Varlet UI
+* Vant UI
+* Arco Design Vue
+
+### Angular
+
+* PrimeNG UI
+* NG-ZORRO UI
+* Kendo UI
+* Clarity UI
+* Nebular UI
+* Taiga UI
+
+### Cross-framework
+
+* Semantic UI
+* Fomantic UI
+* Kendo UI
+* PrimeUI
+* Onsen UI
+* Framework7 UI
+* Wijmo UI
+* Webix UI
+* DevExtreme UI
+* Syncfusion Essential UI
+
+### Mobile
+
+* NativeBase UI
+* Tamagui
+* UI Kitten
+* React Native Paper UI
+* GlueStack UI
+
+### Desktop
+
+* AppKit UI
+* WinUI
+* Avalonia UI
+* Uno UI
+* MAUI
+* Gtk UI
+
+### Game/UI Systems
+
+* NGUI
+* FairyGUI
+* NoesisGUI
+
+### Design Systems & UI Kits
+
+* Atlassian UI
+* Shopify Polaris UI
+* Lightning UI
+* Spectrum UI
+* Nord UI
+* Orbit UI
+
+### Names ending exactly with "UI"
+
+Some examples:
+
+* Material UI
+* Chakra UI
+* Headless UI
+* Radix UI
+* Fluent UI
+* Mantine UI
+* Evergreen UI
+* Semantic UI
+* Fomantic UI
+* Kendo UI
+* Onsen UI
+* Base UI
+* Element UI
+* Naive UI
+* Taiga UI
+* Nebular UI
+* Clarity UI
+* Blueprint UI
+* Elastic UI
+* Ring UI
+* Orbit UI
+* Nord UI
+* WinUI
+* Avalonia UI
+* HeroUI
+* Geist UI
+* View UI
+* Varlet UI
+* PrimeUI
+
+If your goal is **discovery**, a better approach is to search package registries (npm, NuGet, Maven, crates.io, PyPI, GitHub) for package names matching:
+
+* `*ui`
+* `*-ui`
+* `ui-*`
+* `*design-system*`
+* `*component-library*`
+
+That yields **many thousands of packages**, but most are wrappers, themes, internal company libraries, abandoned projects, or application-specific UI kits rather than major frameworks.

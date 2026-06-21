@@ -1,0 +1,7 @@
+{
+  "label": "BtnOk",
+  "icon": "2699.svg",
+  "action": "Custom1",
+  "tooltip": "TipSubmitForm",
+  "order": 1
+}

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   id="emoji"
+   viewBox="0 0 63.999992 56"
+   version="1.1"
+   sodipodi:docname="26A0.svg"
+   width="63.999992"
+   height="56"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs281" />
+  <sodipodi:namedview
+     id="namedview279"
+     pagecolor="#ffffff"
+     bordercolor="#999999"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     showgrid="false"
+     inkscape:zoom="8.3738298"
+     inkscape:cx="30.093757"
+     inkscape:cy="29.675788"
+     inkscape:window-width="1280"
+     inkscape:window-height="800"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="line" />
+  <g
+     id="line"
+     transform="matrix(1.0000067,0,0,0.99966077,-8.1398446,-8.1176354)">
+    <path
+       fill="none"
+       stroke="#000000"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       stroke-miterlimit="10"
+       stroke-width="2"
+       d="m 36.081929,12.990091 c 0.814025,-1.212753 2.317354,-2.038101 4.057644,-2.038101 1.740291,0 3.243618,0.825348 4.057643,2.038101 l 24.463706,42.218904 c 0.400536,0.597819 0.646833,1.282118 0.646833,2.021791 0,2.242272 -2.10606,4.059588 -4.704595,4.059588 l -48.927174,0.01742 c -2.598536,0 -4.704596,-1.818121 -4.704596,-4.059488 0,-0.740578 0.24618,-1.424073 0.646834,-2.021892 l 24.463705,-42.23632"
+       id="path271"
+       style="stroke-width:5.6632;stroke-dasharray:none" />
+    <g
+       id="g42647">
+      <path
+         fill="none"
+         stroke="#000000"
+         stroke-linecap="round"
+         stroke-width="9.79603"
+         d="M 40.101084,24.585767 V 39.749391"
+         id="path335"
+         style="stroke-width:9.92295;stroke-dasharray:none" />
+      <path
+         stroke-width="4.92691"
+         d="m 35.139609,51.134982 c 0,2.761589 2.235574,5.001696 4.999967,5.001696 2.760632,0 4.999966,-2.241361 4.999966,-5.001696 0,-2.761588 -2.240586,-5.001697 -4.999966,-5.001697 -2.765646,0 -4.999967,2.241362 -4.999967,5.001697"
+         id="path337"
+         style="stroke-width:5.07586;stroke-dasharray:none" />
+    </g>
+  </g>
+</svg>

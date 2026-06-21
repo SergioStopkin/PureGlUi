@@ -1,0 +1,4 @@
+missingInclude
+missingIncludeSystem
+unmatchedSuppression
+ConfigurationNotChecked:src/sig.cpp

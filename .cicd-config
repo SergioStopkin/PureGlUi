@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+# Debian/Ubuntu: versioned clang (clang-16), Fedora/RHEL/macOS: unversioned
+CLANG_VERSION=""
+if command -v apt-get >/dev/null 2>&1; then
+    _clang_ver=`sed -n 's/^clang-\([0-9][0-9]*\)$/\1/p' .github/dependencies/linux`
+    if [[ -n "$_clang_ver" ]]; then
+        CLANG_VERSION=-$_clang_ver
+    fi
+fi
+
+PROJECT_NAME=`basename \`pwd\``
+TARGET_SRC=`echo $PROJECT_NAME | tr '[:upper:]' '[:lower:]'`
+TARGET_TEST="unit-tests component-tests"
+
+CMAKE_SOURCE_DIR=.
+
+BUILD_PREFIX=cmake-build
+# Windows: build on local disk to avoid shared folder corruption
+# if [[ "$OS" == "Windows_NT" ]]; then
+#     BUILD_PREFIX_PATH="$USERPROFILE/$PROJECT_NAME/$BUILD_PREFIX"
+# else
+    BUILD_PREFIX_PATH=$BUILD_PREFIX
+# fi
+
+BUILD_DIR_DEV=$BUILD_PREFIX_PATH-develop
+BUILD_DIR_REL=$BUILD_PREFIX_PATH-release
+
+SOURCE_DIR="include src"
+TEST_DIR="test"
+RES_DIR="res"
+
+FILES_REGEX='.*\.\(c\|cc\|cpp\|cxx\|h\|hh\|hpp\|hxx\)$'
+SOURCE_FILES=`find $SOURCE_DIR -regex $FILES_REGEX`
+TEST_FILES=`find $TEST_DIR -regex $FILES_REGEX`
+CMAKE_FILES=`find $SOURCE_DIR $TEST_DIR \( -type f -iname CMakeLists.txt -o -iname *.cmake \)`
+JSON_FILES=`find $RES_DIR -iname '*.json'`
+
+CPPCHECK_SOURCE_DIR=$SOURCE_DIR
+
+RESULT_PREFIX=result
+COV_MIN_LIMIT=50.0%
+COV_SOURCE_DIR=test/unit
+COV_RESULT_DIR=$RESULT_PREFIX-coverage
+
+# Detect CPU count for parallel build
+if command -v nproc >/dev/null 2>&1; then
+    JOBS=$(nproc)
+else
+    JOBS=$(sysctl -n hw.ncpu)
+fi
+JOBS=$(( JOBS - 1 ))
+
+USAGE_TEXT="This is standard usage text. Please specify the required one."
+PrintUsageAndExit()
+{
+    echo $USAGE_TEXT
+    exit 1
+}

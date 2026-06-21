@@ -1,0 +1,208 @@
+{
+  "name": "Graphite",
+  ":root": {
+    "--cl-main": "#ffffff",
+    "--cl-second": "#000000",
+    "--cl-shadow": "#6f7276",
+    "--shadow-opacity": "0.24",
+    "--cl-model": "#ff9933",
+    "--cl-error": "#ff00ff",
+    "--cl-load": "#99cc00",
+    "--cl-info": "#c6d9ec",
+    "--cl-warn": "#ff9933",
+    "--bg-main": "#45474a",
+    "--bg-second": "#b0b2b5",
+    "--font-sans": "Nunito",
+    "--font-mono": "LiberationMono"
+  },
+  "top-menu": {
+    "font-family": "var(--font-sans)",
+    "font-size": "16px",
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second)"
+  },
+  "top-menu-button-label:hover": {
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second) darker(8.0)"
+  },
+  "top-menu-button-label:active": {
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second) darker(8.0)"
+  },
+  "top-menu-dropdown": {
+    "background": "var(--bg-second) darker(8.0)"
+  },
+  "top-menu-item": {
+    "font-family": "var(--font-sans)",
+    "font-size": "16px",
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second) darker(8.0)"
+  },
+  "top-menu-item:hover": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(16.0)"
+  },
+  "top-menu-item:active": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(16.0)"
+  },
+  "top-menu-item:disabled": {
+    "color": "var(--cl-shadow)"
+  },
+  "top-menu-separator": {
+    "background": "var(--cl-shadow)"
+  },
+  "top-menu-item-shortcut": {
+    "font-family": "var(--font-mono)",
+    "font-size": "14px",
+    "color": "var(--bg-second) darker(48.0)"
+  },
+  "top-menu-item-shortcut:hover": {
+    "color": "var(--cl-main) darker(24.0)"
+  },
+  "left-toolbar": {
+    "font-family": "var(--font-sans)",
+    "font-size": "24px",
+    "font-weight": "bold",
+    "color": "var(--cl-main)",
+    "background": "var(--bg-second)"
+  },
+  "button": {
+    "font-family": "var(--font-sans)",
+    "font-size": "24px",
+    "font-weight": "bold",
+    "color": "var(--cl-main)",
+    "background": "var(--bg-second)"
+  },
+  "right-toolbar": {
+    "font-family": "var(--font-sans)",
+    "font-size": "24px",
+    "color": "var(--cl-main)",
+    "background": "var(--bg-second)"
+  },
+  "workspace-tabs": {
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second)"
+  },
+  "workspace-tab": {
+    "font-family": "var(--font-sans)",
+    "font-size": "14px",
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) darker(8.0)",
+    "border-width": "0"
+  },
+  "workspace-tab:hover": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(8.0)"
+  },
+  "workspace-tab:active": {
+    "font-weight": "bold",
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main)"
+  },
+  "workspace-tab-close": {
+    "color": "var(--cl-main)",
+    "background": "inherit"
+  },
+  "workspace-tab-close:hover": {
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second)"
+  },
+  "workspace-tab-arrow": {
+    "color": "var(--bg-main)",
+    "background": "var(--bg-second)"
+  },
+  "workspace": {
+    "font-family": "var(--font-sans)",
+    "font-size": "24px",
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main)"
+  },
+  "status-bar": {
+    "font-family": "var(--font-mono)",
+    "font-size": "14px",
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second)"
+  },
+  "status-bar:active": {
+    "font-family": "var(--font-mono)",
+    "font-size": "14px",
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(16.0)"
+  },
+  "dialog": {
+    "font-family": "var(--font-sans)",
+    "font-size": "17px",
+    "line-height": "1.5",
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second) darker(8.0)"
+  },
+  "dialog-title": {
+    "font-family": "var(--font-sans)",
+    "font-size": "24px",
+    "font-weight": "bold",
+    "color": "var(--cl-second)"
+  },
+  "dialog-link": {
+    "color": "var(--cl-info)"
+  },
+  "dialog-link:visited": {
+    "color": "var(--cl-info) darker(8.0)"
+  },
+  "dialog-button": {
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second) darker(8.0)"
+  },
+  "dialog-button:hover": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(16.0)"
+  },
+  "dialog-button:active": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(16.0)"
+  },
+  "dialog-button:primary": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(8.0)"
+  },
+  "dialog-scrollbar": {
+    "background": "var(--bg-second) darker(16.0)"
+  },
+  "dialog-scrollbar-thumb": {
+    "background": "var(--bg-main) lighter(16.0)"
+  },
+  "dialog-scrollbar-thumb:hover": {
+    "background": "var(--bg-main) lighter(8.0)"
+  },
+  "dialog-close": {
+    "color": "var(--cl-second)",
+    "background": "inherit"
+  },
+  "dialog-close:hover": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(16.0)"
+  },
+  "dialog-close:active": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(8.0)"
+  },
+  "dock": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(8.0)"
+  },
+  "dock-grip": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(8.0)"
+  },
+  "dock-grip:hover": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(12.0)"
+  },
+  "dock-grip:active": {
+    "color": "var(--cl-main)",
+    "background": "var(--bg-main) lighter(16.0)"
+  },
+  "dock-separator": {
+    "background": "var(--cl-shadow)"
+  }
+}

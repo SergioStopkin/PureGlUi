@@ -1,0 +1,14 @@
+.cache
+.claude
+.idea
+.models
+.pureglui
+.vscode
+.work
+
+# Ignore 3rd party build artifacts, keep source and config
+3rd/*
+!3rd/include/
+
+cmake-build-*
+result-*
