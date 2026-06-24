@@ -9,6 +9,10 @@ add_executable(
     TestIntent.cpp
     TestMenuDisable.cpp
     TestBackgroundWorker.cpp
+    TestColor.cpp
+    TestSanitize.cpp
+    TestTextAlign.cpp
+    TestClickCounter.cpp
 )
 
 # Resolve the ui/ prefix from the include/ root. UI framework tests stay light - pure C++, no GL/X11 - matching the fw's

@@ -1,6 +1,6 @@
 set(TARGET component-tests)
 
-add_executable(${TARGET} TestPopupCornerCapture.cpp)
+add_executable(${TARGET} TestPopupCornerCapture.cpp TestSvgIntrinsic.cpp TestFontBaseline.cpp TestDockColumn.cpp)
 
 # Framework headers (ui/ + common/) come from the global include path.
 target_link_libraries(
@@ -37,5 +37,6 @@ if(X11_FOUND)
     target_compile_definitions(${TARGET} PRIVATE HAVE_X11=1)
 endif()
 
-# Path to res/ directory for loading theme/layout in tests
+# Path to res/ directory for loading theme/layout in tests (TestDockColumn bootstraps a real ResManager)
 target_compile_definitions(${TARGET} PRIVATE TEST_RES_DIR="${CMAKE_HOME_DIRECTORY}/res")
+target_compile_definitions(${TARGET} PRIVATE PROJECT_RES_DIR="${CMAKE_HOME_DIRECTORY}/res")
