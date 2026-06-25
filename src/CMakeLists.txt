@@ -22,41 +22,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(${TARGET_SRC} PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-target_link_libraries(
-    ${TARGET_SRC} PRIVATE OpenGL::GL Freetype::Freetype ${FONTCONFIG_LIBRARIES} ${GLEW_LIBRARY} ${LIBRSVG_LIBRARIES}
-                          ${CAIRO_LIBRARIES}
-)
+# Framework usage requirements (GL/X11/EGL/cairo/rsvg/freetype/wayland + their includes + C++20) all come from the ui
+# INTERFACE target. jemalloc is an app-level allocator choice, so it stays here rather than in the fw contract.
+target_link_libraries(${TARGET_SRC} PRIVATE ui)
 
-# Platform-specific link libraries
-if(WIN32)
-    target_link_libraries(${TARGET_SRC} PRIVATE user32 gdi32 opengl32 ws2_32)
-else()
-    target_link_libraries(${TARGET_SRC} PRIVATE pthread dl)
-endif()
-
-# EGL (Linux/macOS GL context creation via EglContext)
-if(EGL_LIBRARY)
-    target_link_libraries(${TARGET_SRC} PRIVATE ${EGL_LIBRARY})
-endif()
-
-# Link jemalloc if detected (optional allocator replacement).
 if(USE_JEMALLOC AND JEMALLOC_FOUND)
     target_link_libraries(${TARGET_SRC} PRIVATE ${JEMALLOC_LIBRARIES})
-endif()
-
-if(APPLE)
-    target_link_libraries(
-        ${TARGET_SRC} PRIVATE "-framework Foundation" "-framework AppKit" "-framework QuartzCore"
-                              "-framework UniformTypeIdentifiers"
-    )
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${TARGET_SRC} PRIVATE ${X11_LIBRARIES} ${XCOMPOSITE_LIBRARY} ${XRENDER_LIBRARY})
-
-    # Add Wayland libraries when building with Wayland support
-    if(HAVE_WAYLAND)
-        target_link_libraries(${TARGET_SRC} PRIVATE ${WAYLAND_LIBRARIES} ${XKB_LIBRARIES} ${WAYLAND_PROTOCOL_LIB})
-        target_include_directories(${TARGET_SRC} PRIVATE ${CMAKE_BINARY_DIR})
-    endif()
 endif()
 
 # Copy resources to build directory

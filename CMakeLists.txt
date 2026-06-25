@@ -85,14 +85,17 @@ else()
 endif()
 
 # 3rd party headers: nlohmann/json (header-only, vendored under 3rd/include).
-set(3RD_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/3rd/include")
+# CURRENT_SOURCE_DIR (not SOURCE_DIR) so the path stays PureGlUi-relative when a
+# host add_subdirectory()s us - otherwise the `ui` target's nlohmann include
+# would resolve against the host's 3rd/include.
+set(3RD_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rd/include")
 
 add_compile_definitions(APP_VERSION="${PROJECT_VERSION}")
 
 # Include directories. Own headers live under include/ (common/ + ui/); a
 # "ui/..." / "common/..." / "sig.h" include resolves against this one root.
 include_directories(
-    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${OPENGL_INCLUDE_DIR}
 )
 
@@ -290,11 +293,81 @@ if(USE_JEMALLOC)
     endif()
 endif()
 
-add_subdirectory(src)
+# ===========================================================================
+# ui - header-only INTERFACE target carrying the framework's usage
+# requirements: public include (ui/ + common/), vendored nlohmann + system GL
+# headers as SYSTEM, C++20, and the libs the fw headers compile/link against.
+# This repo's app + tests link it, and an external host gets the same contract
+# via add_subdirectory + target_link_libraries(<host> PureGlUi::ui). jemalloc
+# is excluded - it is an app allocator choice, not a framework requirement.
+# (Named "ui", not "pureglui", to avoid colliding with the app target TARGET_SRC.)
+# ===========================================================================
+add_library(ui INTERFACE)
+add_library(PureGlUi::ui ALIAS ui)
+
+target_compile_features(ui INTERFACE cxx_std_20)
+
+# First-party headers - NOT system (we want our own warnings).
+target_include_directories(ui INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# Vendored nlohmann + system GL/EGL/Freetype headers - SYSTEM (suppress noise).
+target_include_directories(ui SYSTEM INTERFACE ${3RD_INCLUDE_DIR} ${OPENGL_INCLUDE_DIR})
+if(GLEW_INCLUDE_DIR)
+    target_include_directories(ui SYSTEM INTERFACE ${GLEW_INCLUDE_DIR})
+endif()
+if(DEFINED FREETYPE_INCLUDE_DIRS)
+    target_include_directories(ui SYSTEM INTERFACE ${FREETYPE_INCLUDE_DIRS})
+endif()
+
+# Core libs (all platforms). Freetype/librsvg/cairo are imported targets that
+# carry their own include dirs, so linking them propagates headers to consumers.
+target_link_libraries(ui INTERFACE
+    OpenGL::GL ${GLEW_LIBRARY} Freetype::Freetype ${FONTCONFIG_LIBRARIES}
+    ${LIBRSVG_LIBRARIES} ${CAIRO_LIBRARIES})
+
+if(EGL_FOUND)
+    target_include_directories(ui SYSTEM INTERFACE ${EGL_INCLUDE_DIR})
+    target_link_libraries(ui INTERFACE ${EGL_LIBRARY})
+endif()
+
+if(WIN32)
+    target_link_libraries(ui INTERFACE user32 gdi32 opengl32 ws2_32)
+else()
+    target_link_libraries(ui INTERFACE pthread dl)
+endif()
+
+if(APPLE)
+    target_link_libraries(ui INTERFACE
+        "-framework Foundation" "-framework AppKit" "-framework QuartzCore"
+        "-framework UniformTypeIdentifiers")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(ui INTERFACE ${X11_LIBRARIES} ${XCOMPOSITE_LIBRARY} ${XRENDER_LIBRARY})
+    if(X11_FOUND)
+        target_compile_definitions(ui INTERFACE HAVE_X11=1)
+    endif()
+    if(HAVE_WAYLAND)
+        target_link_libraries(ui INTERFACE ${WAYLAND_LIBRARIES} ${XKB_LIBRARIES} ${WAYLAND_PROTOCOL_LIB})
+        target_include_directories(ui INTERFACE ${CMAKE_BINARY_DIR})
+        target_compile_definitions(ui INTERFACE HAVE_WAYLAND=1)
+    endif()
+endif()
+
+# The demo app and tests build only when PureGlUi is the top-level project. A
+# host that add_subdirectory()s us wants just the `ui` target, not our demo
+# executable or our test suite - so both default OFF when consumed.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(PUREGLUI_STANDALONE ON)
+else()
+    set(PUREGLUI_STANDALONE OFF)
+endif()
+
+option(PUREGLUI_BUILD_APP "Build the PureGlUi demo app" ${PUREGLUI_STANDALONE})
+if(PUREGLUI_BUILD_APP)
+    add_subdirectory(src)
+endif()
 
 # Tests are opt-in. gtest is a test-only dependency, so a demo-only build
 # (BUILD_TESTING=OFF) needs no gtest; find_package(GTest) lives in test/.
-option(BUILD_TESTING "Build the unit tests" ON)
+option(BUILD_TESTING "Build the unit tests" ${PUREGLUI_STANDALONE})
 if(BUILD_TESTING)
     add_subdirectory(test)
 endif()
