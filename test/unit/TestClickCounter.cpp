@@ -25,11 +25,11 @@
  * button predicate that defines a click burst.
  */
 
-#include "ui/backend/window/clickcounter.h"
+#include "ui/window/clickcounter.h"
 
 #include <gtest/gtest.h>
 
-using Ui::Backend::Window::ClickCounter;
+using Ui::Window::ClickCounter;
 
 namespace {
 

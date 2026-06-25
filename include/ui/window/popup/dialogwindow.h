@@ -28,7 +28,7 @@
 
 namespace Ui::Window::Popup {
 
-using Ui::Backend::Window::NativeWindow;
+using Ui::Window::NativeWindow;
 
 /**
  * @brief Modal dialog window

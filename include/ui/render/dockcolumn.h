@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "ui/backend/gl/svgrenderer.h"
+#include "ui/gl/svgrenderer.h"
 #include "ui/render/uirenderer.h"
 #include "ui/res/dock/anchor.h"
 #include "ui/res/dock/config.h"
@@ -311,7 +311,7 @@ public:
 
         // Glyph width matches the grip strip (the configurable dock-edge
         // width from layout.json). Height comes from the SVG's intrinsic
-        // aspect ratio looked up at Ui::Backend::Gl::SvgRenderer's cache - the file may be
+        // aspect ratio looked up at Ui::Gl::SvgRenderer's cache - the file may be
         // swapped via --dock-grip-icon without code edits. WindowManager
         // preloads the glyph at startup, so the lookup is hot by the first
         // render; if it ever misses (e.g. icon stripped from layout.json),
@@ -320,9 +320,7 @@ public:
         const std::string   svgPath  = m_resManager.resPath().icon(iconName);
         float               svgW     = 1.0F;
         float               svgH     = 1.0F;
-        Ui::Backend::Gl::SvgRenderer::contentSizeIfCached(Ui::Backend::Gl::SvgRenderer::loadFilledFromFile(svgPath),
-                                                          svgW,
-                                                          svgH);
+        Ui::Gl::SvgRenderer::contentSizeIfCached(Ui::Gl::SvgRenderer::loadFilledFromFile(svgPath), svgW, svgH);
 
         const fpx_t                  glyphW = gripRect.w;
         const fpx_t                  glyphH = (svgW > 0.0F) ? glyphW * (svgH / svgW) : glyphW;

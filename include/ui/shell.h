@@ -21,8 +21,7 @@
 #include "common/unicode.h"
 #include "ui/action/actionmap.h"
 #include "ui/action/registry.h"
-#include "ui/backend/gl/svgrenderer.h"
-#include "ui/backend/window/event.h"
+#include "ui/gl/svgrenderer.h"
 #include "ui/intent.h"
 #include "ui/pubsub/subscribeid.h"
 #include "ui/render/context.h"
@@ -30,6 +29,7 @@
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
 #include "ui/result.h"
+#include "ui/window/event.h"
 #include "ui/window/windowmanager.h"
 
 #include <algorithm>
@@ -251,7 +251,7 @@ public:
             const std::string path = button.icon.find('/') == std::string::npos
                                    ? m_resManager.resPath().icon(button.icon)
                                    : button.icon;
-            if (!Ui::Backend::Gl::SvgRenderer::loadFromFile(path).empty()) {
+            if (!Ui::Gl::SvgRenderer::loadFromFile(path).empty()) {
                 ++preloaded;
             }
         }
@@ -308,7 +308,7 @@ public:
         auto & sub = m_windowManager.subscribe();
 
         // CloseRequested
-        sub.add(Ui::PubSub::eventSourceId(Ui::Backend::Window::EventType::CloseRequested),
+        sub.add(Ui::PubSub::eventSourceId(Ui::Window::EventType::CloseRequested),
                 Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
                 [this]() {
                     std::cout << "[Event] Window close requested" << std::endl;
@@ -317,7 +317,7 @@ public:
 
         // Resize
         sub.add(
-        Ui::PubSub::eventSourceId(Ui::Backend::Window::EventType::Resize),
+        Ui::PubSub::eventSourceId(Ui::Window::EventType::Resize),
         Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
         [this]() {
             const auto & event = m_windowManager.currentEvent();
@@ -366,7 +366,7 @@ public:
 
         // MouseButtonPress
         sub.add(
-        Ui::PubSub::eventSourceId(Ui::Backend::Window::EventType::MouseButtonPress),
+        Ui::PubSub::eventSourceId(Ui::Window::EventType::MouseButtonPress),
         Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
         [this]() {
             if (m_windowManager.hasDialog()) {
@@ -414,7 +414,7 @@ public:
                         std::cout << "[Shell] Closing popup (clicked outside menu and popup area)" << std::endl;
                         destroyPopup();
                         // Forward click to main window
-                        if (event.mouse.button == Ui::Backend::Window::MouseButton::Left) {
+                        if (event.mouse.button == Ui::Window::MouseButton::Left) {
                             m_windowManager.onMousePress(mainX, mainY);
                             m_windowManager.requestMainRender();
                         }
@@ -452,7 +452,7 @@ public:
         });
 
         // MouseButtonRelease
-        sub.add(Ui::PubSub::eventSourceId(Ui::Backend::Window::EventType::MouseButtonRelease),
+        sub.add(Ui::PubSub::eventSourceId(Ui::Window::EventType::MouseButtonRelease),
                 Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
                 [this]() {
                     if (m_windowManager.hasDialog()) {
@@ -487,7 +487,7 @@ public:
                 });
 
         // MouseMove
-        sub.add(Ui::PubSub::eventSourceId(Ui::Backend::Window::EventType::MouseMove),
+        sub.add(Ui::PubSub::eventSourceId(Ui::Window::EventType::MouseMove),
                 Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
                 [this]() {
                     if (m_windowManager.hasDialog()) {
@@ -543,7 +543,7 @@ public:
                 });
 
         // KeyPress
-        sub.add(Ui::PubSub::eventSourceId(Ui::Backend::Window::EventType::KeyPress),
+        sub.add(Ui::PubSub::eventSourceId(Ui::Window::EventType::KeyPress),
                 Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
                 [this]() { handleKeyPress(m_windowManager.currentEvent()); });
 
@@ -638,8 +638,8 @@ public:
                 m_frameTasks();
             }
 
-            bool                       hadEvents = false;
-            Ui::Backend::Window::Event event;
+            bool              hadEvents = false;
+            Ui::Window::Event event;
             while (m_windowManager.pollEvent(event)) {
                 m_windowManager.dispatchEvent(event);
                 hadEvents = true;
@@ -790,7 +790,7 @@ private:
         m_windowManager.requestContentRefresh();
     }
 
-    void handleKeyPress(const Ui::Backend::Window::Event & event)
+    void handleKeyPress(const Ui::Window::Event & event)
     {
         // Convert key event to shortcut string
         const std::string keyStr = event.toShortcutString();

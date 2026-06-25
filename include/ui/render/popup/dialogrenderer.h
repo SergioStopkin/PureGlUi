@@ -18,7 +18,7 @@
 #pragma once
 
 #include "common/unicode.h"
-#include "ui/backend/gl/textalign.h"
+#include "ui/gl/textalign.h"
 #include "ui/render/popup/popuprendererbase.h"
 #include "ui/res/type/dialog.h"
 #include "ui/type.h"
@@ -56,9 +56,7 @@ class DialogRenderer final : public PopupRendererBase {
 public:
     using DialogCloseFn = std::function<void(Ui::Res::Type::DialogAction)>;
 
-    DialogRenderer(Ui::Backend::Window::IWindow &  window,
-                   const Ui::Res::ResManager &     resManager,
-                   const Ui::Res::Type::dialog_t & dialog)
+    DialogRenderer(Ui::IWindow & window, const Ui::Res::ResManager & resManager, const Ui::Res::Type::dialog_t & dialog)
         : PopupRendererBase(window, resManager)
         , m_dialog(dialog)
     {
@@ -70,10 +68,10 @@ public:
         // Cache SVG icon keys
         if (!m_dialog.icon.empty()) {
             const std::string iconPath = m_resManager.resPath().icon(m_dialog.icon);
-            m_iconKey                  = Ui::Backend::Gl::SvgRenderer::ensureLoaded(iconPath);
+            m_iconKey                  = Ui::Gl::SvgRenderer::ensureLoaded(iconPath);
         }
         const std::string closeIconPath = m_resManager.resPath().icon(m_resManager.layout().dialogCloseIcon);
-        m_closeIconKey                  = Ui::Backend::Gl::SvgRenderer::ensureLoaded(closeIconPath);
+        m_closeIconKey                  = Ui::Gl::SvgRenderer::ensureLoaded(closeIconPath);
 
         buildButtons();
     }
@@ -552,7 +550,7 @@ private:
             }
         }
 
-        Ui::Backend::Gl::Rounded::end();
+        Ui::Gl::Rounded::end();
 
         auto * fontRenderer = m_uiRender->fontRenderer();
         if (fontRenderer == nullptr) {
@@ -562,7 +560,7 @@ private:
         // SVG icons (fixed-function pipeline)
         beginSvgDraw();
 
-        if (!m_iconKey.empty() && Ui::Backend::Gl::SvgRenderer::isLoaded(m_iconKey)) {
+        if (!m_iconKey.empty() && Ui::Gl::SvgRenderer::isLoaded(m_iconKey)) {
             const auto &      iconBound = m_resManager.layout().dialogIcon;
             const Ui::Color & iconColor = (m_dialog.type == Ui::Res::Type::DialogType::Warning) ? theme.colorWarn
                                                                                                 : theme.colorInfo;
@@ -574,7 +572,7 @@ private:
                                      iconColor);
         }
 
-        if (!m_closeIconKey.empty() && Ui::Backend::Gl::SvgRenderer::isLoaded(m_closeIconKey)) {
+        if (!m_closeIconKey.empty() && Ui::Gl::SvgRenderer::isLoaded(m_closeIconKey)) {
             const fpx_t margin = m_resManager.layout().dialogCloseMargin;
             const fpx_t closeX = (m_closeBound.x + margin) * g_config.scale;
             const fpx_t closeY = (m_closeBound.y + margin) * g_config.scale;
@@ -595,12 +593,12 @@ private:
         if (!titleText.empty() && m_titleFont != 0) {
             auto * titleFr = fontRenderer->font(m_titleFont);
             if (titleFr != nullptr && titleFr->program != 0U) {
-                const auto textW  = fontRenderer->textWidth(m_titleFont, titleText);
-                const auto startX = Ui::Backend::Gl::TextAlign::startXCenter({ 0, 0, cssW, 0 }, textW, g_config.scale);
+                const auto textW    = fontRenderer->textWidth(m_titleFont, titleText);
+                const auto startX   = Ui::Gl::TextAlign::startXCenter({ 0, 0, cssW, 0 }, textW, g_config.scale);
                 const auto baseline = titleFr->metrics.baselineCap(m_resManager.layout().dialog.padding,
                                                                    m_resManager.layout().dialogTitleHeight,
                                                                    g_config.scale);
-                auto       verts = Ui::Backend::Gl::FontRenderer::buildTextVerts(*titleFr, titleText, startX, baseline);
+                auto       verts    = Ui::Gl::FontRenderer::buildTextVerts(*titleFr, titleText, startX, baseline);
                 if (!verts.empty()) {
                     drawTextVerts(verts, theme.dialogTitleColor, *titleFr);
                 }
@@ -630,7 +628,7 @@ private:
                 const float maxTextWidth = (scrollbarLeftEdge - layout.dialog.padding) * g_config.scale;
 
                 // Word-wrap: split on \n first, then wrap long lines
-                auto wrappedLines = Ui::Backend::Gl::FontRenderer::wrapText(*fr, contentText, maxTextWidth);
+                auto wrappedLines = Ui::Gl::FontRenderer::wrapText(*fr, contentText, maxTextWidth);
 
                 const fpx_t prevContentH = m_contentHeight;
                 m_contentHeight          = m_lineHeight * static_cast<fpx_t>(wrappedLines.size());
@@ -670,7 +668,7 @@ private:
 
                 for (const auto & line : wrappedLines) {
                     const auto baseline = fr->metrics.baseline(cursorY, m_lineHeight, g_config.scale);
-                    Ui::Backend::Gl::FontRenderer::appendTextVerts(verts, *fr, line, startX, baseline);
+                    Ui::Gl::FontRenderer::appendTextVerts(verts, *fr, line, startX, baseline);
                     cursorY += m_lineHeight;
                 }
 
@@ -736,7 +734,7 @@ private:
                         m_rounded.draw(topHalf, topBorder, { thumbColor, thumbBgTop });
                         m_rounded.draw(bottomHalf, bottomBorder, { thumbColor, thumbBgBottom });
                     }
-                    Ui::Backend::Gl::Rounded::end();
+                    Ui::Gl::Rounded::end();
                 }
             }
         }
@@ -753,7 +751,7 @@ private:
                                       - lineH;
                     const float startX   = m_resManager.layout().dialog.padding * g_config.scale;
                     const auto  baseline = fr->metrics.baseline(linkY, lineH, g_config.scale);
-                    auto        verts = Ui::Backend::Gl::FontRenderer::buildTextVerts(*fr, linkText, startX, baseline);
+                    auto        verts    = Ui::Gl::FontRenderer::buildTextVerts(*fr, linkText, startX, baseline);
                     if (!verts.empty()) {
                         drawTextVerts(verts, theme.dialogLinkColor, *fr);
                     }
@@ -777,9 +775,9 @@ private:
                                                                          m_resManager.layout().dialogButtonShift)
                                                           : btn.bound;
                     const auto                   tw       = fontRenderer->textWidth(m_font, text);
-                    const auto startX   = Ui::Backend::Gl::TextAlign::startXCenter(btnBound, tw, g_config.scale);
+                    const auto                   startX = Ui::Gl::TextAlign::startXCenter(btnBound, tw, g_config.scale);
                     const auto baseline = fr->metrics.baselineCap(btnBound.y, btnBound.h, g_config.scale);
-                    auto       verts    = Ui::Backend::Gl::FontRenderer::buildTextVerts(*fr, text, startX, baseline);
+                    auto       verts    = Ui::Gl::FontRenderer::buildTextVerts(*fr, text, startX, baseline);
 
                     Ui::Color fg;
                     if (btn.state == Ui::Render::UiElementState::Active) {

@@ -18,9 +18,9 @@
 #pragma once
 
 #include "common/unicode.h"
-#include "ui/backend/gl/fontrenderer.h"
 #include "ui/codepoint.h"
 #include "ui/convert.h"
+#include "ui/gl/fontrenderer.h"
 #include "ui/interface/irender.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
@@ -78,7 +78,7 @@ public:
                const std::vector<Ui::Res::Type::menu_t> &   menus,
                const std::vector<Ui::Res::Type::button_t> & buttons,
                const Ui::TabBar &                           tabBar,
-               const Ui::Res::Locale::LocaleManager &       localeManager,
+               const Ui::Res::LocaleManager &               localeManager,
                fpx_t                                        windowCssW,
                fpx_t                                        windowCssH,
                Ui::IRender *                                render,
@@ -426,7 +426,7 @@ private:
                      id_t               tabId,
                      const Ui::TabBar & tabBar)
     {
-        const Ui::Type::tab_t * tab = tabBar.find(tabId);
+        const Ui::tab_t * tab = tabBar.find(tabId);
         if (tab == nullptr || !tab->hasContent) {
             return;
         }

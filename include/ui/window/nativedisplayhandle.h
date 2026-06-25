@@ -17,17 +17,32 @@
 
 #pragma once
 
-#include "ui/interface/iwindow.h"
+// Lightweight header: only the native display handle type per platform.
+// Does NOT include platform window classes to avoid circular dependencies
+// with interface headers (iwindow.h, icontext.h).
+
+#if defined(_WIN32)
+// Win32 has no display concept; use void* (always nullptr)
+#elif defined(__APPLE__)
+// macOS has no display concept; use void* (always nullptr)
+#elif defined(HAVE_WAYLAND)
+#include <wayland-client.h>
+#elif defined(HAVE_X11)
+#include "ui/window/platform/x11include.h"
+#endif
 
 namespace Ui::Window {
 
-// Hit-test result with coords pre-translated to the content surface's own
-// frame. In xwaylandComposite mode the offscreen child receives main-local
-// coords, so the renderer would otherwise see out-of-bounds x/y.
-struct alignas(16) ContentHit final {
-    Ui::IWindow * window = nullptr;
-    int           lx     = 0;
-    int           ly     = 0;
-};
+#if defined(_WIN32)
+using NativeDisplayHandle = void *;
+#elif defined(__APPLE__)
+using NativeDisplayHandle = void *;
+#elif defined(HAVE_WAYLAND)
+using NativeDisplayHandle = wl_display *;
+#elif defined(HAVE_X11)
+using NativeDisplayHandle = Display *;
+#else
+#error "No supported window system found"
+#endif
 
 } // namespace Ui::Window

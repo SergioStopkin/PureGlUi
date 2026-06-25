@@ -17,17 +17,22 @@
 
 #pragma once
 
-#include "ui/interface/iwindow.h"
+#include "ui/type.h"
 
-namespace Ui::Window {
+#include <string>
 
-// Hit-test result with coords pre-translated to the content surface's own
-// frame. In xwaylandComposite mode the offscreen child receives main-local
-// coords, so the renderer would otherwise see out-of-bounds x/y.
-struct alignas(16) ContentHit final {
-    Ui::IWindow * window = nullptr;
-    int           lx     = 0;
-    int           ly     = 0;
+namespace Ui {
+
+// Lightweight tab view model the chrome renders. A one-way projection of the
+// host's authoritative workspace state (file path, MRU, session stay host-side);
+// the host resolves any atomics into these plain values on the main thread.
+struct alignas(64) tab_t final {
+    id_t        id = INVALID_ID;    // stable identity, host-assigned
+    std::string label;              // display text
+    bool        isActive   = false; // currently focused tab
+    bool        hasContent = false; // has a document (controls close button)
+    bool        isLoading  = false; // content load in progress
+    int         progress   = 0;     // loading sector index for the tab spinner
 };
 
-} // namespace Ui::Window
+} // namespace Ui

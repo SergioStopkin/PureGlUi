@@ -17,12 +17,12 @@
 
 #pragma once
 
-#include "ui/backend/window/eglcontext.h"
-#include "ui/backend/window/nativewindow.h"
 #include "ui/config.h"
 #include "ui/interface/ipopuprenderer.h"
 #include "ui/render/popup/dialogrenderer.h"
 #include "ui/render/popup/popupuirenderer.h"
+#include "ui/window/eglcontext.h"
+#include "ui/window/nativewindow.h"
 
 #include <array>
 #include <cmath>
@@ -39,9 +39,9 @@
 namespace Ui::Window::Popup {
 
 // Windowing primitives now live in the framework backend.
-using Ui::Backend::Window::NativeDisplayHandle;
-using Ui::Backend::Window::NativeWindow;
-using Ui::Backend::Window::NativeWindowHandle;
+using Ui::Window::NativeDisplayHandle;
+using Ui::Window::NativeWindow;
+using Ui::Window::NativeWindowHandle;
 
 /**
  * @brief Popup window for dropdowns and context menus
@@ -139,11 +139,9 @@ private:
                 int compMinor {};
                 cache.hasCompositor = false;
                 if (XCompositeQueryVersion(m_display, &compMajor, &compMinor) != 0) {
-                    const Atom     compAtom = XInternAtom(m_display,
-                                                      "_NET_WM_CM_S0",
-                                                      Ui::Backend::Window::Platform::X11::False);
+                    const Atom     compAtom = XInternAtom(m_display, "_NET_WM_CM_S0", Ui::Window::Platform::X11::False);
                     const ::Window selOwner = XGetSelectionOwner(m_display, compAtom);
-                    cache.hasCompositor     = (selOwner != Ui::Backend::Window::Platform::X11::None);
+                    cache.hasCompositor     = (selOwner != Ui::Window::Platform::X11::None);
                 }
                 // XWayland: Wayland compositor handles alpha even if X11 atom is absent
                 if (!cache.hasCompositor && g_config.isCompositing) {
@@ -162,12 +160,12 @@ private:
             if (argbVid != 0) {
                 std::cout << "[PopupWindow] Found 32-bit ARGB visual (id=" << argbVid << ")" << std::endl;
 
-                m_context = std::make_unique<Ui::Backend::Window::EglContext>();
+                m_context = std::make_unique<Ui::Window::EglContext>();
                 if (!m_context->init(m_display)) {
                     return false;
                 }
 
-                auto * eglCtx = dynamic_cast<Ui::Backend::Window::EglContext *>(m_context.get());
+                auto * eglCtx = dynamic_cast<Ui::Window::EglContext *>(m_context.get());
                 if (eglCtx->chooseConfigForVisual(argbVid, true)) {
                     const uint64_t eglVid = m_context->visualId();
                     vi                    = visualInfo(eglVid);
@@ -193,7 +191,7 @@ private:
 
             // If ARGB failed, do opaque discovery and cache results
             if (vi == nullptr) {
-                m_context = std::make_unique<Ui::Backend::Window::EglContext>();
+                m_context = std::make_unique<Ui::Window::EglContext>();
                 if (!m_context->init(m_display)) {
                     return false;
                 }
@@ -208,7 +206,7 @@ private:
                 m_msaa     = m_context->hasMsaa();
 
                 // Cache the discovered EGL display and config for reuse
-                auto * eglCtx      = dynamic_cast<Ui::Backend::Window::EglContext *>(m_context.get());
+                auto * eglCtx      = dynamic_cast<Ui::Window::EglContext *>(m_context.get());
                 cache.eglDisplay   = eglCtx->eglDisplay();
                 cache.opaqueConfig = eglCtx->eglConfig();
                 cache.opaqueMsaa   = m_msaa;
@@ -226,8 +224,8 @@ private:
 
             if (cache.configCached) {
                 // Reuse cached EGL display and config (skip init + config search)
-                m_context     = std::make_unique<Ui::Backend::Window::EglContext>();
-                auto * eglCtx = dynamic_cast<Ui::Backend::Window::EglContext *>(m_context.get());
+                m_context     = std::make_unique<Ui::Window::EglContext>();
+                auto * eglCtx = dynamic_cast<Ui::Window::EglContext *>(m_context.get());
                 eglCtx->initWithCachedConfig(cache.eglDisplay, cache.opaqueConfig, cache.opaqueMsaa, false, m_display);
 
                 m_hasAlpha = false;
@@ -257,11 +255,11 @@ private:
         swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask
                        | StructureNotifyMask | FocusChangeMask;
 
-        swa.override_redirect = Ui::Backend::Window::Platform::X11::False;
-        swa.save_under        = Ui::Backend::Window::Platform::X11::True;
+        swa.override_redirect = Ui::Window::Platform::X11::False;
+        swa.save_under        = Ui::Window::Platform::X11::True;
         swa.border_pixel      = 0;
 
-        // Don't set a background - we'll use XSetWindowBackgroundPixmap(Ui::Backend::Window::Platform::X11::None) after
+        // Don't set a background - we'll use XSetWindowBackgroundPixmap(Ui::Window::Platform::X11::None) after
         // creation to prevent X11 from painting any background before GL content is shown
         swa.background_pixel = 0;
 
@@ -297,12 +295,10 @@ private:
         }
 
         // Set window type hint for proper stacking
-        const Atom wmWindowType     = XInternAtom(m_display,
-                                              "_NET_WM_WINDOW_TYPE",
-                                              Ui::Backend::Window::Platform::X11::False);
+        const Atom wmWindowType     = XInternAtom(m_display, "_NET_WM_WINDOW_TYPE", Ui::Window::Platform::X11::False);
         Atom       wmWindowTypeMenu = XInternAtom(m_display,
                                             "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU",
-                                            Ui::Backend::Window::Platform::X11::False);
+                                            Ui::Window::Platform::X11::False);
         XChangeProperty(
         m_display,
         m_xWindow,
@@ -355,7 +351,7 @@ private:
         }
 
         // Tell X11 not to paint any background - let GL handle everything
-        XSetWindowBackgroundPixmap(m_display, m_xWindow, Ui::Backend::Window::Platform::X11::None);
+        XSetWindowBackgroundPixmap(m_display, m_xWindow, Ui::Window::Platform::X11::None);
 
         // Do NOT map the window yet. The caller renders the first frame with
         // rounded corners, then calls show(). This avoids a visible flash of
@@ -441,7 +437,7 @@ private:
      * Uses inherited members from WaylandWindow base class:
      * - m_display (wl_display*)
      * - m_surface (wl_surface*)
-     * - m_context (unique_ptr<Ui::Backend::Window::IContext>)
+     * - m_context (unique_ptr<Ui::IContext>)
      */
     bool createWaylandPopup()
     {
@@ -510,7 +506,7 @@ private:
         }
 
         // Initialize EGL context (use inherited m_context)
-        m_context = Ui::Backend::Window::EglContext::create(m_display, Ui::Backend::Window::EglPlatform::Wayland);
+        m_context = Ui::Window::EglContext::create(m_display, Ui::Window::EglPlatform::Wayland);
         if (!m_context) {
             std::cerr << "[PopupWindow] Failed to init EGL for Wayland" << std::endl;
             return false;
@@ -526,7 +522,7 @@ private:
         m_msaa     = m_context->hasMsaa();
 
         // Create EGL surface from wl_surface
-        auto * eglCtx = dynamic_cast<Ui::Backend::Window::EglContext *>(m_context.get());
+        auto * eglCtx = dynamic_cast<Ui::Window::EglContext *>(m_context.get());
         if (!eglCtx->createSurface(m_surface, m_bound.w, m_bound.h)) {
             std::cerr << "[PopupWindow] Failed to create EGL surface" << std::endl;
             return false;
@@ -856,7 +852,7 @@ public:
 #endif // __APPLE__
 
 private:
-    // Prevent direct use of base Ui::Backend::Window::IWindow::create() - use create(NativeWindow &, fpx_t, fpx_t)
+    // Prevent direct use of base Ui::IWindow::create() - use create(NativeWindow &, fpx_t, fpx_t)
     bool create(fpx_t /*width*/,
                 fpx_t /*height*/,
                 NativeDisplayHandle /*display*/,

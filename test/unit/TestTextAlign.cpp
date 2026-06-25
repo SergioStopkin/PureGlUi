@@ -26,15 +26,15 @@
  *   - return finite values for zero-scale and zero-width inputs
  */
 
-#include "ui/backend/gl/textalign.h"
+#include "ui/gl/textalign.h"
 
 #include <gtest/gtest.h>
 
 using Ui::fpx_t;
-using Ui::Backend::Gl::TextAlign::startXCenter;
-using Ui::Backend::Gl::TextAlign::startXCenterClamped;
-using Ui::Backend::Gl::TextAlign::startXLeft;
-using Ui::Backend::Gl::TextAlign::startXRight;
+using Ui::Gl::TextAlign::startXCenter;
+using Ui::Gl::TextAlign::startXCenterClamped;
+using Ui::Gl::TextAlign::startXLeft;
+using Ui::Gl::TextAlign::startXRight;
 using Ui::Res::Type::bound_t;
 
 // ============================================================================

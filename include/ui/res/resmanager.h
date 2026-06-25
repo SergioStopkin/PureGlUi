@@ -25,7 +25,7 @@
 #include "ui/convert.h"
 #include "ui/io/filefilter.h"
 #include "ui/res/dock/state.h"
-#include "ui/res/locale/localemanager.h"
+#include "ui/res/localemanager.h"
 #include "ui/res/respath.h"
 #include "ui/res/store/dialogstore.h"
 #include "ui/res/store/dockstore.h"
@@ -69,17 +69,17 @@ class ResManager final {
         bool                                     skipIfEmpty = false; // omit from save when value is empty
     };
 
-    Store::LayoutStore             m_layoutStore; // res/css/layout.json: layout_t + popup_t (logical sub-store)
-    Store::ThemeStore              m_themeStore;  // res/css/theme/*: theme_t + name/mode + preview (sub-store)
-    Ui::Res::Type::input_t         m_input;
-    Ui::Res::Locale::LocaleManager m_localeManager;
-    id_t                           m_activeMenuId = Ui::INVALID_ID;
-    std::string                    m_statusText;
-    Store::IconStore               m_iconStore;     // res/icon-defaults.json (logical sub-store)
-    Store::DialogStore             m_dialogStore;   // res/dialog.json (logical sub-store)
-    Store::ShortcutStore           m_shortcutStore; // res/shortcut.json (logical sub-store)
-    Ui::TabBar                     m_tabBar;        // chrome tab view; a host projects its tabs into it
-    Ui::Res::ResPath               m_resPath;
+    Store::LayoutStore     m_layoutStore; // res/css/layout.json: layout_t + popup_t (logical sub-store)
+    Store::ThemeStore      m_themeStore;  // res/css/theme/*: theme_t + name/mode + preview (sub-store)
+    Ui::Res::Type::input_t m_input;
+    Ui::Res::LocaleManager m_localeManager;
+    id_t                   m_activeMenuId = Ui::INVALID_ID;
+    std::string            m_statusText;
+    Store::IconStore       m_iconStore;     // res/icon-defaults.json (logical sub-store)
+    Store::DialogStore     m_dialogStore;   // res/dialog.json (logical sub-store)
+    Store::ShortcutStore   m_shortcutStore; // res/shortcut.json (logical sub-store)
+    Ui::TabBar             m_tabBar;        // chrome tab view; a host projects its tabs into it
+    Ui::Res::ResPath       m_resPath;
     // menus/buttons/action-map machinery; composes locale + icon/theme/layout
     // stores (declared above) + resPath, so it is declared after them.
     Store::MenuStore m_menuStore { m_localeManager, m_iconStore, m_themeStore, m_layoutStore, m_resPath };
@@ -176,13 +176,13 @@ public:
         m_menuStore.buildActionMap();
     }
 
-    const Ui::Res::Type::layout_t &        layout() const { return m_layoutStore.layout(); }
-    const Ui::Res::Type::theme_t &         theme() const { return m_themeStore.theme(); }
-    const Ui::Res::Type::popup_t &         popup() const { return m_layoutStore.popup(); }
-    const Ui::Res::Type::input_t &         input() const { return m_input; }
-    const Ui::Res::Locale::LocaleManager & localeManager() const { return m_localeManager; }
-    const std::string &                    title() const { return m_title; }
-    const std::string &                    openFileTitle() const { return m_openFileTitle; }
+    const Ui::Res::Type::layout_t & layout() const { return m_layoutStore.layout(); }
+    const Ui::Res::Type::theme_t &  theme() const { return m_themeStore.theme(); }
+    const Ui::Res::Type::popup_t &  popup() const { return m_layoutStore.popup(); }
+    const Ui::Res::Type::input_t &  input() const { return m_input; }
+    const Ui::Res::LocaleManager &  localeManager() const { return m_localeManager; }
+    const std::string &             title() const { return m_title; }
+    const std::string &             openFileTitle() const { return m_openFileTitle; }
 
     const std::vector<Ui::Io::file_filter_t> & openFileFilters() const { return m_openFileFilters; }
     const std::string &                        tabCloseIcon() const { return m_layoutStore.layout().tabCloseIcon; }

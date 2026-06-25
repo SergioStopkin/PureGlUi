@@ -17,8 +17,8 @@
 
 #pragma once
 
-#include "ui/backend/window/event.h"
 #include "ui/type.h"
+#include "ui/window/event.h"
 
 namespace Ui::PubSub {
 
@@ -58,10 +58,7 @@ constexpr id_t sourceId(SourceId base) { return static_cast<id_t>(base); }
 
 constexpr id_t sourceId(SourceId base, id_t offset) { return static_cast<id_t>(base) + offset; }
 
-inline id_t eventSourceId(Ui::Backend::Window::EventType type)
-{
-    return sourceId(SourceId::EventBase, static_cast<id_t>(type));
-}
+inline id_t eventSourceId(Ui::Window::EventType type) { return sourceId(SourceId::EventBase, static_cast<id_t>(type)); }
 
 constexpr id_t wsSourceId(id_t wsId) { return sourceId(SourceId::WsBase, wsId); }
 

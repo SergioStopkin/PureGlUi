@@ -23,8 +23,8 @@
  *        shrink. Pure C++ - no rendering, no WorkspaceManager.
  */
 
+#include "ui/tab.h"
 #include "ui/tabbar.h"
-#include "ui/type/tab.h"
 
 #include <gtest/gtest.h>
 
@@ -34,20 +34,20 @@ using Ui::TabBar;
 namespace {
 
 // Build a plain tab_t; callers override only the fields a test cares about.
-Ui::Type::tab_t tab(Ui::id_t    id,
-                    std::string label      = "t",
-                    bool        isActive   = false,
-                    bool        hasContent = false,
-                    bool        isLoading  = false,
-                    int         progress   = 0)
+Ui::tab_t tab(Ui::id_t    id,
+              std::string label      = "t",
+              bool        isActive   = false,
+              bool        hasContent = false,
+              bool        isLoading  = false,
+              int         progress   = 0)
 {
-    return Ui::Type::tab_t { id, std::move(label), isActive, hasContent, isLoading, progress };
+    return Ui::tab_t { id, std::move(label), isActive, hasContent, isLoading, progress };
 }
 
 // N tabs with ids 0..N-1 in order.
-std::vector<Ui::Type::tab_t> tabs(std::size_t n)
+std::vector<Ui::tab_t> tabs(std::size_t n)
 {
-    std::vector<Ui::Type::tab_t> out;
+    std::vector<Ui::tab_t> out;
     for (std::size_t i = 0; i < n; ++i) {
         out.emplace_back(tab(static_cast<Ui::id_t>(i)));
     }
@@ -238,7 +238,7 @@ TEST(TabBar, SetLoadingLeavesStructuralFieldsIntact)
     TabBar bar;
     bar.setTabs({ tab(1, "Model A", true, true, false, 0) });
     bar.setLoading(1, true, 1);
-    const Ui::Type::tab_t * t = bar.find(1);
+    const Ui::tab_t * t = bar.find(1);
     ASSERT_NE(t, nullptr);
     EXPECT_EQ(t->label, "Model A"); // untouched by the volatile path
     EXPECT_TRUE(t->isActive);

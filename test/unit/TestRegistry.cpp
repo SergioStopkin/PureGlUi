@@ -23,7 +23,7 @@
  */
 
 #include "ui/registry.h"
-#include "ui/type/tab.h"
+#include "ui/tab.h"
 
 #include <gtest/gtest.h>
 
@@ -162,9 +162,9 @@ TEST(Registry, EditMutatesInPlace)
 
 TEST(Registry, HoldsTabViewModels)
 {
-    Registry<Ui::Type::tab_t> tabs;
-    tabs.add(7, Ui::Type::tab_t { 7, "Model A", true, true, false, 0 });
-    tabs.add(8, Ui::Type::tab_t { 8, "new 1", false, false, false, 0 });
+    Registry<Ui::tab_t> tabs;
+    tabs.add(7, Ui::tab_t { 7, "Model A", true, true, false, 0 });
+    tabs.add(8, Ui::tab_t { 8, "new 1", false, false, false, 0 });
 
     ASSERT_NE(tabs.find(7), nullptr);
     EXPECT_EQ(tabs.find(7)->label, "Model A");

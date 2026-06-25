@@ -21,7 +21,7 @@
 #include "nlohmann/json.hpp"
 #include "ui/color.h"
 #include "ui/convert.h"
-#include "ui/res/locale/localemanager.h"
+#include "ui/res/localemanager.h"
 #include "ui/res/respath.h"
 #include "ui/res/type/changed.h"
 #include "ui/res/type/colorpair.h"
@@ -96,10 +96,10 @@ public:
 
     // Scan theme directory for unique theme names (from <name>-<mode>.json pattern).
     // For each theme key, loads both dark and light variants to:
-    //  - Register the display name from "name" in Ui::Res::Locale::LocaleManager
+    //  - Register the display name from "name" in Ui::Res::LocaleManager
     //  - Cache {cl-main, bg-main} per variant in m_themePreviewColors
-    [[nodiscard]] std::vector<std::string> scanThemeNames(const Ui::Res::ResPath &         resPath,
-                                                          Ui::Res::Locale::LocaleManager & localeManager)
+    [[nodiscard]] std::vector<std::string> scanThemeNames(const Ui::Res::ResPath & resPath,
+                                                          Ui::Res::LocaleManager & localeManager)
     {
         m_themePreviewColors.clear();
 

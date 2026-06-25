@@ -18,14 +18,14 @@
 #pragma once
 
 #include "common/bit.h"
-#include "ui/backend/gl/fontrenderer.h"
-#include "ui/backend/gl/glutil.h"
-#include "ui/backend/gl/rounded.h"
-#include "ui/backend/gl/svgrenderer.h"
-#include "ui/backend/window/iwindow.h"
 #include "ui/color.h"
 #include "ui/config.h"
+#include "ui/gl/fontrenderer.h"
+#include "ui/gl/glutil.h"
+#include "ui/gl/rounded.h"
+#include "ui/gl/svgrenderer.h"
 #include "ui/interface/ipopuprenderer.h"
+#include "ui/interface/iwindow.h"
 #include "ui/render/uirenderer.h"
 
 #include <memory>
@@ -42,7 +42,7 @@ namespace Ui::Render::Popup {
  */
 class PopupRendererBase : public Ui::IPopupRenderer {
 public:
-    PopupRendererBase(Ui::Backend::Window::IWindow & window, const Ui::Res::ResManager & resManager)
+    PopupRendererBase(Ui::IWindow & window, const Ui::Res::ResManager & resManager)
         : m_resManager(resManager)
         , m_window(&window)
     {
@@ -125,7 +125,7 @@ protected:
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-        Ui::Backend::Gl::SvgRenderer::setUploadPremultiplied(true);
+        Ui::Gl::SvgRenderer::setUploadPremultiplied(true);
 
         m_rounded.drawCorners(m_width, m_height, g_config.scale);
 
@@ -133,9 +133,9 @@ protected:
     }
 
     // Draw text vertex buffer using font shader
-    void drawTextVerts(const std::vector<float> &                  verts,
-                       const Ui::Color &                           color,
-                       Ui::Backend::Gl::FontRenderer::font_rec_t & fr) const
+    void drawTextVerts(const std::vector<float> &         verts,
+                       const Ui::Color &                  color,
+                       Ui::Gl::FontRenderer::font_rec_t & fr) const
     {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -145,15 +145,14 @@ protected:
         glBindTexture(GL_TEXTURE_2D, fr.atlas_tex);
         glUniform1i(fr.uTex, 0);
         glUniform1i(fr.uPremultiplied, 0);
-        const auto fontProj = Ui::Backend::Gl::Util::orthoProjection(static_cast<fpx_t>(m_width),
-                                                                     static_cast<fpx_t>(m_height));
+        const auto fontProj = Ui::Gl::Util::orthoProjection(static_cast<fpx_t>(m_width), static_cast<fpx_t>(m_height));
         glUniformMatrix4fv(fr.uProjection, 1, GL_FALSE, fontProj.data());
         auto cf = color.toGLRGBA();
         glUniform4f(fr.uColor, cf.at(0), cf.at(1), cf.at(2), cf.at(3));
 
         glBindVertexArray(fr.vao);
         glBindBuffer(GL_ARRAY_BUFFER, fr.vbo);
-        Ui::Backend::Gl::Util::drawTriangles(verts);
+        Ui::Gl::Util::drawTriangles(verts);
         glBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -167,17 +166,17 @@ protected:
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
-    static void endSvgDraw() { Ui::Backend::Gl::SvgRenderer::end(); }
+    static void endSvgDraw() { Ui::Gl::SvgRenderer::end(); }
 
     // -- Shared members --
 
     const Ui::Res::ResManager &             m_resManager;
-    Ui::Backend::Window::IWindow *          m_window = nullptr;
+    Ui::IWindow *                           m_window = nullptr;
     std::unique_ptr<Ui::Render::UiRenderer> m_uiRender;
     fpx_t                                   m_width  = 0;
     fpx_t                                   m_height = 0;
-    Ui::Backend::Gl::SvgRenderer            m_svgRenderer;
-    Ui::Backend::Gl::Rounded                m_rounded;
+    Ui::Gl::SvgRenderer                     m_svgRenderer;
+    Ui::Gl::Rounded                         m_rounded;
 };
 
 } // namespace Ui::Render::Popup

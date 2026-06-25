@@ -19,22 +19,22 @@
 
 #include "common/bit.h"
 #include "common/unicode.h"
-#include "ui/backend/gl/fontrenderer.h"
-#include "ui/backend/gl/glrender.h"
-#include "ui/backend/gl/glutil.h"
-#include "ui/backend/gl/localglew.h"
-#include "ui/backend/gl/svgrenderer.h"
-#include "ui/backend/gl/textalign.h"
 #include "ui/color.h"
 #include "ui/config.h"
+#include "ui/gl/fontrenderer.h"
+#include "ui/gl/glrender.h"
+#include "ui/gl/glutil.h"
+#include "ui/gl/localglew.h"
+#include "ui/gl/svgrenderer.h"
+#include "ui/gl/textalign.h"
 #include "ui/interface/irenderer.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/changed.h"
+#include "ui/tab.h"
 #include "ui/tabbar.h"
 #include "ui/type.h"
-#include "ui/type/tab.h"
 
 #include <algorithm>
 #include <cmath>
@@ -377,7 +377,7 @@ public:
     void setOnElementHover(std::function<void(UiElementType, id_t)> cb) { m_onElementHover = std::move(cb); }
 
     // Access to font renderer (for popup creation)
-    Ui::Backend::Gl::FontRenderer * fontRenderer() { return m_render.fontRenderer(); }
+    Ui::Gl::FontRenderer * fontRenderer() { return m_render.fontRenderer(); }
 
 private:
     bool updateHover(fpx_t cssX, fpx_t cssY)
@@ -472,7 +472,7 @@ private:
             }
 
             // Draw loading progress bar overlay on workspace tabs
-            const Ui::Type::tab_t * tab = (el.type == UiElementType::Tab) ? tabBar.find(el.id) : nullptr;
+            const Ui::tab_t * tab = (el.type == UiElementType::Tab) ? tabBar.find(el.id) : nullptr;
             if (tab != nullptr && tab->isLoading && tab->progress > 0) {
                 const int   tlr          = roundToInt(layout.workspaceTab.border.topLeft);
                 const int   totalSectors = (tlr > 0) ? std::max(2, static_cast<int>(el.bound.w) / tlr)
@@ -527,8 +527,7 @@ private:
                 if (op.isSvg) {
                     float svgW = 0;
                     float svgH = 0;
-                    if (Ui::Backend::Gl::SvgRenderer::contentSizeIfCached(imageSrc, svgW, svgH) && svgW > 0
-                        && svgH > 0) {
+                    if (Ui::Gl::SvgRenderer::contentSizeIfCached(imageSrc, svgW, svgH) && svgW > 0 && svgH > 0) {
                         if (svgW >= svgH) {
                             imgW = imgSz;
                             imgH = std::max(1.0F, std::round(imgSz * svgH / svgW));
@@ -580,8 +579,8 @@ private:
             return theme.topMenuButton;
         }
         case UiElementType::Tab: {
-            const Ui::Type::tab_t * tab         = m_resManager.tabBar().find(el.id);
-            const bool              isActiveTab = (tab != nullptr && tab->isActive);
+            const Ui::tab_t * tab         = m_resManager.tabBar().find(el.id);
+            const bool        isActiveTab = (tab != nullptr && tab->isActive);
             if (el.state == UiElementState::Active) {
                 return theme.workspaceTabActive;
             }
@@ -618,8 +617,8 @@ private:
         switch (el.type) {
         case UiElementType::MenuButton: return m_layout.menuFont();
         case UiElementType::Tab: {
-            const Ui::Type::tab_t * tab         = m_resManager.tabBar().find(el.id);
-            const bool              isActiveTab = (tab != nullptr && tab->isActive);
+            const Ui::tab_t * tab         = m_resManager.tabBar().find(el.id);
+            const bool        isActiveTab = (tab != nullptr && tab->isActive);
             return isActiveTab ? m_layout.itemFontBold() : m_layout.itemFont();
         }
         case UiElementType::TabClose: return 0;
@@ -647,7 +646,7 @@ private:
                             const std::vector<Ui::Res::Type::menu_t> &   menus,
                             const std::vector<Ui::Res::Type::button_t> & buttons,
                             const Ui::TabBar &                           tabBar,
-                            const Ui::Res::Locale::LocaleManager &       localeMgr,
+                            const Ui::Res::LocaleManager &               localeMgr,
                             const Ui::Res::Type::layout_t &              layout) const
     {
         switch (el.type) {
@@ -671,7 +670,7 @@ private:
             return {};
         }
         case UiElementType::Tab: {
-            const Ui::Type::tab_t * tab = tabBar.find(el.id);
+            const Ui::tab_t * tab = tabBar.find(el.id);
             if (tab == nullptr) {
                 return {};
             }
@@ -836,7 +835,7 @@ private:
     // GL implementation of the draw sink (owns the font/svg/rounded backends).
     // mutable: text measurement (a logically-const query) populates the glyph
     // atlas cache, so const resolve* methods can measure through it.
-    mutable Ui::Backend::Gl::GlRender m_render;
+    mutable Ui::Gl::GlRender m_render;
 
     // Cached physical surface size (host pushes via ctor / resize() / Render()).
     fpx_t m_width  = 0;

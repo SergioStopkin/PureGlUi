@@ -30,12 +30,12 @@
  *   - degrade gracefully on edge inputs (zero scale, zero box, negative cssY)
  */
 
-#include "ui/backend/gl/fonttypes.h"
+#include "ui/gl/fonttypes.h"
 
 #include <gtest/gtest.h>
 
 using Ui::fpx_t;
-using Ui::Backend::Gl::font_metrics_t;
+using Ui::Gl::font_metrics_t;
 
 // Real Nunito Regular @ 14 px CSS, captured from FreeType at runtime.
 static font_metrics_t nunito14()

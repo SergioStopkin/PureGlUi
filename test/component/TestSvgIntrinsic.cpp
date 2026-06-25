@@ -15,11 +15,11 @@
  * with PureCreator. See the file COPYING. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "ui/backend/gl/svgrenderer.h"
+#include "ui/gl/svgrenderer.h"
 
 #include <gtest/gtest.h>
 
-using namespace Ui::Backend::Gl;
+using namespace Ui::Gl;
 
 TEST(SvgIntrinsicCache, PreloadedIconsDoNotInstrumentIntrinsicQueries)
 {

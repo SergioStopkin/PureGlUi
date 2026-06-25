@@ -17,8 +17,8 @@
 
 #pragma once
 
-#include "ui/backend/window/iwindow.h"
 #include "ui/interface/irenderer.h"
+#include "ui/interface/iwindow.h"
 #include "ui/window/compositetexture.h"
 
 namespace Ui::Window {
@@ -28,10 +28,10 @@ namespace Ui::Window {
 // composite holds the Wayland offscreen->texture cache. window/renderer are
 // non-owning - the host owns the actual window.
 struct alignas(64) content_surface_t final {
-    Ui::Backend::Window::IWindow * window   = nullptr;
-    Ui::IRenderer *                renderer = nullptr;
-    CompositeTexture               composite;
-    bool                           isReady = true; // false while the host is mid async-load (skip rendering)
+    Ui::IWindow *    window   = nullptr;
+    Ui::IRenderer *  renderer = nullptr;
+    CompositeTexture composite;
+    bool             isReady = true; // false while the host is mid async-load (skip rendering)
 };
 
 } // namespace Ui::Window

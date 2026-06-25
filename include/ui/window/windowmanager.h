@@ -20,16 +20,13 @@
 #include "common/bit.h"
 #include "common/sanitize.h"
 #include "common/unicode.h"
-#include "ui/backend/gl/glutil.h"
-#include "ui/backend/gl/svgrenderer.h"
-#include "ui/backend/window/event.h"
-#include "ui/backend/window/eventfactory.h"
-#include "ui/backend/window/ieventos.h"
-#include "ui/backend/window/iwindow.h"
-#include "ui/backend/window/nativewindow.h"
 #include "ui/config.h"
+#include "ui/gl/glutil.h"
+#include "ui/gl/svgrenderer.h"
 #include "ui/interface/ieventapp.h"
+#include "ui/interface/ieventos.h"
 #include "ui/interface/irenderer.h"
+#include "ui/interface/iwindow.h"
 #include "ui/pubsub/subscribe.h"
 #include "ui/pubsub/subscribeid.h"
 #include "ui/render/dockcolumn.h"
@@ -40,6 +37,9 @@
 #include "ui/window/compositetexture.h"
 #include "ui/window/contenthit.h"
 #include "ui/window/contentsurface.h"
+#include "ui/window/event.h"
+#include "ui/window/eventfactory.h"
+#include "ui/window/nativewindow.h"
 #include "ui/window/popup/dialogwindow.h"
 #include "ui/window/popup/popupwindow.h"
 #include "ui/window/renderqueue.h"
@@ -62,13 +62,13 @@
 namespace Ui::Window {
 
 // Windowing primitives + event types now live in the framework backend.
-using Ui::Backend::Window::Event;
-using Ui::Backend::Window::EventFactory;
-using Ui::Backend::Window::EventType;
-using Ui::Backend::Window::MouseButton;
-using Ui::Backend::Window::NativeEvent;
-using Ui::Backend::Window::NativeWindow;
-using Ui::Backend::Window::NativeWindowHandle;
+using Ui::Window::Event;
+using Ui::Window::EventFactory;
+using Ui::Window::EventType;
+using Ui::Window::MouseButton;
+using Ui::Window::NativeEvent;
+using Ui::Window::NativeWindow;
+using Ui::Window::NativeWindowHandle;
 
 // Flip to true to trace how raw OS mouse events get routed to main/popup/content surface.
 // Pair with WIN32_EVENT_DEBUG to see the full press->classify->dispatch chain.
@@ -251,7 +251,7 @@ public:
     // Register a host-owned content surface. The framework wires its render
     // request to the queue, registers it with the event handler, and positions
     // it in the viewport. window/renderer must outlive the registration.
-    void addContentSurface(id_t id, Ui::Backend::Window::IWindow & window, Ui::IRenderer & renderer)
+    void addContentSurface(id_t id, Ui::IWindow & window, Ui::IRenderer & renderer)
     {
         content_surface_t & entry = m_contentSurfaces[id];
         entry.window              = &window;
@@ -329,13 +329,13 @@ public:
 
     // ---- Content-surface internal helpers (framework-side) ----
 
-    [[nodiscard]] Ui::Backend::Window::IWindow * contentWindow(id_t id) const
+    [[nodiscard]] Ui::IWindow * contentWindow(id_t id) const
     {
         auto it = m_contentSurfaces.find(id);
         return (it != m_contentSurfaces.end()) ? it->second.window : nullptr;
     }
 
-    [[nodiscard]] Ui::Backend::Window::IWindow * activeContentWindow() const { return contentWindow(m_activeContent); }
+    [[nodiscard]] Ui::IWindow * activeContentWindow() const { return contentWindow(m_activeContent); }
 
     // Hit-test the active content surface, returning child-local coords on hit
     // (see ContentHit). Single lookup so the window pointer and its bound match.
@@ -379,7 +379,7 @@ public:
     // Place a content surface at the current viewport rect. On Wayland the X11
     // child is parked offscreen (avoids surface flicker) but keeps its logical
     // position for hit testing.
-    void positionContentSurface(Ui::Backend::Window::IWindow & window)
+    void positionContentSurface(Ui::IWindow & window)
     {
         const Ui::Res::Type::bound_t vp = viewportBound();
         if (g_config.isCompositing) {
@@ -616,7 +616,7 @@ public:
         if (!m_docks.empty()) {
             const std::string & iconName = m_resManager.layout().dockDefaults.gripIcon;
             if (!iconName.empty()) {
-                Ui::Backend::Gl::SvgRenderer::loadFilledFromFile(m_resManager.resPath().icon(iconName));
+                Ui::Gl::SvgRenderer::loadFilledFromFile(m_resManager.resPath().icon(iconName));
             }
         }
 
@@ -856,7 +856,7 @@ public:
             if (!m_docks.empty()) {
                 const std::string & iconName = m_resManager.layout().dockDefaults.gripIcon;
                 if (!iconName.empty()) {
-                    Ui::Backend::Gl::SvgRenderer::loadFilledFromFile(m_resManager.resPath().icon(iconName));
+                    Ui::Gl::SvgRenderer::loadFilledFromFile(m_resManager.resPath().icon(iconName));
                 }
             }
             // Recompute toolbar+dock margins, place each dock, push the new
@@ -1496,7 +1496,7 @@ public:
 #if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
                 auto * display = m_mainWindow->nativeDisplay(); // NOLINT(cppcoreguidelines-init-variables)
                 if (display != nullptr) {
-                    XSync(display, Ui::Backend::Window::Platform::X11::False);
+                    XSync(display, Ui::Window::Platform::X11::False);
                 }
 #elif defined(HAVE_WAYLAND)
                 if (m_mainWindow->nativeDisplay() != nullptr) {
@@ -1556,7 +1556,7 @@ public:
     // Frame top-left for session persistence. Differs from
     // mainWindowScreenPosition() in that it accounts for the WM-drawn frame
     // (title bar etc) so the value round-trips through moveResize without
-    // drifting on restart. See Ui::Backend::Window::IWindow::screenFramePosition for the why.
+    // drifting on restart. See Ui::IWindow::screenFramePosition for the why.
     void mainWindowScreenFramePosition(int & screenX, int & screenY) const
     {
         if (m_mainWindow) {
@@ -1657,7 +1657,7 @@ public:
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-        Ui::Backend::Gl::SvgRenderer::setUploadPremultiplied(true);
+        Ui::Gl::SvgRenderer::setUploadPremultiplied(true);
         m_uiRenderer->Render(m_windowWidth, m_windowHeight);
 
         // In composite mode, draw content surfaces as textures (no popup yet --
@@ -1806,7 +1806,7 @@ public:
         m_mainWindow->clear();
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-        Ui::Backend::Gl::SvgRenderer::setUploadPremultiplied(true);
+        Ui::Gl::SvgRenderer::setUploadPremultiplied(true);
         m_uiRenderer->Render(m_windowWidth, m_windowHeight);
         if (g_config.isCompositing) {
             drawCompositeTextures();
@@ -2044,7 +2044,7 @@ public:
         std::array<Ui::Res::Type::bound_t, 4> caps {};
 
         for (id_t i = 0; i < 4; ++i) {
-            const int r = static_cast<int>(Ui::Backend::Gl::Rounded::borderRadius(outRadii, i));
+            const int r = static_cast<int>(Ui::Gl::Rounded::borderRadius(outRadii, i));
             if (r <= 0) {
                 outPixels.at(i).clear();
                 continue;
@@ -2149,7 +2149,7 @@ public:
 
         // Composite content surface pixels over corners that overlap a viewport
         for (id_t i = 0; i < 4; ++i) {
-            const int r    = static_cast<int>(Ui::Backend::Gl::Rounded::borderRadius(outRadii, i));
+            const int r    = static_cast<int>(Ui::Gl::Rounded::borderRadius(outRadii, i));
             const int capX = static_cast<int>(caps.at(i).x);
             const int capY = static_cast<int>(caps.at(i).y);
             const int capW = static_cast<int>(caps.at(i).w);
@@ -2408,7 +2408,7 @@ public:
 
         // Cursor left the content viewport but stayed in the app; clear the
         // active surface's drag state so it doesn't resume on re-entry.
-        if (Ui::Backend::Window::IWindow * active = activeContentWindow()) {
+        if (Ui::IWindow * active = activeContentWindow()) {
             active->onMouseLeave();
         }
 
@@ -2482,7 +2482,7 @@ public:
         bool changed = false;
 
         // Active content surface can be mid-drag; clear its drag state too
-        if (Ui::Backend::Window::IWindow * active = activeContentWindow()) {
+        if (Ui::IWindow * active = activeContentWindow()) {
             changed |= active->onMouseLeave();
         }
         if (m_mainWindow) {
@@ -2535,25 +2535,25 @@ public:
 
     bool onMouseMove(int x, int y, id_t childId)
     {
-        Ui::Backend::Window::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
+        Ui::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
         return window ? window->onMouseMove(x, y) : onMouseMove(x, y);
     }
 
     bool onMousePress(int x, int y, id_t childId, int clickCount)
     {
-        Ui::Backend::Window::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
+        Ui::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
         return window ? window->onMousePress(x, y, clickCount) : onMousePress(x, y, clickCount);
     }
 
     Ui::Render::click_result_t onMouseRelease(int x, int y, id_t childId)
     {
-        Ui::Backend::Window::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
+        Ui::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
         return window ? window->onMouseRelease(x, y) : onMouseRelease(x, y);
     }
 
     bool onScroll(int x, int y, fpx_t deltaY, id_t childId)
     {
-        Ui::Backend::Window::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
+        Ui::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
         return window ? window->onScroll(x, y, deltaY) : onScroll(x, y, deltaY);
     }
 
@@ -2676,12 +2676,10 @@ public:
             }
         )GLSL";
 
-        const GLuint vert = Ui::Backend::Gl::Util::compileShader(GL_VERTEX_SHADER,
-                                                                 vertexSource,
-                                                                 "[Composite] Vertex error: ");
-        const GLuint frag = Ui::Backend::Gl::Util::compileShader(GL_FRAGMENT_SHADER,
-                                                                 fragmentSource,
-                                                                 "[Composite] Fragment error: ");
+        const GLuint vert = Ui::Gl::Util::compileShader(GL_VERTEX_SHADER, vertexSource, "[Composite] Vertex error: ");
+        const GLuint frag = Ui::Gl::Util::compileShader(GL_FRAGMENT_SHADER,
+                                                        fragmentSource,
+                                                        "[Composite] Fragment error: ");
         if (vert == 0 || frag == 0) {
             if (vert != 0) {
                 glDeleteShader(vert);
@@ -2692,7 +2690,7 @@ public:
             return;
         }
 
-        m_compositeProgram = Ui::Backend::Gl::Util::linkProgram(vert, frag, "[Composite] Link error: ");
+        m_compositeProgram = Ui::Gl::Util::linkProgram(vert, frag, "[Composite] Link error: ");
         if (m_compositeProgram == 0) {
             return;
         }
@@ -2700,14 +2698,14 @@ public:
         m_compositeUProjection = glGetUniformLocation(m_compositeProgram, "u_projection");
         m_compositeUTex        = glGetUniformLocation(m_compositeProgram, "u_tex");
 
-        Ui::Backend::Gl::Util::createPosUvVao(m_compositeVao, m_compositeVbo);
+        Ui::Gl::Util::createPosUvVao(m_compositeVao, m_compositeVbo);
     }
 
     void cleanupCompositeShader()
     {
-        Ui::Backend::Gl::Util::deleteProgram(m_compositeProgram);
-        Ui::Backend::Gl::Util::deleteBuffer(m_compositeVbo);
-        Ui::Backend::Gl::Util::deleteVertexArray(m_compositeVao);
+        Ui::Gl::Util::deleteProgram(m_compositeProgram);
+        Ui::Gl::Util::deleteBuffer(m_compositeVbo);
+        Ui::Gl::Util::deleteVertexArray(m_compositeVao);
     }
 
     /**
@@ -2775,7 +2773,7 @@ public:
         }
 
         glUseProgram(m_compositeProgram);
-        const auto projection = Ui::Backend::Gl::Util::orthoProjection(m_windowWidth, m_windowHeight);
+        const auto projection = Ui::Gl::Util::orthoProjection(m_windowWidth, m_windowHeight);
         glUniformMatrix4fv(m_compositeUProjection, 1, GL_FALSE, projection.data());
         glActiveTexture(GL_TEXTURE0);
         glUniform1i(m_compositeUTex, 0);
@@ -2791,8 +2789,7 @@ public:
         glBindBuffer(GL_ARRAY_BUFFER, m_compositeVbo);
         glBindTexture(GL_TEXTURE_2D, tex);
 
-        Ui::Backend::Gl::Util::drawTriangles(Ui::Backend::Gl::Util::quadVerticesFlipY(dest.x, dest.y, dest.w, dest.h),
-                                             6);
+        Ui::Gl::Util::drawTriangles(Ui::Gl::Util::quadVerticesFlipY(dest.x, dest.y, dest.w, dest.h), 6);
 
         glDisable(GL_BLEND);
         glBindTexture(GL_TEXTURE_2D, 0);

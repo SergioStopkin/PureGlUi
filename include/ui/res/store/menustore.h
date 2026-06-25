@@ -23,7 +23,7 @@
 #include "nlohmann/json.hpp"
 #include "ui/convert.h"
 #include "ui/elementid.h"
-#include "ui/res/locale/localemanager.h"
+#include "ui/res/localemanager.h"
 #include "ui/res/respath.h"
 #include "ui/res/store/iconstore.h"
 #include "ui/res/store/layoutstore.h"
@@ -55,11 +55,11 @@ namespace Ui::Res::Store {
 class MenuStore final {
     // Injected collaborators (owned by ResManager; named to match so the loader
     // bodies read naturally). All outlive this store.
-    Ui::Res::Locale::LocaleManager & m_localeManager;
-    const Store::IconStore &         m_iconStore;
-    Store::ThemeStore &              m_themeStore;
-    const Store::LayoutStore &       m_layoutStore;
-    const Ui::Res::ResPath &         m_resPath;
+    Ui::Res::LocaleManager &   m_localeManager;
+    const Store::IconStore &   m_iconStore;
+    Store::ThemeStore &        m_themeStore;
+    const Store::LayoutStore & m_layoutStore;
+    const Ui::Res::ResPath &   m_resPath;
 
     std::vector<Ui::Res::Type::button_t>  m_buttons;
     std::vector<Ui::Res::Type::menu_t>    m_menus;
@@ -69,11 +69,11 @@ class MenuStore final {
     std::unordered_map<std::string, std::function<std::string()>> m_actionState;
 
 public:
-    MenuStore(Ui::Res::Locale::LocaleManager & localeManager,
-              const Store::IconStore &         iconStore,
-              Store::ThemeStore &              themeStore,
-              const Store::LayoutStore &       layoutStore,
-              const Ui::Res::ResPath &         resPath)
+    MenuStore(Ui::Res::LocaleManager &   localeManager,
+              const Store::IconStore &   iconStore,
+              Store::ThemeStore &        themeStore,
+              const Store::LayoutStore & layoutStore,
+              const Ui::Res::ResPath &   resPath)
         : m_localeManager(localeManager)
         , m_iconStore(iconStore)
         , m_themeStore(themeStore)

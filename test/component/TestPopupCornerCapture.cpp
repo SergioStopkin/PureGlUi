@@ -28,9 +28,9 @@
 #include <gtest/gtest.h>
 
 // GLEW must be included before any GL headers
-#include "ui/backend/gl/rounded.h"
 #include "ui/color.h"
 #include "ui/config.h"
+#include "ui/gl/rounded.h"
 #include "ui/render/popup/popupuirenderer.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
@@ -68,7 +68,7 @@ protected:
     Ui::PubSub::Subscribe m_subscribe;
 
     // Parent (main) window
-    Ui::Backend::Window::NativeWindow m_mainWindow { m_subscribe };
+    Ui::Window::NativeWindow m_mainWindow { m_subscribe };
 
     // Resource manager (loads real theme + layout)
     Ui::Res::ResManager m_resManager { TEST_RES_DIR };
@@ -230,7 +230,7 @@ protected:
         glBindTexture(GL_TEXTURE_2D, 0);
         glDeleteTextures(1, &tex);
 
-        XSync(m_mainWindow.nativeDisplay(), Ui::Backend::Window::Platform::X11::False);
+        XSync(m_mainWindow.nativeDisplay(), Ui::Window::Platform::X11::False);
     }
 
     /**
@@ -357,7 +357,7 @@ TEST_F(PopupCornerCaptureTest, MenuSwitchSequence)
 
         // Re-render parent (simulates main window re-render after popup destroy)
         renderMainWindowPattern();
-        XSync(m_mainWindow.nativeDisplay(), Ui::Backend::Window::Platform::X11::False);
+        XSync(m_mainWindow.nativeDisplay(), Ui::Window::Platform::X11::False);
         std::vector<uint8_t> parentPixels = readMainWindowPixels();
 
         if (!createAndVerifyPopup(kPosX[menuIdx], kPosY, parentPixels, label)) {
@@ -382,7 +382,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
     ASSERT_TRUE(m_mainWindow.create(kWinW, kWinH, nullptr, 0, "RealHtmlMenuSwitchTest"));
 
     // Set DPI/scale (same as App::initialize)
-    Ui::g_config.dpi   = Ui::Backend::Window::NativeWindow::queryDpi(m_mainWindow.nativeDisplay());
+    Ui::g_config.dpi   = Ui::Window::NativeWindow::queryDpi(m_mainWindow.nativeDisplay());
     Ui::g_config.scale = Ui::g_config.dpi / 96.0F;
 
     m_mainWindow.makeCurrent();
@@ -422,7 +422,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
         m_mainWindow.clear();
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-        Ui::Backend::Gl::SvgRenderer::setUploadPremultiplied(true);
+        Ui::Gl::SvgRenderer::setUploadPremultiplied(true);
         uiRender->Render(kWinW, kWinH);
         glFinish();
         m_mainWindow.swapBuffers();
@@ -430,7 +430,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
         m_mainWindow.clear();
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-        Ui::Backend::Gl::SvgRenderer::setUploadPremultiplied(true);
+        Ui::Gl::SvgRenderer::setUploadPremultiplied(true);
         uiRender->Render(kWinW, kWinH);
         glFinish();
         m_mainWindow.swapBuffers();
@@ -485,7 +485,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
 
     // ---- 5. Initial render ----
     renderMainUI();
-    XSync(m_mainWindow.nativeDisplay(), Ui::Backend::Window::Platform::X11::False);
+    XSync(m_mainWindow.nativeDisplay(), Ui::Window::Platform::X11::False);
 
     // ---- 6. Menu switch sequence using real menu IDs ----
     // Use first 3 menus (or fewer if less available)
@@ -519,12 +519,12 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
             prevPopup->destroy();
             prevPopup.reset();
             // std::this_thread::sleep_for(std::chrono::milliseconds(600));
-            XSync(m_mainWindow.nativeDisplay(), Ui::Backend::Window::Platform::X11::False);
+            XSync(m_mainWindow.nativeDisplay(), Ui::Window::Platform::X11::False);
         }
 
         // Step B: Re-render main UI (same as App::renderUIFrame after destroyPopup)
         renderMainUI();
-        XSync(m_mainWindow.nativeDisplay(), Ui::Backend::Window::Platform::X11::False);
+        XSync(m_mainWindow.nativeDisplay(), Ui::Window::Platform::X11::False);
 
         std::vector<uint8_t> parentPixels;
 
@@ -563,7 +563,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
             m_mainWindow.clear();
             glEnable(GL_BLEND);
             glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-            Ui::Backend::Gl::SvgRenderer::setUploadPremultiplied(true);
+            Ui::Gl::SvgRenderer::setUploadPremultiplied(true);
             uiRender->Render(kWinW, kWinH);
             glFinish();
 
@@ -575,7 +575,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
                 const Ui::Res::Type::border_t &     cr = popup->cornerRadii();
                 std::array<std::vector<uint8_t>, 4> cornerPixels;
                 for (id_t ci = 0; ci < 4; ++ci) {
-                    const int r = static_cast<int>(Ui::Backend::Gl::Rounded::borderRadius(cr, ci));
+                    const int r = static_cast<int>(Ui::Gl::Rounded::borderRadius(cr, ci));
                     if (r <= 0) {
                         continue;
                     }
@@ -681,7 +681,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
         glReadPixels(0, 0, popupWi, popupHi, GL_RGBA, GL_UNSIGNED_BYTE, popupRaw.data());
 
         popup->swapBuffers();
-        XSync(m_mainWindow.nativeDisplay(), Ui::Backend::Window::Platform::X11::False);
+        XSync(m_mainWindow.nativeDisplay(), Ui::Window::Platform::X11::False);
         std::vector<uint8_t> popupPixels(popupRaw.size());
         int                  popupRowBytes = popupWi * 4;
         for (int y = 0; y < popupHi; ++y) {

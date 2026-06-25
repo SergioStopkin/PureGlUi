@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "ui/backend/gl/textalign.h"
+#include "ui/gl/textalign.h"
 #include "ui/render/popup/popuprendererbase.h"
 #include "ui/type.h"
 
@@ -35,9 +35,7 @@ namespace Ui::Render::Popup {
  */
 class PopupUiRenderer final : public PopupRendererBase {
 public:
-    PopupUiRenderer(Ui::Backend::Window::IWindow & window,
-                    const Ui::Res::ResManager &    resManager,
-                    const Ui::Res::Type::menu_t &  menu)
+    PopupUiRenderer(Ui::IWindow & window, const Ui::Res::ResManager & resManager, const Ui::Res::Type::menu_t & menu)
         : PopupRendererBase(window, resManager)
     {
         if (m_uiRender->fontRenderer() != nullptr) {
@@ -311,7 +309,7 @@ private:
                 }
             }
         }
-        Ui::Backend::Gl::Rounded::end();
+        Ui::Gl::Rounded::end();
 
         const fpx_t pH = popup.itemPaddingH;
 
@@ -343,9 +341,9 @@ private:
 
             // Label text
             {
-                const auto startX   = Ui::Backend::Gl::TextAlign::startXLeft(el.bound, pH, g_config.scale);
+                const auto startX   = Ui::Gl::TextAlign::startXLeft(el.bound, pH, g_config.scale);
                 const auto baseline = fr->metrics.baselineCap(el.bound.y, el.bound.h, g_config.scale);
-                if constexpr (Ui::Backend::Gl::LOG_TEXT_LAYOUT) {
+                if constexpr (Ui::Gl::LOG_TEXT_LAYOUT) {
                     static std::set<id_t> loggedIds;
                     if (loggedIds.insert(el.id).second) {
                         const auto bLine = fr->metrics.baseline(el.bound.y, el.bound.h, g_config.scale);
@@ -354,7 +352,7 @@ private:
                                   << " baselineLineBox=" << bLine << " diff=" << (baseline - bLine) << std::endl;
                     }
                 }
-                auto verts = Ui::Backend::Gl::FontRenderer::buildTextVerts(*fr, text, startX, baseline);
+                auto verts = Ui::Gl::FontRenderer::buildTextVerts(*fr, text, startX, baseline);
                 if (!verts.empty()) {
                     drawTextVerts(verts, cp.fg, *fr);
                 }
@@ -367,8 +365,8 @@ private:
                     return;
                 }
                 const std::string iconPath = m_resManager.resPath().icon(iconName);
-                const std::string iconKey  = Ui::Backend::Gl::SvgRenderer::ensureLoaded(iconPath);
-                if (iconKey.empty() || !Ui::Backend::Gl::SvgRenderer::isLoaded(iconKey)) {
+                const std::string iconKey  = Ui::Gl::SvgRenderer::ensureLoaded(iconPath);
+                if (iconKey.empty() || !Ui::Gl::SvgRenderer::isLoaded(iconKey)) {
                     return;
                 }
                 const fpx_t iconX = (place == Ui::Res::Type::IconPlace::Right ? el.bound.x + el.bound.w - pH - iconSz
@@ -405,10 +403,7 @@ private:
                     auto       drawLetter = [&](std::string_view glyph, fpx_t halfCenterCss, const Ui::Color & color) {
                         const auto  letterWidth = fontRenderer->textWidth(m_popupScFont, glyph);
                         const fpx_t startX      = (halfCenterCss - letterWidth / 2.0F) * g_config.scale;
-                        auto        verts       = Ui::Backend::Gl::FontRenderer::buildTextVerts(*shortcutFontRec,
-                                                                                   glyph,
-                                                                                   startX,
-                                                                                   baseline);
+                        auto verts = Ui::Gl::FontRenderer::buildTextVerts(*shortcutFontRec, glyph, startX, baseline);
                         if (!verts.empty()) {
                             drawTextVerts(verts, color, *shortcutFontRec);
                         }
@@ -423,15 +418,9 @@ private:
                 auto * scFr = fontRenderer->font(m_popupScFont);
                 if (scFr != nullptr && scFr->program != 0U) {
                     const auto shortcutW = fontRenderer->textWidth(m_popupScFont, menuItem.shortcut);
-                    const auto startX    = Ui::Backend::Gl::TextAlign::startXRight(el.bound,
-                                                                                shortcutW,
-                                                                                pH,
-                                                                                g_config.scale);
+                    const auto startX    = Ui::Gl::TextAlign::startXRight(el.bound, shortcutW, pH, g_config.scale);
                     const auto baseline  = scFr->metrics.baselineCap(el.bound.y, el.bound.h, g_config.scale);
-                    auto       verts     = Ui::Backend::Gl::FontRenderer::buildTextVerts(*scFr,
-                                                                               menuItem.shortcut,
-                                                                               startX,
-                                                                               baseline);
+                    auto       verts = Ui::Gl::FontRenderer::buildTextVerts(*scFr, menuItem.shortcut, startX, baseline);
 
                     if (!verts.empty()) {
                         const Ui::Color scColor = (el.state == Ui::Render::UiElementState::Hovered

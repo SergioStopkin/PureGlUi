@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "ui/backend/gl/localglew.h"
+#include "ui/gl/localglew.h"
 
 #include <cstdint>
 #include <vector>
