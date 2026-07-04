@@ -35,13 +35,13 @@ public:
     virtual ~IEventApp() = default;
 
     virtual bool onMouseMove(int x, int y) = 0;
-    // clickCount: 1=single press, 2=double, ... Populated by the platform
-    // event layer; defaulted at the base so callers that don't care can
-    // still write onMousePress(x,y) and get single-click semantics.
-    virtual bool                   onMousePress(int x, int y, int clickCount = 1) = 0;
-    virtual Render::click_result_t onMouseRelease(int x, int y)                   = 0;
-    virtual bool                   onMouseLeave()                                 = 0;
-    virtual bool                   onScroll(int x, int y, fpx_t deltaY)           = 0;
+    // clickCount: 1=single press, 2=double, ... Populated by the platform event
+    // layer. No default arg (prohibited on virtuals); callers that don't care
+    // about multi-click pass 1 explicitly.
+    virtual bool                   onMousePress(int x, int y, int clickCount) = 0;
+    virtual Render::click_result_t onMouseRelease(int x, int y)               = 0;
+    virtual bool                   onMouseLeave()                             = 0;
+    virtual bool                   onScroll(int x, int y, fpx_t deltaY)       = 0;
 };
 
 } // namespace Ui

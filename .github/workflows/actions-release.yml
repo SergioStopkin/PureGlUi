@@ -22,7 +22,11 @@ jobs:
 
       - name: Route apt downloads to the cache dir
         run: |
-          sudo mkdir -p /tmp/apt-archives/partial
+          # Pre-create lock + partial/ as the runner (no sudo) so sudo apt-get
+          # reuses them instead of creating root-owned ones; that keeps the whole
+          # cache dir readable by the post-job tar (the .debs are already 0644).
+          mkdir -p /tmp/apt-archives/partial
+          touch /tmp/apt-archives/lock
           echo 'Dir::Cache::archives "/tmp/apt-archives";' | sudo tee /etc/apt/apt.conf.d/01cache
 
       - name: Setup Dependencies

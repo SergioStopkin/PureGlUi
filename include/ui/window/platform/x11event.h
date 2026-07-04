@@ -18,6 +18,7 @@
 #pragma once
 
 #include "common/bit.h"
+#include "common/bytes.h"
 #include "ui/interface/ieventos.h"
 #include "ui/interface/iwindow.h"
 #include "ui/window/clickcounter.h"
@@ -91,8 +92,8 @@ public:
      * @brief Register the popup window for event routing
      * @param handle Native window handle (or 0 to clear)
      */
-    void addPopupWindow(NativeWindowHandle) override { }
-    void removePopupWindow(NativeWindowHandle) override { }
+    void addPopupWindow(NativeWindowHandle /*handle*/) override { }
+    void removePopupWindow(NativeWindowHandle /*handle*/) override { }
 
     // -------- Ui::IEventOS implementation --------
 
@@ -278,49 +279,43 @@ private:
 
         case 30 /* SelectionRequest */: {
             const XSelectionRequestEvent & req = xev.xselectionrequest;
-            XSelectionEvent                resp;
-            resp.type      = 31 /* SelectionNotify */;
-            resp.requestor = req.requestor;
-            resp.selection = req.selection;
-            resp.target    = req.target;
-            resp.time      = req.time;
-            resp.property  = 0;
+            // Build the reply inside the XEvent union so XSendEvent needs no cast.
+            XEvent            respEvent {};
+            XSelectionEvent & resp = respEvent.xselection;
+            resp.type              = 31 /* SelectionNotify */;
+            resp.requestor         = req.requestor;
+            resp.selection         = req.selection;
+            resp.target            = req.target;
+            resp.time              = req.time;
+            resp.property          = 0;
 
             auto * display = req.display;
             if (req.target == m_targetsAtom) {
                 // Report supported targets
                 std::array<Atom, 3> targets = { m_targetsAtom, m_utf8Atom, XA_STRING };
-                XChangeProperty(
-                display,
-                req.requestor,
-                req.property,
-                XA_ATOM,
-                32,
-                PropModeReplace,
-                reinterpret_cast<unsigned char *>( // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-                targets.data()),
-                3);
+                XChangeProperty(display,
+                                req.requestor,
+                                req.property,
+                                XA_ATOM,
+                                32,
+                                PropModeReplace,
+                                Common::asBytes(targets.data()),
+                                3);
                 resp.property = req.property;
             } else if (req.target == m_utf8Atom || req.target == XA_STRING) {
                 // Serve clipboard text
-                XChangeProperty(
-                display,
-                req.requestor,
-                req.property,
-                req.target,
-                8,
-                PropModeReplace,
-                reinterpret_cast<const unsigned char *>( // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-                m_clipboardText.data()),
-                static_cast<int>(m_clipboardText.size()));
+                XChangeProperty(display,
+                                req.requestor,
+                                req.property,
+                                req.target,
+                                8,
+                                PropModeReplace,
+                                Common::asBytes(m_clipboardText.data()),
+                                static_cast<int>(m_clipboardText.size()));
                 resp.property = req.property;
             }
 
-            XSendEvent(display,
-                       req.requestor,
-                       X11::False,
-                       0,
-                       reinterpret_cast<XEvent *>(&resp)); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+            XSendEvent(display, req.requestor, X11::False, 0, &respEvent);
             XFlush(display);
         } break;
 

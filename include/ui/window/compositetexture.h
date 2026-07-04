@@ -26,7 +26,7 @@ namespace Ui::Window {
 
 // Offscreen surface captured to a texture for main-window compositing
 // (Wayland XComposite path renders a surface to a texture and blits it).
-struct CompositeTexture final {
+struct alignas(64) CompositeTexture final {
     GLuint               texture = 0;
     std::vector<uint8_t> pixels;
     int                  w     = 0;

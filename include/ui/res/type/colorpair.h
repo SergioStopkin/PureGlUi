@@ -21,7 +21,7 @@
 
 namespace Ui::Res::Type {
 
-struct alignas(8) color_pair_t final {
+struct alignas(16) color_pair_t final {
     Ui::Color fg;
     Ui::Color bg;
 

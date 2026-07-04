@@ -24,6 +24,7 @@
 #include "ui/action/switchthememode.h"
 #include "ui/type.h"
 
+#include <array>
 #include <string>
 #include <utility>
 
@@ -41,14 +42,14 @@ namespace Ui::Action {
 template <class Host>
 void registerActions(Host & host)
 {
-    using Fn                                 = void (*)(Host &, const std::string &);
-    const std::pair<Ui::key_t, Fn> actions[] = {
-        { "ExitApp", &exitApp<Host> },
-        { "Reload", &reload<Host> },
-        { "SwitchThemeMode", &switchThemeMode<Host> },
-        { "SwitchTheme", &switchTheme<Host> },
-        { "OpenFile", &openFile<Host> },
-    };
+    using Fn           = void (*)(Host &, const std::string &);
+    const auto actions = std::to_array<std::pair<Ui::key_t, Fn>>({
+    { "ExitApp", &exitApp<Host> },
+    { "Reload", &reload<Host> },
+    { "SwitchThemeMode", &switchThemeMode<Host> },
+    { "SwitchTheme", &switchTheme<Host> },
+    { "OpenFile", &openFile<Host> },
+    });
     for (const auto & [key, fn] : actions) {
         host.actions().on(key, [&host, fn](const std::string & arg) { fn(host, arg); });
     }

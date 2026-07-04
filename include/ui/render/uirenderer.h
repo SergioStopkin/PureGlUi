@@ -18,6 +18,7 @@
 #pragma once
 
 #include "common/bit.h"
+#include "common/noncopyable.h"
 #include "common/unicode.h"
 #include "ui/color.h"
 #include "ui/config.h"
@@ -57,10 +58,10 @@ constexpr bool UI_DEBUG = false;
  * Iterates UiElement list directly to produce GL draw calls.
  * Contains batched GL draw code (rounded rects, text, SVGs, borders).
  */
-class UiRenderer final : public Ui::IRenderer {
+class UiRenderer final : public Ui::IRenderer, private Common::NonCopyable {
 public:
     // Batched draw operation structs (same as HtmlRenderer, using native types)
-    struct alignas(64) BGOp final {
+    struct alignas(128) BGOp final {
         Ui::Res::Type::bound_t      bound;
         Ui::Res::Type::border_t     radius;
         int                         shadowOffsetX = 0;
@@ -103,7 +104,7 @@ public:
     // makeCurrent: host callback that makes the target surface's GL context
     // current (the fw never touches a native window). width/height: initial
     // physical size; the host pushes later sizes via resize()/Render(w,h).
-    UiRenderer(std::function<void()> makeCurrent, fpx_t width, fpx_t height, const Ui::Res::ResManager & resManager)
+    UiRenderer(Ui::task_fn_t makeCurrent, fpx_t width, fpx_t height, const Ui::Res::ResManager & resManager)
         : m_resManager(resManager)
         , m_render(std::move(makeCurrent), resManager.resPath().fontDir())
         , m_width(width)
@@ -114,11 +115,6 @@ public:
     }
 
     ~UiRenderer() override = default;
-
-    UiRenderer(const UiRenderer &)             = delete;
-    UiRenderer(UiRenderer &&)                  = delete;
-    UiRenderer & operator=(const UiRenderer &) = delete;
-    UiRenderer & operator=(UiRenderer &&)      = delete;
 
     /**
      * @brief Build layout from current ResManager state
@@ -299,7 +295,7 @@ public:
         return anyChanged;
     }
 
-    bool onMousePress(int x, int y, int /*clickCount*/ = 1) override
+    bool onMousePress(int x, int y, int /*clickCount*/) override
     {
         const auto cssX = toCss(x);
         const auto cssY = toCss(y);
@@ -621,7 +617,7 @@ private:
             const bool        isActiveTab = (tab != nullptr && tab->isActive);
             return isActiveTab ? m_layout.itemFontBold() : m_layout.itemFont();
         }
-        case UiElementType::TabClose: return 0;
+        case UiElementType::TabClose:
         case UiElementType::TabArrow: return 0;
         case UiElementType::Text: return m_layout.statusBarFont();
         default: return 0;
@@ -678,7 +674,7 @@ private:
             const fpx_t textMaxW = el.bound.w - layout.workspaceTab.padding * 2 - layout.workspaceTab.height;
             return UiLayout::truncateFileName(tab->label, textMaxW, &m_render, tabFont);
         }
-        case UiElementType::TabClose: return {};
+        case UiElementType::TabClose:
         case UiElementType::TabArrow: return {};
         case UiElementType::Text: return m_resManager.statusText();
         default: return {};

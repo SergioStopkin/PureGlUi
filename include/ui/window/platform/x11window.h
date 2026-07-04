@@ -18,6 +18,8 @@
 #pragma once
 
 #include "common/bit.h"
+#include "common/bytes.h"
+#include "common/cstr.h"
 #include "ui/gl/localglew.h"
 #include "ui/window/eglcontext.h"
 #include "ui/window/platform/x11include.h"
@@ -28,6 +30,7 @@
 #include <cairo.h>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <librsvg/rsvg.h>
 #include <memory>
@@ -51,27 +54,23 @@ public:
     }
     ~X11Window() override
     {
-        if (renderer()) {
-            renderer()->cleanup();
+        if (m_renderer) {
+            m_renderer->cleanup();
         }
-        destroy();
+        // Qualified: in a destructor virtual dispatch stops at this class anyway;
+        // spelling it out documents that and keeps derived overrides out of play.
+        X11Window::destroy();
     }
-
-    X11Window(const X11Window &)             = delete;
-    X11Window(X11Window &&)                  = delete;
-    X11Window & operator=(const X11Window &) = delete;
-    X11Window & operator=(X11Window &&)      = delete;
 
     // -------- Ui::IWindow implementation --------
 
     [[nodiscard]] NativeDisplayHandle nativeDisplay() const override { return m_display; }
 
-    // NOLINTNEXTLINE(google-default-arguments)
     bool create(fpx_t               width,
                 fpx_t               height,
-                NativeDisplayHandle display      = nullptr,
-                NativeWindowHandle  parentWindow = 0,
-                const std::string & title        = "PureGlUi") override
+                NativeDisplayHandle display,
+                NativeWindowHandle  parentWindow,
+                const std::string & title) override
     {
         m_bound.w = width;
         m_bound.h = height;
@@ -159,12 +158,12 @@ public:
         // XResourceManagerString() returns the value Xlib cached when the
         // display connection was opened, so later Xft.dpi changes from the DE
         // never make it through.
-        const Atom      rmAtom       = XInternAtom(display, "RESOURCE_MANAGER", X11::False);
-        Atom            actualType   = 0;
-        int             actualFormat = 0;
-        unsigned long   nitems       = 0;
-        unsigned long   bytesAfter   = 0;
-        unsigned char * data         = nullptr;
+        const Atom                          rmAtom       = XInternAtom(display, "RESOURCE_MANAGER", X11::False);
+        Atom                                actualType   = 0;
+        int                                 actualFormat = 0;
+        Ui::Window::Platform::X11::Cardinal nitems       = 0;
+        Ui::Window::Platform::X11::Cardinal bytesAfter   = 0;
+        unsigned char *                     data         = nullptr;
         if (XGetWindowProperty(display,
                                DefaultRootWindow(display),
                                rmAtom,
@@ -179,7 +178,8 @@ public:
                                &data)
             == 0
             && data != nullptr) {
-            const std::string_view res(reinterpret_cast<const char *>(data), nitems);
+            // Xlib appends a NUL byte after property data, so the text is a C string.
+            const std::string_view res = Common::viewCString(data);
             const auto             pos = res.find("Xft.dpi:");
             if (pos != std::string_view::npos) {
                 auto val = res.substr(pos + 8);
@@ -301,12 +301,12 @@ public:
         if (m_display == nullptr || m_xWindow == 0U) {
             return;
         }
-        const Atom      frameExtentsAtom = XInternAtom(m_display, "_NET_FRAME_EXTENTS", X11::False);
-        Atom            actualType       = 0;
-        int             actualFormat     = 0;
-        unsigned long   nitems           = 0;
-        unsigned long   bytesAfter       = 0;
-        unsigned char * data             = nullptr;
+        const Atom                          frameExtentsAtom = XInternAtom(m_display, "_NET_FRAME_EXTENTS", X11::False);
+        Atom                                actualType       = 0;
+        int                                 actualFormat     = 0;
+        Ui::Window::Platform::X11::Cardinal nitems           = 0;
+        Ui::Window::Platform::X11::Cardinal bytesAfter       = 0;
+        unsigned char *                     data             = nullptr;
         if (XGetWindowProperty(m_display,
                                m_xWindow,
                                frameExtentsAtom,
@@ -321,7 +321,11 @@ public:
                                &data)
             == 0
             && data != nullptr && actualFormat == 32 && nitems >= 4) {
-            const long * extents = reinterpret_cast<const long *>(data);
+            // 32-format property data is an array of long-sized CARDINALs (Xlib
+            // contract); memcpy is the defined-behavior way to read it without a
+            // pointer cast.
+            std::array<Ui::Window::Platform::X11::Cardinal, 4> extents {};
+            std::memcpy(extents.data(), data, sizeof(Ui::Window::Platform::X11::Cardinal) * extents.size());
             screenX -= static_cast<int>(extents[0]); // left
             screenY -= static_cast<int>(extents[2]); // top
         }
@@ -459,7 +463,9 @@ private:
             m_ownsDisplay = true;
         }
         if (m_display == nullptr) {
+            // getenv is safe here: single-threaded init and the process never setenv's.
             std::cerr << "[X11Window] XOpenDisplay failed (DISPLAY="
+                      // NOLINTNEXTLINE(concurrency-mt-unsafe)
                       << (std::getenv("DISPLAY") != nullptr ? std::getenv("DISPLAY") : "unset") << ")" << std::endl;
             return false;
         }
@@ -591,8 +597,9 @@ private:
     }
 
     // Helper: render an SVG file at a given size into ARGB pixel data for _NET_WM_ICON
-    // NOLINTNEXTLINE(google-runtime-int)
-    static bool renderSvgToIconData(RsvgHandle * handle, int size, std::vector<unsigned long> & iconData)
+    static bool renderSvgToIconData(RsvgHandle *                                       handle,
+                                    int                                                size,
+                                    std::vector<Ui::Window::Platform::X11::Cardinal> & iconData)
     {
         cairo_surface_t * surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);
         if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
@@ -617,9 +624,9 @@ private:
         const uint8_t * data   = cairo_image_surface_get_data(surface);
         const int       stride = cairo_image_surface_get_stride(surface);
 
-        // X11 _NET_WM_ICON format: width, height, then ARGB pixels (as unsigned long)
-        iconData.emplace_back(static_cast<unsigned long>(size)); // NOLINT(google-runtime-int)
-        iconData.emplace_back(static_cast<unsigned long>(size)); // NOLINT(google-runtime-int)
+        // X11 _NET_WM_ICON format: width, height, then ARGB pixels (as CARDINAL)
+        iconData.emplace_back(static_cast<Ui::Window::Platform::X11::Cardinal>(size));
+        iconData.emplace_back(static_cast<Ui::Window::Platform::X11::Cardinal>(size));
 
         for (int row = 0; row < size; ++row) {
             const uint8_t * srcRow = data + row * stride; // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -678,7 +685,7 @@ public:
         }
 
         // NOLINTNEXTLINE(google-runtime-int)
-        std::vector<unsigned long> iconData;
+        std::vector<Ui::Window::Platform::X11::Cardinal> iconData;
 
         // Render symbolic icon for desktop environment contexts (panels, menus, notifications)
         if (symbolicHandle != nullptr) {
@@ -698,15 +705,14 @@ public:
             const Atom netWmIcon = XInternAtom(m_display, "_NET_WM_ICON", X11::False);
             const Atom cardinal  = XInternAtom(m_display, "CARDINAL", X11::False);
 
-            XChangeProperty(
-            m_display,
-            m_xWindow,
-            netWmIcon,
-            cardinal,
-            32,
-            PropModeReplace,
-            reinterpret_cast<unsigned char *>(iconData.data()), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-            iconData.size());
+            XChangeProperty(m_display,
+                            m_xWindow,
+                            netWmIcon,
+                            cardinal,
+                            32,
+                            PropModeReplace,
+                            Common::asBytes(iconData.data()),
+                            iconData.size());
 
             std::cout << "[X11Window] Window icon set from " << mainIconPath;
             if (symbolicHandle != nullptr) {

@@ -19,6 +19,9 @@
 
 #include "ui/gl/textalign.h"
 #include "ui/render/popup/popuprendererbase.h"
+#include "ui/render/uielement.h"
+#include "ui/render/uielementstate.h"
+#include "ui/render/uilayout.h"
 #include "ui/type.h"
 
 #include <functional>
@@ -33,32 +36,27 @@ namespace Ui::Render::Popup {
  * Thin wrapper around PopupRendererBase for popup windows.
  * Corner blending shader handles software transparency.
  */
-class PopupUiRenderer final : public PopupRendererBase {
+class PopupRenderer final : public PopupRendererBase {
 public:
-    PopupUiRenderer(Ui::IWindow & window, const Ui::Res::ResManager & resManager, const Ui::Res::Type::menu_t & menu)
-        : PopupRendererBase(window, resManager)
+    PopupRenderer(Ui::task_fn_t makeCurrent, const Ui::Res::ResManager & resManager, const Ui::Res::Type::menu_t & menu)
+        : PopupRendererBase(std::move(makeCurrent), resManager)
+        , m_popupElements(Ui::Render::UiLayout::buildPopup(menu, resManager))
+        , m_popupFont(m_fontRenderer.createFont(resManager.theme().menuItemFont))
+        , m_popupFontBold(m_fontRenderer.createFont(boldVariant(resManager.theme().menuItemFont)))
+        , m_popupScFont(m_fontRenderer.createFont(resManager.theme().shortcutFont))
+        , m_containerBorder(resManager.layout().topMenuDropdown.border)
     {
-        if (m_uiRender->fontRenderer() != nullptr) {
-            m_popupFont   = m_uiRender->fontRenderer()->createFont(m_resManager.theme().menuItemFont);
-            m_popupScFont = m_uiRender->fontRenderer()->createFont(m_resManager.theme().shortcutFont);
-
-            // Bold variant of the popup item font, used to mark the active row
-            // in radio-group popups (display mode / theme).
-            Ui::Res::Type::font_t boldFont = m_resManager.theme().menuItemFont;
-            boldFont.weight                = Ui::Res::Type::FontWeight::Bold;
-            m_popupFontBold                = m_uiRender->fontRenderer()->createFont(boldFont);
-        }
-
-        m_popupElements   = Ui::Render::UiLayout::buildPopup(menu, m_resManager);
-        m_containerBorder = m_resManager.layout().topMenuDropdown.border;
     }
 
-    ~PopupUiRenderer() override { cleanup(); }
+    // Bold variant of the popup item font, used to mark the active row in
+    // radio-group popups (display mode / theme).
+    static Ui::Res::Type::font_t boldVariant(Ui::Res::Type::font_t font)
+    {
+        font.weight = Ui::Res::Type::FontWeight::Bold;
+        return font;
+    }
 
-    PopupUiRenderer(const PopupUiRenderer &)             = delete;
-    PopupUiRenderer(PopupUiRenderer &&)                  = delete;
-    PopupUiRenderer & operator=(const PopupUiRenderer &) = delete;
-    PopupUiRenderer & operator=(PopupUiRenderer &&)      = delete;
+    ~PopupRenderer() override { cleanup(); }
 
     using SubmenuHoverFn = std::function<
     void(const Ui::Res::Type::bound_t & bound, const Ui::Res::Type::menu_t & item, bool isFirst, bool isLast)>;
@@ -162,7 +160,7 @@ public:
         return true;
     }
 
-    bool onMousePress(int x, int y, int /*clickCount*/ = 1) override
+    bool onMousePress(int x, int y, int /*clickCount*/) override
     {
         const auto cssX   = toCss(x);
         const auto cssY   = toCss(y);
@@ -206,7 +204,7 @@ public:
 private:
     void renderPopupElements(bool premultiplied)
     {
-        if (!m_uiRender || m_window == nullptr) {
+        if (m_width <= 0 || m_height <= 0) {
             return;
         }
 
@@ -220,7 +218,7 @@ private:
         glDisable(GL_DEPTH_TEST);
         glEnable(GL_BLEND);
 
-        auto * fontRenderer = m_uiRender->fontRenderer();
+        auto & fontRenderer = m_fontRenderer;
 
         const Ui::Color bgColor = premultiplied ? Ui::Color::TransparentBlack() : theme.dropdown.bg;
 
@@ -314,7 +312,7 @@ private:
         const fpx_t pH = popup.itemPaddingH;
 
         for (const auto & el : m_popupElements) {
-            if (el.type != Ui::Render::UiElementType::MenuItem || m_popupFont == 0 || fontRenderer == nullptr) {
+            if (el.type != Ui::Render::UiElementType::MenuItem || m_popupFont == 0) {
                 continue;
             }
 
@@ -332,7 +330,7 @@ private:
             // equals its action's current value. No groups, no hardcoded names.
             const bool              isActive = m_resManager.isActiveItem(menuItem);
             const Ui::font_handle_t rowFont  = isActive && m_popupFontBold != 0 ? m_popupFontBold : m_popupFont;
-            auto *                  fr       = fontRenderer->font(rowFont);
+            auto *                  fr       = fontRenderer.font(rowFont);
             if (fr == nullptr || fr->program == 0U) {
                 continue;
             }
@@ -387,7 +385,7 @@ private:
             // colored with that variant's --cl-main so the swatch communicates
             // both bg and fg of each theme variant.
             if (menuItem.showsThemePreview && m_popupScFont != 0) {
-                auto * shortcutFontRec = fontRenderer->font(m_popupScFont);
+                auto * shortcutFontRec = fontRenderer.font(m_popupScFont);
                 if (shortcutFontRec != nullptr && shortcutFontRec->program != 0U) {
                     const Ui::Res::Type::theme_preview_t & themePreview = m_resManager.layout().themePreview;
                     const auto                   previewColors = m_resManager.themePreviewColors(menuItem.label);
@@ -401,7 +399,7 @@ private:
                                                                                previewBound.h,
                                                                                g_config.scale);
                     auto       drawLetter = [&](std::string_view glyph, fpx_t halfCenterCss, const Ui::Color & color) {
-                        const auto  letterWidth = fontRenderer->textWidth(m_popupScFont, glyph);
+                        const auto  letterWidth = fontRenderer.textWidth(m_popupScFont, glyph);
                         const fpx_t startX      = (halfCenterCss - letterWidth / 2.0F) * g_config.scale;
                         auto verts = Ui::Gl::FontRenderer::buildTextVerts(*shortcutFontRec, glyph, startX, baseline);
                         if (!verts.empty()) {
@@ -415,9 +413,9 @@ private:
 
             // Shortcut text (right-aligned)
             if (!menuItem.shortcut.empty() && m_popupScFont != 0) {
-                auto * scFr = fontRenderer->font(m_popupScFont);
+                auto * scFr = fontRenderer.font(m_popupScFont);
                 if (scFr != nullptr && scFr->program != 0U) {
-                    const auto shortcutW = fontRenderer->textWidth(m_popupScFont, menuItem.shortcut);
+                    const auto shortcutW = fontRenderer.textWidth(m_popupScFont, menuItem.shortcut);
                     const auto startX    = Ui::Gl::TextAlign::startXRight(el.bound, shortcutW, pH, g_config.scale);
                     const auto baseline  = scFr->metrics.baselineCap(el.bound.y, el.bound.h, g_config.scale);
                     auto       verts = Ui::Gl::FontRenderer::buildTextVerts(*scFr, menuItem.shortcut, startX, baseline);

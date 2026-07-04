@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
 #include "common/sanitize.h"
 #include "nlohmann/json.hpp"
 #include "ui/res/dock/state.h"
@@ -39,7 +40,7 @@ namespace Ui::Res::Store {
 // setDockState is const + mutable storage so a subsystem holding a
 // `const ResManager&` (e.g. WindowManager) can commit dock prefs; the facade
 // fires the persist hook around it.
-class DockStore final {
+class DockStore final : private Common::NonCopyable {
     const Store::LayoutStore &                                           m_layoutStore;
     mutable std::unordered_map<std::string, Ui::Res::Dock::dock_state_t> m_dockStates;
 

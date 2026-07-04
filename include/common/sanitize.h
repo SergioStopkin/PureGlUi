@@ -59,10 +59,8 @@ public:
         // 0x20 and would be silently dropped. The cast is the standard fix
         // for signed-char vs. C0-control comparisons.
         for (const char ch : input) {
-            const unsigned char uch = static_cast<unsigned char>(ch);
-            if (ch == '\n' || ch == '\t') {
-                result += ch;
-            } else if (uch >= 0x20 && uch != 0x7F) {
+            const auto uch = static_cast<unsigned char>(ch);
+            if (ch == '\n' || ch == '\t' || (uch >= 0x20 && uch != 0x7F)) {
                 result += ch;
             }
         }
@@ -123,7 +121,7 @@ public:
         std::string result;
         result.reserve(input.size());
         for (const char ch : input) {
-            const unsigned char uch = static_cast<unsigned char>(ch);
+            const auto uch = static_cast<unsigned char>(ch);
             if (uch >= 0x20 && uch != 0x7F) {
                 result += ch;
             }

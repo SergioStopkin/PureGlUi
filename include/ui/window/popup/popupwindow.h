@@ -17,10 +17,11 @@
 
 #pragma once
 
+#include "common/bytes.h"
 #include "ui/config.h"
 #include "ui/interface/ipopuprenderer.h"
 #include "ui/render/popup/dialogrenderer.h"
-#include "ui/render/popup/popupuirenderer.h"
+#include "ui/render/popup/popuprenderer.h"
 #include "ui/window/eglcontext.h"
 #include "ui/window/nativewindow.h"
 
@@ -63,25 +64,29 @@ public:
     }
     ~PopupWindow() override
     {
-        // Destroy renderer before GL resources - its FontRenderer calls makeCurrent()
-        m_renderer.reset();
+        // Destroy the renderer (its dtor makes our context current for its own GL
+        // teardown) before the window's GL resources are released.
+        m_menuRenderer.reset();
 #ifdef HAVE_WAYLAND
         cleanupWayland();
 #endif
     }
 
-    PopupWindow(const PopupWindow &)             = delete;
-    PopupWindow(PopupWindow &&)                  = delete;
-    PopupWindow & operator=(const PopupWindow &) = delete;
-    PopupWindow & operator=(PopupWindow &&)      = delete;
+    // The popup owns its renderer as the concrete type; the base drives it through
+    // these overrides, so nothing downcasts. DialogWindow overrides them for its
+    // DialogRenderer.
+    [[nodiscard]] bool                         hasRenderer() const override { return m_menuRenderer != nullptr; }
+    [[nodiscard]] Ui::IRenderer &              activeRenderer() override { return *m_menuRenderer; }
+    [[nodiscard]] virtual Ui::IPopupRenderer & popupRenderer() { return *m_menuRenderer; }
 
-    [[nodiscard]] Ui::IPopupRenderer & popupRenderer() { return static_cast<Ui::IPopupRenderer &>(*m_renderer); }
+    // Concrete menu renderer (menu/submenu popups only).
+    [[nodiscard]] Ui::Render::Popup::PopupRenderer & menuRenderer() { return *m_menuRenderer; }
 
     void move(fpx_t x, fpx_t y) override
     {
         NativeWindow::move(x, y);
-        if (m_renderer) {
-            m_renderer->move();
+        if (hasRenderer()) {
+            activeRenderer().move();
         }
     }
 
@@ -92,10 +97,12 @@ public:
 
     void initRenderer(const Ui::Res::ResManager & resManager, const Ui::Res::Type::menu_t & menu)
     {
-        auto renderer = std::make_unique<Ui::Render::Popup::PopupUiRenderer>(*this, resManager, menu);
-        renderer->resize(m_bound.w, m_bound.h);
-        renderer->setAlpha(m_hasAlpha);
-        m_renderer = std::move(renderer);
+        makeCurrent();
+        m_menuRenderer = std::make_unique<Ui::Render::Popup::PopupRenderer>([this] { makeCurrent(); },
+                                                                            resManager,
+                                                                            menu);
+        m_menuRenderer->resize(m_bound.w, m_bound.h);
+        m_menuRenderer->setAlpha(m_hasAlpha);
     }
 
 #if !defined(_WIN32) && !defined(__APPLE__)
@@ -165,8 +172,7 @@ private:
                     return false;
                 }
 
-                auto * eglCtx = dynamic_cast<Ui::Window::EglContext *>(m_context.get());
-                if (eglCtx->chooseConfigForVisual(argbVid, true)) {
+                if (m_context->chooseConfigForVisual(argbVid, true)) {
                     const uint64_t eglVid = m_context->visualId();
                     vi                    = visualInfo(eglVid);
 
@@ -205,12 +211,8 @@ private:
                 m_hasAlpha = false;
                 m_msaa     = m_context->hasMsaa();
 
-                // Cache the discovered EGL display and config for reuse
-                auto * eglCtx      = dynamic_cast<Ui::Window::EglContext *>(m_context.get());
-                cache.eglDisplay   = eglCtx->eglDisplay();
-                cache.opaqueConfig = eglCtx->eglConfig();
-                cache.opaqueMsaa   = m_msaa;
-                cache.configCached = true;
+                // Cache the discovered display+config for reuse by later popups
+                m_context->cacheConfig();
 
                 vi = visualInfo(m_context->visualId());
                 if (vi == nullptr) {
@@ -222,22 +224,19 @@ private:
             // --- Cached fast path ---
             m_hasCompositor = cache.hasCompositor;
 
-            if (cache.configCached) {
-                // Reuse cached EGL display and config (skip init + config search)
-                m_context     = std::make_unique<Ui::Window::EglContext>();
-                auto * eglCtx = dynamic_cast<Ui::Window::EglContext *>(m_context.get());
-                eglCtx->initWithCachedConfig(cache.eglDisplay, cache.opaqueConfig, cache.opaqueMsaa, false, m_display);
-
-                m_hasAlpha = false;
-                m_msaa     = cache.opaqueMsaa;
-
-                vi = visualInfo(m_context->visualId());
-                if (vi == nullptr) {
-                    std::cerr << "[PopupWindow] Failed to get X11 visual from cache" << std::endl;
-                    return false;
-                }
-            } else {
+            // Reuse cached display+config (skip init + config search)
+            m_context = std::make_unique<Ui::Window::EglContext>();
+            if (!m_context->initCachedConfig(m_display)) {
                 std::cerr << "[PopupWindow] No cached EGL config available" << std::endl;
+                return false;
+            }
+
+            m_hasAlpha = false;
+            m_msaa     = m_context->hasMsaa();
+
+            vi = visualInfo(m_context->visualId());
+            if (vi == nullptr) {
+                std::cerr << "[PopupWindow] Failed to get X11 visual from cache" << std::endl;
                 return false;
             }
         }
@@ -299,15 +298,14 @@ private:
         Atom       wmWindowTypeMenu = XInternAtom(m_display,
                                             "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU",
                                             Ui::Window::Platform::X11::False);
-        XChangeProperty(
-        m_display,
-        m_xWindow,
-        wmWindowType,
-        XA_ATOM,
-        32,
-        PropModeReplace,
-        reinterpret_cast<unsigned char *>(&wmWindowTypeMenu), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-        1);
+        XChangeProperty(m_display,
+                        m_xWindow,
+                        wmWindowType,
+                        XA_ATOM,
+                        32,
+                        PropModeReplace,
+                        Common::asBytes(&wmWindowTypeMenu),
+                        1);
 
         // Set transient hint for proper window management
         XSetTransientForHint(m_display, m_xWindow, m_parent->nativeHandle());
@@ -522,8 +520,7 @@ private:
         m_msaa     = m_context->hasMsaa();
 
         // Create EGL surface from wl_surface
-        auto * eglCtx = dynamic_cast<Ui::Window::EglContext *>(m_context.get());
-        if (!eglCtx->createSurface(m_surface, m_bound.w, m_bound.h)) {
+        if (!m_context->createSurface(m_surface, m_bound.w, m_bound.h)) {
             std::cerr << "[PopupWindow] Failed to create EGL surface" << std::endl;
             return false;
         }
@@ -931,16 +928,16 @@ private:
     bool m_isWayland     = false;
     bool m_followsParent = false; // parented to the main window (X11 child) -> auto-tracks parent move/resize
 
+    // The popup owns its renderer as the concrete type (null for a DialogWindow,
+    // which owns a DialogRenderer instead).
+    std::unique_ptr<Ui::Render::Popup::PopupRenderer> m_menuRenderer;
+
     // Static cache for EGL config discovery results (survives popup destroy/recreate)
 #if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
-    struct alignas(32) EglCache final {
-        VisualID   argbVisualId  = 0;              // Cached ARGB visual (0 = not found)
-        EGLDisplay eglDisplay    = EGL_NO_DISPLAY; // Shared EGL display
-        EGLConfig  opaqueConfig  = nullptr;        // Cached opaque fallback config
-        bool       searched      = false;          // Has the ARGB visual search been done?
-        bool       hasCompositor = false;          // Cached compositor check result
-        bool       opaqueMsaa    = false;          // Does opaque config have MSAA?
-        bool       configCached  = false;          // Is opaqueConfig valid?
+    struct alignas(16) EglCache final {
+        VisualID argbVisualId  = 0;     // Cached ARGB visual (0 = not found)
+        bool     searched      = false; // Has the ARGB visual search been done?
+        bool     hasCompositor = false; // Cached compositor check result
     };
     static EglCache & eglCache()
     {

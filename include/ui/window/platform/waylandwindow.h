@@ -52,16 +52,13 @@ public:
     ~WaylandWindow() override
     {
         // Renderer cleanup needs EGL context alive - must happen before destroy()
-        if (renderer()) {
-            renderer()->cleanup();
+        if (m_renderer) {
+            m_renderer->cleanup();
         }
-        destroy();
+        // Qualified: in a destructor virtual dispatch stops at this class anyway;
+        // spelling it out documents that and keeps derived overrides out of play.
+        WaylandWindow::destroy();
     }
-
-    WaylandWindow(const WaylandWindow &)             = delete;
-    WaylandWindow(WaylandWindow &&)                  = delete;
-    WaylandWindow & operator=(const WaylandWindow &) = delete;
-    WaylandWindow & operator=(WaylandWindow &&)      = delete;
 
     // -------- Ui::IWindow implementation --------
 
@@ -69,9 +66,9 @@ public:
 
     bool create(fpx_t               width,
                 fpx_t               height,
-                NativeDisplayHandle display      = nullptr,
-                NativeWindowHandle  parentWindow = nullptr,
-                const std::string & title        = "PureGlUi") override
+                NativeDisplayHandle display,
+                NativeWindowHandle  parentWindow,
+                const std::string & title) override
     {
         m_bound.w = width;
         m_bound.h = height;
@@ -169,8 +166,7 @@ public:
         this->requestRender();
 
         if (m_context) {
-            auto * eglCtx = static_cast<Ui::Window::EglContext *>(m_context.get());
-            eglCtx->resizeWaylandWindow(width, height);
+            m_context->resize(width, height);
         }
         wl_surface_commit(m_surface);
     }
@@ -271,8 +267,7 @@ public:
             this->requestRender();
 
             if (m_context) {
-                auto * eglCtx = static_cast<Ui::Window::EglContext *>(m_context.get());
-                eglCtx->resizeWaylandWindow(physW, physH);
+                m_context->resize(physW, physH);
             }
 
             std::cout << "[WaylandWindow] Configure: " << width << "x" << height << " (physical: " << physW << "x"
@@ -583,8 +578,7 @@ private:
             return false;
         }
 
-        auto * eglCtx = static_cast<Ui::Window::EglContext *>(m_context.get());
-        if (!eglCtx->createSurface(m_surface, m_bound.w, m_bound.h)) {
+        if (!m_context->createSurface(m_surface, m_bound.w, m_bound.h)) {
             std::cerr << "[WaylandWindow] Failed to create EGL surface" << std::endl;
             return false;
         }

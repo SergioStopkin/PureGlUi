@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
 #include "common/system.h"
 
 #include <atomic>
@@ -55,7 +56,7 @@ namespace Common {
  * copy-constructible, so move-only captures (unique_ptrs, std::thread, etc.)
  * must be wrapped in std::shared_ptr by the caller before capture.
  */
-class BackgroundWorker final {
+class BackgroundWorker final : private Common::NonCopyable {
 public:
     BackgroundWorker()
         : m_budget((System::cpuCores() > 2) ? System::cpuCores() - 2 : 1)
@@ -79,11 +80,6 @@ public:
             }
         }
     }
-
-    BackgroundWorker(const BackgroundWorker &)             = delete;
-    BackgroundWorker(BackgroundWorker &&)                  = delete;
-    BackgroundWorker & operator=(const BackgroundWorker &) = delete;
-    BackgroundWorker & operator=(BackgroundWorker &&)      = delete;
 
     /**
      * @brief Enqueue a task declaring how many cores it will use.

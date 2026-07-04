@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
 #include "common/unicode.h"
 #include "ui/color.h"
 #include "ui/config.h"
@@ -28,6 +29,7 @@
 #include "ui/gl/textalign.h"
 #include "ui/interface/irender.h"
 #include "ui/render/shadow.h"
+#include "ui/type.h"
 
 #include <algorithm>
 #include <array>
@@ -51,25 +53,28 @@ namespace Ui::Gl {
 // renderer lazily switches "mode" as primitive kinds change (callers issue them
 // grouped, so transitions are rare). Text is buffered and flushed font-batched
 // in endFrame() so it always composites above non-text.
-class GlRender final : public Ui::IRender {
+class GlRender final : public Ui::IRender, private Common::NonCopyable {
 public:
     // makeCurrent makes the host's GL context current (for font GL teardown).
-    GlRender(std::function<void()> makeCurrent, const std::string & fontDir)
-        : m_fontRenderer(std::make_unique<Ui::Gl::FontRenderer>(std::move(makeCurrent), fontDir))
+    GlRender(Ui::task_fn_t makeCurrent, const std::string & fontDir)
+        : m_makeCurrent(std::move(makeCurrent))
+        , m_fontRenderer(std::make_unique<Ui::Gl::FontRenderer>(m_makeCurrent, fontDir))
     {
     }
 
     ~GlRender() override
     {
+        // Make our window's GL context current before tearing down GL: the flat
+        // shader below and the Rounded/Svg/Font members must glDelete in THIS
+        // context, not whatever is current at destruction time. Contexts are not
+        // shared, so deleting in the wrong one corrupts another window's objects.
+        if (m_makeCurrent) {
+            m_makeCurrent();
+        }
         Ui::Gl::Util::deleteProgram(m_flatProgram);
         Ui::Gl::Util::deleteBuffer(m_flatVbo);
         Ui::Gl::Util::deleteVertexArray(m_flatVao);
     }
-
-    GlRender(const GlRender &)             = delete;
-    GlRender(GlRender &&)                  = delete;
-    GlRender & operator=(const GlRender &) = delete;
-    GlRender & operator=(GlRender &&)      = delete;
 
     // Concrete accessor used by popup/dialog renderers that share this font
     // renderer. Not part of IRender - retired when popups route through IRender.
@@ -450,6 +455,7 @@ private:
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 
+    Ui::task_fn_t                         m_makeCurrent; // makes the owning window's GL context current (GL teardown)
     Ui::Gl::Rounded                       m_rounded;
     Ui::Gl::SvgRenderer                   m_svgRenderer;
     std::unique_ptr<Ui::Gl::FontRenderer> m_fontRenderer {};

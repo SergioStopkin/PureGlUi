@@ -26,7 +26,7 @@ namespace Ui::Res::Dock {
 // inner/outer) - per-instance theming would split this struct, costs nothing
 // to keep unified until that need is real. Grip = the inkscape-style
 // 3-vertical-dot resize handle on the viewport-facing edge of each dock.
-struct alignas(64) dock_theme_t final {
+struct alignas(128) dock_theme_t final {
     Ui::Res::Type::color_pair_t background; // content area
     Ui::Res::Type::color_pair_t grip;       // resize handle strip (idle)
     Ui::Res::Type::color_pair_t gripHover;  // hover over the strip

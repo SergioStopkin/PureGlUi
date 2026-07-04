@@ -17,12 +17,14 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
 #include "ui/color.h"
 #include "ui/gl/localglew.h"
 #include "ui/interface/icontext.h"
 #include "ui/interface/irenderer.h"
 #include "ui/interface/iwindow.h"
 #include "ui/pubsub/subscribe.h"
+#include "ui/type.h"
 
 #include <functional>
 #include <iostream>
@@ -41,7 +43,7 @@ namespace Ui::Window {
  * @tparam Derived The derived platform-specific window class
  */
 template <typename Derived>
-class WindowBase : public Ui::IWindow {
+class WindowBase : public Ui::IWindow, private Common::NonCopyable {
 public:
     explicit WindowBase(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID)
         : m_subscribe(subscribe)
@@ -55,10 +57,6 @@ public:
             m_subscribe.remove(m_subscribeId);
         }
     }
-
-    // Delete copy constructors (windows are unique resources)
-    WindowBase(const WindowBase &)             = delete;
-    WindowBase & operator=(const WindowBase &) = delete;
 
     // -------- Pre-creation helpers --------
 
@@ -110,33 +108,38 @@ public:
     // -------- Renderer ownership --------
 
     void setRenderer(std::unique_ptr<Ui::IRenderer> renderer) { m_renderer = std::move(renderer); }
-    [[nodiscard]] Ui::IRenderer * renderer() const { return m_renderer.get(); }
+
+    // Renderer access for the base's event/render forwarding. Virtual so a derived
+    // window that owns its renderer as a concrete type (popups/dialogs) supplies it
+    // without the base storing the derived type or anyone downcasting.
+    [[nodiscard]] virtual bool            hasRenderer() const { return m_renderer != nullptr; }
+    [[nodiscard]] virtual Ui::IRenderer & activeRenderer() { return *m_renderer; }
 
     // -------- Ui::IEventApp Interface (forward to renderer, request render on change) --------
 
     bool onMouseMove(int x, int y) override
     {
-        return forwardEvent([&] { return m_renderer->onMouseMove(x, y); });
+        return forwardEvent([&] { return activeRenderer().onMouseMove(x, y); });
     }
-    bool onMousePress(int x, int y, int clickCount = 1) override
+    bool onMousePress(int x, int y, int clickCount) override
     {
-        return forwardEvent([&] { return m_renderer->onMousePress(x, y, clickCount); });
+        return forwardEvent([&] { return activeRenderer().onMousePress(x, y, clickCount); });
     }
     bool onMouseLeave() override
     {
-        return forwardEvent([&] { return m_renderer->onMouseLeave(); });
+        return forwardEvent([&] { return activeRenderer().onMouseLeave(); });
     }
     bool onScroll(int x, int y, fpx_t deltaY) override
     {
-        return forwardEvent([&] { return m_renderer->onScroll(x, y, deltaY); });
+        return forwardEvent([&] { return activeRenderer().onScroll(x, y, deltaY); });
     }
 
     Ui::Render::click_result_t onMouseRelease(int x, int y) override
     {
-        if (!m_renderer) {
+        if (!hasRenderer()) {
             return {};
         }
-        Ui::Render::click_result_t result = m_renderer->onMouseRelease(x, y);
+        Ui::Render::click_result_t result = activeRenderer().onMouseRelease(x, y);
         if (result.changed) {
             requestRender();
         }
@@ -148,9 +151,9 @@ public:
      */
     void refresh() override
     {
-        if (m_renderer) {
+        if (hasRenderer()) {
             derived().makeCurrent();
-            m_renderer->refresh();
+            activeRenderer().refresh();
         }
     }
 
@@ -163,9 +166,7 @@ public:
 
     // -------- Render request (driven by Subscribe render queue) --------
 
-    using RenderRequestFn = std::function<void()>;
-
-    void setRenderRequest(RenderRequestFn fn) override { m_renderRequest = std::move(fn); }
+    void setRenderRequest(Ui::task_fn_t fn) override { m_renderRequest = std::move(fn); }
 
     void requestRender() override
     {
@@ -183,12 +184,12 @@ public:
      */
     bool render() override
     {
-        if (!m_renderer) {
+        if (!hasRenderer()) {
             return false;
         }
 
         derived().makeCurrent();
-        return m_renderer->render();
+        return activeRenderer().render();
     }
 
     // -------- Dimension sync (for OS resize events) --------
@@ -211,7 +212,7 @@ private:
     template <typename Fn>
     bool forwardEvent(Fn && fn)
     {
-        if (!m_renderer) {
+        if (!hasRenderer()) {
             return false;
         }
         bool changed = fn();
@@ -236,7 +237,7 @@ protected:
     std::unique_ptr<Ui::IRenderer> m_renderer;
 
     // Render request callback (set by WindowManager, calls Ui::Window::RenderQueue::request)
-    RenderRequestFn m_renderRequest;
+    Ui::task_fn_t m_renderRequest;
 
     // Geometry
     Ui::Res::Type::bound_t m_bound {};

@@ -25,7 +25,7 @@ namespace Ui::Res::Type {
 
 // One resolved entry from res/icon-defaults.json. After alias resolution `icon`
 // is always a concrete .svg filename and `place` is materialized (default Left).
-struct alignas(32) icon_default_t final {
+struct alignas(64) icon_default_t final {
     std::string              icon;                                   // resolved .svg filename
     Ui::Res::Type::IconPlace place = Ui::Res::Type::IconPlace::Left; // resolved placement
 

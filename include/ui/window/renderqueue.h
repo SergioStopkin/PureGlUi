@@ -17,23 +17,19 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
 #include "ui/type.h"
 
 #include <set>
 
 namespace Ui::Window {
 
-class RenderQueue final {
+class RenderQueue final : private Common::NonCopyable {
     std::set<id_t> m_pending;
 
 public:
     RenderQueue()  = default;
     ~RenderQueue() = default;
-
-    RenderQueue(const RenderQueue &)             = delete;
-    RenderQueue(RenderQueue &&)                  = delete;
-    RenderQueue & operator=(const RenderQueue &) = delete;
-    RenderQueue & operator=(RenderQueue &&)      = delete;
 
     void request(id_t windowId) { m_pending.insert(windowId); }
 

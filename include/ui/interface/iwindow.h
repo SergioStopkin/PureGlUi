@@ -20,10 +20,10 @@
 #include "ui/color.h"
 #include "ui/interface/ieventapp.h"
 #include "ui/res/type/bound.h"
+#include "ui/type.h"
 #include "ui/window/nativedisplayhandle.h"
 #include "ui/window/nativewindowhandle.h"
 
-#include <functional>
 #include <string>
 
 namespace Ui {
@@ -104,7 +104,7 @@ public:
     virtual void requestRender() = 0;
 
     // Wire the render-request callback (the window layer points this at its render queue).
-    virtual void setRenderRequest(std::function<void()> fn) = 0;
+    virtual void setRenderRequest(Ui::task_fn_t fn) = 0;
 };
 
 } // namespace Ui

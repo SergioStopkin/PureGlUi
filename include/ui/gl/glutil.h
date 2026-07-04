@@ -30,7 +30,9 @@ namespace Ui::Gl::Util {
 // Number of floats per vertex in pos(x,y) + uv(u,v) layout
 constexpr int POS_UV_FLOATS = 4;
 
-// GL vertex attrib pointer offset helper (centralizes the required reinterpret_cast)
+// GL vertex attrib pointer offset: the API smuggles a byte offset through a
+// void* parameter, so this is int->ptr - static_cast cannot express it.
+// Sanctioned reinterpret_cast exception, centralized in this named helper.
 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
 inline void * bufferOffset(size_t bytes) { return reinterpret_cast<void *>(bytes); }
 

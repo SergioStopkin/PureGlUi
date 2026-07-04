@@ -3,6 +3,7 @@
     "--window-width": "1600px",
     "--window-height": "1000px",
     "--top-menu-height": "30px",
+    "--menu-max-depth": "8",
     "--workspace-tab-height": "18px",
     "--left-toolbar-width": "48px",
     "--right-toolbar-width": "48px",

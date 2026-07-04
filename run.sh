@@ -20,18 +20,22 @@ elif [[ $1 == "rel" ]]; then
         $BUILD_DIR_REL/src/$TARGET_SRC "$@"
     fi
 elif [[ $1 == "test" ]]; then
+    shift  # Remove first argument (test)
     echo "_________________________________________    Unit Tests   _________________________________________"
     if [[ "$OS" == "Windows_NT" ]]; then
         $BUILD_DIR_REL/test/unit/Release/unit-tests.exe "$@"
     else
         $BUILD_DIR_REL/test/unit/unit-tests "$@"
     fi
+    RESULT=$?
     echo "_________________________________________ Component Tests _________________________________________"
     if [[ "$OS" == "Windows_NT" ]]; then
         $BUILD_DIR_REL/test/component/Release/component-tests.exe "$@"
     else
         $BUILD_DIR_REL/test/component/component-tests "$@"
     fi
+    let "RESULT+=$?"
+    exit $RESULT
 else
     PrintUsageAndExit
 fi

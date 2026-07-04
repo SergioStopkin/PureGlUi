@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/render/uirenderer.h"
 #include "ui/res/dock/anchor.h"
@@ -39,7 +40,7 @@ constexpr bool DOCK_DEBUG = false;
 // is transparent. Rendering and mouse-routing are deliberately absent in
 // this revision - they land alongside the grip glyph and the drag-to-
 // resize handler in the next step.
-class DockColumn final {
+class DockColumn final : private Common::NonCopyable {
 public:
     DockColumn(id_t id, const Ui::Res::Dock::dock_config_t & cfg, const Ui::Res::ResManager & resManager)
         : m_id(id)
@@ -54,11 +55,7 @@ public:
         }
     }
 
-    DockColumn(const DockColumn &)             = delete;
-    DockColumn(DockColumn &&)                  = default;
-    DockColumn & operator=(const DockColumn &) = delete;
-    DockColumn & operator=(DockColumn &&)      = delete;
-    ~DockColumn()                              = default;
+    ~DockColumn() = default;
 
     [[nodiscard]] id_t                      id() const { return m_id; }
     [[nodiscard]] const std::string &       name() const { return m_config.name; }

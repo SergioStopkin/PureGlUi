@@ -78,6 +78,13 @@ static constexpr int     False      = 0;
 static constexpr int     True       = 1;
 static constexpr int     KeyPress   = 2;
 static constexpr int     KeyRelease = 3;
+
+// Xlib's CARDINAL/format-32 quirk: the protocol transmits 32 bits, but the
+// client API stores each element as a full C long (64-bit on LP64!). Property
+// counts, _NET_WM_ICON pixels, and _NET_FRAME_EXTENTS slots must all be
+// long-sized - uint32_t would corrupt the buffer layout. Aliased once here;
+// the API chooses the type.
+using Cardinal = unsigned long; // NOLINT(google-runtime-int)
 } // namespace Ui::Window::Platform::X11
 
 #endif // __linux__

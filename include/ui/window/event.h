@@ -69,7 +69,7 @@ inline bool hasModifier(KeyModifier modifiers, KeyModifier flag) { return (toUin
 /**
  * @brief Platform-agnostic window event
  */
-struct alignas(64) Event final {
+struct alignas(128) Event final {
     // Mouse event data
     struct alignas(16) {
         int         x      = 0;
@@ -83,7 +83,7 @@ struct alignas(64) Event final {
     } mouse;
 
     // Keyboard event data
-    struct alignas(16) {
+    struct alignas(32) {
         uint32_t             keysym    = 0; // Platform-specific key symbol
         KeyModifier          modifiers = KeyModifier::None;
         std::array<char, 8>  text      = {}; // UTF-8 typed character (if available)

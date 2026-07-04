@@ -18,9 +18,11 @@
 #pragma once
 
 #include "ui/res/type/menu.h"
+#include "ui/type.h"
 
 #include <algorithm>
 #include <functional>
+#include <ranges>
 #include <vector>
 
 namespace Ui::Res::Store {
@@ -33,14 +35,23 @@ namespace Ui::Res::Store {
 // dialog stay enabled (the shell drives them without an Action::Registry entry).
 // Only ever sets enabled=false (never re-enables), so a host-disabled node stays
 // disabled and still counts toward its parent collapsing.
-inline void disableUnhandled(std::vector<Ui::Res::Type::menu_t> &             menus,
-                             const std::function<bool(const std::string &)> & isHandled)
+inline void disableUnhandled(std::vector<Ui::Res::Type::menu_t> & menus, const Ui::predicate_fn_t & isHandled)
 {
-    const auto walk = [&isHandled](auto & self, Ui::Res::Type::menu_t & item) -> void {
+    // Flatten the tree pre-order, then walk it reversed: every child is
+    // processed before its parent, which replaces the bottom-up recursion.
+    std::vector<std::reference_wrapper<Ui::Res::Type::menu_t>> order;
+    std::vector<std::reference_wrapper<Ui::Res::Type::menu_t>> pending(menus.begin(), menus.end());
+    while (!pending.empty()) {
+        Ui::Res::Type::menu_t & node = pending.back();
+        pending.pop_back();
+        order.emplace_back(node);
+        for (Ui::Res::Type::menu_t & child : node.items) {
+            pending.emplace_back(child);
+        }
+    }
+
+    for (Ui::Res::Type::menu_t & item : std::ranges::reverse_view(order)) {
         if (!item.items.empty()) {
-            for (Ui::Res::Type::menu_t & child : item.items) {
-                self(self, child);
-            }
             const bool anyEnabledChild = std::any_of(
             item.items.begin(),
             item.items.end(),
@@ -48,15 +59,12 @@ inline void disableUnhandled(std::vector<Ui::Res::Type::menu_t> &             me
             if (!anyEnabledChild) {
                 item.enabled = false;
             }
-            return;
+            continue;
         }
         const bool isLeaf = item.submenu.empty() && item.dialog.title.empty() && !item.actionKey.empty();
         if (isLeaf && !isHandled(item.actionKey)) {
             item.enabled = false;
         }
-    };
-    for (Ui::Res::Type::menu_t & menu : menus) {
-        walk(walk, menu);
     }
 }
 

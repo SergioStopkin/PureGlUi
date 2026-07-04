@@ -32,7 +32,11 @@ using fpx_t          = float;
 using surface_id_t   = std::size_t;
 using font_handle_t  = std::size_t;
 using image_handle_t = std::size_t;
-using action_fn_t    = std::function<void(const std::string & arg)>; // action/handler invoked with an opaque arg
+
+using task_fn_t      = std::function<void()>;                        // run an argless callback
+using provider_fn_t  = std::function<std::string()>;                 // produce the current value
+using action_fn_t    = std::function<void(const std::string & arg)>; // consume an opaque arg
+using predicate_fn_t = std::function<bool(const std::string & arg)>; // test a string
 
 inline constexpr id_t INVALID_ID = static_cast<id_t>(-1);
 

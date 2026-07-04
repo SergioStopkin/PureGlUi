@@ -21,7 +21,7 @@
  *
  * Creates a real X11 main window (600x300) rendered with a /\ red band pattern,
  * then creates two popup windows sequentially at different positions to simulate
- * menu switching.  Uses the actual PopupUiRenderer to render each popup.
+ * menu switching.  Uses the actual PopupRenderer to render each popup.
  * Verifies the full 600x300 composite matches the expected image.
  */
 
@@ -31,8 +31,9 @@
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/rounded.h"
-#include "ui/render/popup/popupuirenderer.h"
+#include "ui/render/popup/popuprenderer.h"
 #include "ui/render/uilayout.h"
+#include "ui/render/uirenderer.h"
 #include "ui/res/resmanager.h"
 #include "ui/type.h"
 #include "ui/window/popup/popupwindow.h"
@@ -370,7 +371,7 @@ TEST_F(PopupCornerCaptureTest, MenuSwitchSequence)
 */
 
 // ---------------------------------------------------------------------------
-// Test: real UI rendering path (UiRenderer for main window + PopupUiRenderer)
+// Test: real UI rendering path (UiRenderer for main window + PopupRenderer)
 // Replicates the actual App flow: renderUIFrame() -> deferred menu switch
 // ---------------------------------------------------------------------------
 TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
@@ -546,7 +547,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
             continue;
         }
 
-        // Step E: Create and render PopupUiRenderer (same as App)
+        // Step E: Create and render PopupRenderer (same as App)
         m_resManager.setActiveMenu(menuId);
 
         const auto & menuList = m_resManager.menus();
@@ -570,9 +571,9 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
             // Read parent pixels for verification (while back buffer has fresh content)
             parentPixels = readMainFB();
 
-            auto * popupRenderer = dynamic_cast<Ui::Render::Popup::PopupUiRenderer *>(popup->renderer());
-            if (popupRenderer != nullptr) {
-                const Ui::Res::Type::border_t &     cr = popup->cornerRadii();
+            if (popup->hasRenderer()) {
+                Ui::Render::Popup::PopupRenderer *  popupRenderer = &popup->menuRenderer();
+                const Ui::Res::Type::border_t &     cr            = popup->cornerRadii();
                 std::array<std::vector<uint8_t>, 4> cornerPixels;
                 for (id_t ci = 0; ci < 4; ++ci) {
                     const int r = static_cast<int>(Ui::Gl::Rounded::borderRadius(cr, ci));

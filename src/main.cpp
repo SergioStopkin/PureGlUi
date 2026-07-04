@@ -44,7 +44,7 @@ std::string sessionPath(const Ui::Res::ResManager & res) { return res.sessionDir
 // window creation). The blob is opaque here; ResManager owns the format.
 void restoreSession(Ui::Res::ResManager & res)
 {
-    std::ifstream file(sessionPath(res));
+    const std::ifstream file(sessionPath(res));
     if (!file) {
         return; // no prior session
     }

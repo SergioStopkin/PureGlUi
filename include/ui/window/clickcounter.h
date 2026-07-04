@@ -31,7 +31,7 @@ namespace Ui::Window {
 // so the helper is usable before the JSON load completes.
 //
 // macOS supplies NSEvent.clickCount directly and does not need this helper.
-struct alignas(64) ClickCounter final {
+struct alignas(32) ClickCounter final {
     void configure(uint32_t intervalMs, int distancePx)
     {
         m_intervalMs = intervalMs;

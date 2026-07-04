@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
 #include "ui/intent.h"
 #include "ui/render/clickresult.h"
 #include "ui/res/resmanager.h"
@@ -34,7 +35,7 @@ namespace Ui::Render {
 // Staged pureglui-side for now (it reads ResManager + the pureglui
 // UiRenderer/click_result_t). Relocates to ui/context.h (Ui::Context) once the
 // render layer is fw-resident and ResManager is severed (roadmap step 8).
-class Context final {
+class Context final : private Common::NonCopyable {
 public:
     explicit Context(const Ui::Res::ResManager & resManager)
         : m_resManager(resManager)

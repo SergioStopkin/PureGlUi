@@ -41,6 +41,7 @@
 
 #include "common/unicode.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
@@ -104,7 +105,7 @@ public:
             }
         }
         std::ifstream maxFreq("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq");
-        long          khz = 0;
+        int64_t       khz = 0;
         if (maxFreq >> khz && khz > 0) {
             return formatGHz(khz / 1.0e6);
         }
@@ -140,7 +141,7 @@ public:
             if (line.find("MemTotal:") == 0) {
                 std::istringstream iss(line);
                 std::string        label;
-                long               kb = 0;
+                int64_t            kb = 0;
                 iss >> label >> kb;
                 return std::to_string(kb / 1024 / 1024) + " GB";
             }

@@ -91,7 +91,7 @@ struct alignas(64) dialog_button_config_t final {
 };
 
 // Type config loaded from res/dialog.json
-struct alignas(128) dialog_type_config_t final {
+struct alignas(32) dialog_type_config_t final {
     std::vector<dialog_button_config_t> buttons;
 };
 

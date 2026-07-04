@@ -93,8 +93,8 @@ public:
                              m_childWindows.end());
     }
 
-    void addPopupWindow(NativeWindowHandle) override { }
-    void removePopupWindow(NativeWindowHandle) override { }
+    void addPopupWindow(NativeWindowHandle /*handle*/) override { }
+    void removePopupWindow(NativeWindowHandle /*handle*/) override { }
 
     // -------- Ui::IEventOS implementation --------
 

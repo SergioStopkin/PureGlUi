@@ -24,7 +24,6 @@
 #include "ui/res/type/icondefault.h"
 #include "ui/res/type/iconplace.h"
 
-#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -47,9 +46,9 @@ public:
     }
 
     // Load res/icon-defaults.json with alias resolution. Each entry's `icon`
-    // field can be a real .svg filename or the name of another entry; we follow
-    // the chain until a .svg is hit. `place` is the first explicit value walking
-    // leaf to root, defaulting to Left.
+    // field is a real .svg filename (alias) or the name of another entry (role);
+    // a role resolves with a single hop to its alias's .svg. `place` is each
+    // entry's own value (default Left); it is not inherited across the hop.
     [[nodiscard]] Type::Changed load(const std::string & file)
     {
         nlohmann::json j;
@@ -60,50 +59,40 @@ public:
         auto oldDefaults = m_iconDefaults;
         m_iconDefaults.clear();
 
-        // Pass 1: stash raw entries (skip the optional _comment).
-        struct raw_t {
-            std::string                    icon;
-            std::optional<Type::IconPlace> place;
-        };
-        std::unordered_map<std::string, raw_t> raw;
+        // Pass 1: parse every entry into m_iconDefaults (skip the optional
+        // _comment). `icon` is either a real .svg (alias) or the name of another
+        // entry (role); `place` defaults to Left when absent.
         for (auto it = j.begin(); it != j.end(); ++it) {
             if (it.key().rfind('_', 0) == 0 || !it.value().is_object()) {
                 continue;
             }
-            raw_t entry;
+            Type::icon_default_t entry;
             entry.icon = Common::Sanitize::filePath(it.value().value("icon", ""), "iconDefault.icon");
             if (it.value().contains("place") && it.value()["place"].is_string()) {
                 entry.place = Type::iconPlaceFromName(it.value()["place"].get<std::string>());
             }
-            raw.emplace(it.key(), std::move(entry));
+            m_iconDefaults.emplace(it.key(), std::move(entry));
         }
 
-        // Pass 2: resolve each entry with a single alias lookup. Schema is two-tier
-        // by convention - aliases point at .svg, roles point at an alias - so one
-        // hop is always enough. If `icon` is not a .svg, look it up once; if that
-        // entry's icon is also not a .svg, the role resolves to an empty icon.
+        // Pass 2: resolve each role to its alias's .svg. Schema is two-tier -
+        // aliases point at .svg, roles point at an alias - so a single hop
+        // suffices; a role whose target is not a .svg resolves to empty.
+        // Lookups go against the immutable pre-pass snapshot so a malformed
+        // role->role chain resolves to empty deterministically, never leaking a
+        // mid role's freshly resolved .svg (map iteration order must not matter).
         const std::string_view SVG_EXT     = ".svg";
-        auto                   endsWithSvg = [&](const std::string & s) {
+        auto                   endsWithSvg = [&SVG_EXT](const std::string & s) {
             return s.size() >= SVG_EXT.size() && s.compare(s.size() - SVG_EXT.size(), SVG_EXT.size(), SVG_EXT) == 0;
         };
-        for (const auto & [name, entry] : raw) {
-            std::string                    ic    = entry.icon;
-            std::optional<Type::IconPlace> place = entry.place;
-            if (!ic.empty() && !endsWithSvg(ic)) {
-                auto alias = raw.find(ic);
-                if (alias != raw.end() && endsWithSvg(alias->second.icon)) {
-                    ic = alias->second.icon;
-                    if (!place.has_value()) {
-                        place = alias->second.place;
-                    }
-                } else {
-                    ic.clear();
-                }
+        const auto source = m_iconDefaults;
+        for (auto & entryPair : m_iconDefaults) {
+            auto & entry = entryPair.second;
+            if (entry.icon.empty() || endsWithSvg(entry.icon)) {
+                continue;
             }
-            Type::icon_default_t resolved;
-            resolved.icon  = ic;
-            resolved.place = place.value_or(Type::IconPlace::Left);
-            m_iconDefaults.emplace(name, std::move(resolved));
+            auto alias = source.find(entry.icon);
+            entry.icon = (alias != source.end() && endsWithSvg(alias->second.icon)) ? alias->second.icon
+                                                                                    : std::string {};
         }
 
         return m_iconDefaults != oldDefaults ? Type::Changed::Icon : Type::Changed::None;

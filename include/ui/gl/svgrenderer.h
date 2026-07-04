@@ -25,6 +25,8 @@
  * for rendering standalone UI icons.
  */
 
+#include "common/bytes.h"
+#include "common/noncopyable.h"
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/glutil.h"
@@ -90,7 +92,7 @@ struct std::hash<Ui::Gl::cache_key_t> { // NOLINT(altera-struct-pack-align)
 
 namespace Ui::Gl {
 
-class SvgRenderer {
+class SvgRenderer : private Common::NonCopyable {
 public:
     // Control whether textures are uploaded premultiplied for composited popups
     static void setUploadPremultiplied(bool v) { s_svg_upload_premultiplied = v; }
@@ -201,7 +203,7 @@ private:
         Ui::Gl::Util::deleteVertexArray(m_vao);
     }
 
-    void drawQuad(fpx_t x, fpx_t y, fpx_t width, fpx_t height)
+    static void drawQuad(fpx_t x, fpx_t y, fpx_t width, fpx_t height)
     {
         Ui::Gl::Util::drawTriangles(Ui::Gl::Util::quadVertices(x, y, width, height), 6);
     }
@@ -570,11 +572,6 @@ public:
         cleanupGl();
     }
 
-    SvgRenderer(const SvgRenderer &)             = delete;
-    SvgRenderer(SvgRenderer &&)                  = delete;
-    SvgRenderer & operator=(const SvgRenderer &) = delete;
-    SvgRenderer & operator=(SvgRenderer &&)      = delete;
-
     void begin(fpx_t viewWidth, fpx_t viewHeight, fpx_t scale)
     {
         initGl();
@@ -799,10 +796,9 @@ public:
             s_loadFutures_[id] = fut;
         }
 
-        auto     t0   = std::chrono::steady_clock::now();
-        GError * gerr = nullptr;
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        RsvgHandle * raw = rsvg_handle_new_from_data(reinterpret_cast<const guint8 *>(svgData.data()),
+        auto         t0   = std::chrono::steady_clock::now();
+        GError *     gerr = nullptr;
+        RsvgHandle * raw  = rsvg_handle_new_from_data(Common::asBytes(svgData.data()),
                                                      static_cast<gsize>(svgData.size()),
                                                      &gerr);
         auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();

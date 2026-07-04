@@ -1,5 +1,5 @@
 {
-  "_comment": "Default icons + placement for UI roles. Two kinds of entries: aliases (icon ends in .svg) and roles (icon is the name of another entry). Resolution follows 'icon' recursively until a .svg is found. 'place' resolves the same way; explicit value at any level overrides the parent. Default place: left.",
+  "_comment": "Default icons + placement for UI roles. Two kinds of entries: aliases (icon ends in .svg) and roles (icon names an alias). Resolution is a SINGLE hop - a role must point directly at an alias; role-to-role chains resolve to empty. 'place' is each entry's own value (default: left), never inherited across the hop.",
   "window-icon": {
     "icon": "logo-2.svg"
   },

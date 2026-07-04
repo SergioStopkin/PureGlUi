@@ -270,7 +270,7 @@ public:
         return nullptr;
     }
 
-    const UiElement * parentOf(const UiElement & child) const
+    [[nodiscard]] const UiElement * parentOf(const UiElement & child) const
     {
         for (const auto & el : m_elements) {
             if (el.id == child.id && el.type != child.type) {

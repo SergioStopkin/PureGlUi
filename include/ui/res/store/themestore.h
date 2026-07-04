@@ -110,7 +110,7 @@ public:
         }
 
         // Group files by base name so a single map entry holds both variants.
-        struct theme_paths_t final {
+        struct alignas(64) theme_paths_t final {
             std::string dark;
             std::string light;
         };

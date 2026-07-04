@@ -32,7 +32,7 @@ namespace Ui::Res::Dock {
 //           recent non-zero release width so a drag-to-zero (collapse)
 //           preserves "what to come back to". Falls back to
 //           dock_config_t::defaultWidth on first ever expand.
-struct alignas(16) dock_state_t final {
+struct alignas(8) dock_state_t final {
     fpx_t width {};
     fpx_t memoryX {};
 

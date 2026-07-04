@@ -47,5 +47,6 @@ fi
 
 CMAKE_ARGS="$CMAKE_ARGS -DTARGET_SRC=$TARGET_SRC -DWITH_WAYLAND=OFF"
 
-cmake -S $CMAKE_SOURCE_DIR -B $BUILD_DIR -DPROJECT_NAME=$PROJECT_NAME $CMAKE_ARGS
+# || exit: a failed configure must not fall through to building the stale cache
+cmake -S $CMAKE_SOURCE_DIR -B $BUILD_DIR -DPROJECT_NAME=$PROJECT_NAME $CMAKE_ARGS || exit
 cmake --build $BUILD_DIR --parallel $JOBS --target $TARGET $BUILD_ARGS

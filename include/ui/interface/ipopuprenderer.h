@@ -30,7 +30,7 @@ namespace Ui {
  * @brief Interface for popup-type renderers with software rounded corners
  *
  * Extends IRenderer with corner pixel upload for SDF-based corner blending.
- * Implemented by PopupUiRenderer and DialogRenderer.
+ * Implemented by PopupRenderer and DialogRenderer.
  */
 class IPopupRenderer : public Ui::IRenderer {
 public:

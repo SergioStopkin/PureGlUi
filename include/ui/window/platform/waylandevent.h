@@ -126,7 +126,7 @@ public:
     /**
      * @brief Register the popup window for event routing
      */
-    void addPopupWindow(NativeWindowHandle) override { }
+    void addPopupWindow(NativeWindowHandle /*handle*/) override { }
 
     void removePopupWindow(NativeWindowHandle handle) override
     {

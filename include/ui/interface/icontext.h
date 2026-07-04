@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "ui/type.h"
 #include "ui/window/nativedisplayhandle.h"
 #include "ui/window/nativewindowhandle.h"
 
@@ -50,6 +51,26 @@ public:
     virtual bool chooseConfig(bool wantAlpha, bool wantMsaa) = 0;
 
     /**
+     * @brief Choose a config matching a specific native visual id
+     * @param visualId Native visual id to match (X11 VisualID, etc.)
+     * @param wantMsaa Prefer configs with multisampling
+     * @return true if a matching config was found
+     */
+    virtual bool chooseConfigForVisual(uint64_t visualId, bool wantMsaa) = 0;
+
+    /**
+     * @brief Cache the current display+config so a sibling context can reuse them.
+     */
+    virtual void cacheConfig() = 0;
+
+    /**
+     * @brief Initialize from a previously cached display+config, skipping the
+     * slow init + config search.
+     * @return false if nothing has been cached yet
+     */
+    virtual bool initCachedConfig(Ui::Window::NativeDisplayHandle display) = 0;
+
+    /**
      * @brief Get native visual ID for window creation
      * @return Visual ID (X11 VisualID, etc.)
      */
@@ -61,6 +82,15 @@ public:
      * @return true on success
      */
     virtual bool createSurface(Ui::Window::NativeWindowHandle window) = 0;
+
+    /**
+     * @brief Create surface for a window with explicit size (required for Wayland)
+     * @param window Native window handle
+     * @param width Surface width
+     * @param height Surface height
+     * @return true on success
+     */
+    virtual bool createSurface(Ui::Window::NativeWindowHandle window, fpx_t width, fpx_t height) = 0;
 
     /**
      * @brief Create the OpenGL context
@@ -78,6 +108,13 @@ public:
      * @brief Swap front/back buffers
      */
     virtual void swapBuffers() = 0;
+
+    /**
+     * @brief Resize the context's drawable (no-op where the surface tracks the window)
+     * @param width New width
+     * @param height New height
+     */
+    virtual void resize(fpx_t width, fpx_t height) = 0;
 
     /**
      * @brief Release context (make none current)

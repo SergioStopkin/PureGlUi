@@ -19,6 +19,7 @@
 
 #include "common/fs.h"
 #include "common/json.h"
+#include "common/noncopyable.h"
 #include "common/sanitize.h"
 #include "nlohmann/json.hpp"
 #include "ui/convert.h"
@@ -52,7 +53,7 @@ namespace Ui::Res::Store {
 // for the theme submenu, layout for popup metrics, locale for display names),
 // so ResManager injects them by reference. loadMenus/loadButtons return their
 // Changed bit; buildActionMap is a pure rebuild over the loaded menus/buttons.
-class MenuStore final {
+class MenuStore final : private Common::NonCopyable {
     // Injected collaborators (owned by ResManager; named to match so the loader
     // bodies read naturally). All outlive this store.
     Ui::Res::LocaleManager &   m_localeManager;
@@ -66,7 +67,7 @@ class MenuStore final {
     std::unordered_map<id_t, std::string> m_actionMap; // element id -> actionKey (menus + items + buttons)
     // Current value of each stateful (radio) action; a menu item highlights when
     // item.label == m_actionState[item.actionKey](). Providers are host-wired.
-    std::unordered_map<std::string, std::function<std::string()>> m_actionState;
+    std::unordered_map<std::string, Ui::provider_fn_t> m_actionState;
 
 public:
     MenuStore(Ui::Res::LocaleManager &   localeManager,
@@ -104,7 +105,7 @@ public:
 
     // Register a host-provided value getter for a stateful (radio) action's menu
     // highlight (SetDisplayMode/SetAmbience live host-side; SwitchTheme internal).
-    void setActionValueProvider(const std::string & actionKey, std::function<std::string()> provider)
+    void setActionValueProvider(const std::string & actionKey, Ui::provider_fn_t provider)
     {
         m_actionState[actionKey] = std::move(provider);
     }
@@ -157,55 +158,37 @@ public:
     // submenus so radio-group children are caught).
     void setActionEnabled(const std::string & actionKey, bool enabled)
     {
-        const auto walk = [&actionKey, enabled](auto & self, std::vector<Ui::Res::Type::menu_t> & items) -> void {
-            for (Ui::Res::Type::menu_t & item : items) {
-                if (item.actionKey == actionKey) {
-                    item.enabled = enabled;
-                }
-                if (!item.items.empty()) {
-                    self(self, item.items);
-                }
-            }
-        };
         for (Ui::Res::Type::menu_t & menu : m_menus) {
-            walk(walk, menu.items);
+            setEnabledInTree(actionKey, {}, enabled, menu.items);
         }
     }
 
     // Per-(action,label) enable/disable, for parameterised actions where many
     // items share one actionKey and the label identifies which preset is gated.
+    // label must be non-empty: an empty label is reserved as the match-any
+    // wildcard inside the shared walker (that is setActionEnabled's job).
     void setMenuItemEnabled(const std::string & actionKey, const std::string & label, bool enabled)
     {
-        const auto walk = [&actionKey, &label, enabled](auto &                               self,
-                                                        std::vector<Ui::Res::Type::menu_t> & items) -> void {
-            for (Ui::Res::Type::menu_t & item : items) {
-                if (item.actionKey == actionKey && item.label == label) {
-                    item.enabled = enabled;
-                }
-                if (!item.items.empty()) {
-                    self(self, item.items);
-                }
-            }
-        };
         for (Ui::Res::Type::menu_t & menu : m_menus) {
-            walk(walk, menu.items);
+            setEnabledInTree(actionKey, label, enabled, menu.items);
         }
     }
 
     // Disable menu nodes that can do nothing (the recursive collapse lives in
     // Ui::Res::Store::disableUnhandled); this exposes it over the private m_menus.
-    void disableUnhandledMenuItems(const std::function<bool(const std::string &)> & isHandled)
-    {
-        disableUnhandled(m_menus, isHandled);
-    }
+    void disableUnhandledMenuItems(const Ui::predicate_fn_t & isHandled) { disableUnhandled(m_menus, isHandled); }
 
-    Ui::Res::Type::menu_t parseMenuItem(const nlohmann::json & itemJson) const
+    // Recursive by design: builds the nested menu_t tree bottom-up. An iterative
+    // builder would hold references into item vectors that reallocate as siblings
+    // append (dangling refs). Depth is capped by --menu-max-depth at each descent.
+    // NOLINTNEXTLINE(misc-no-recursion)
+    Ui::Res::Type::menu_t parseMenuItem(const nlohmann::json & itemJson, int depth) const
     {
         Ui::Res::Type::menu_t item;
-        item.label             = itemJson.value("label", "");
-        item.actionKey         = itemJson.value("action", "");
+        item.label             = Common::Sanitize::string(itemJson.value("label", ""), "menu.label");
+        item.actionKey         = Common::Sanitize::string(itemJson.value("action", ""), "menu.action");
         item.showsThemePreview = (item.actionKey == "SwitchTheme");
-        item.shortcut          = itemJson.value("shortcut", "");
+        item.shortcut          = Common::Sanitize::string(itemJson.value("shortcut", ""), "menu.shortcut");
         item.icon              = Common::Sanitize::filePath(itemJson.value("icon", ""), "menu.icon");
         item.separator         = itemJson.value("separator", false);
         item.enabled           = itemJson.value("enabled", true);
@@ -221,15 +204,25 @@ public:
         if (itemJson.contains("submenus")) {
             const auto & subs = itemJson["submenus"];
             if (subs.is_array()) {
-                for (const auto & subJson : subs) {
-                    item.items.emplace_back(parseMenuItem(subJson));
+                // Depth cap from layout.json (--menu-max-depth = N allows N levels):
+                // bounds the parser recursion - and thereby every downstream
+                // menu-tree walk - against a malformed/hostile res JSON. Children
+                // past the cap are dropped.
+                if (depth + 1 > m_layoutStore.layout().menuMaxDepth) {
+                    std::cerr << "[MenuStore] menu depth cap (" << m_layoutStore.layout().menuMaxDepth
+                              << ") reached at item: " << item.label << " - submenu ignored" << std::endl;
+                } else {
+                    for (const auto & subJson : subs) {
+                        item.items.emplace_back(parseMenuItem(subJson, depth + 1));
+                    }
                 }
             } else if (subs.is_object() && subs.contains("auto") && subs["auto"].is_string()) {
-                item.submenu = subs["auto"].get<std::string>();
+                item.submenu = Common::Sanitize::string(subs["auto"].get<std::string>(), "menu.submenu");
                 // actionKey fired by each auto-generated child (opaque string from
                 // JSON). An unknown key simply dispatches to nothing - inert.
                 if (subs.contains("action") && subs["action"].is_string()) {
-                    item.submenuActionKey = subs["action"].get<std::string>();
+                    item.submenuActionKey = Common::Sanitize::string(subs["action"].get<std::string>(),
+                                                                     "menu.submenuAction");
                 }
             }
         }
@@ -238,9 +231,9 @@ public:
         if (hasDialog) {
             const auto & dlg    = itemJson["dialog"];
             item.dialog.type    = Ui::Res::Type::dialogTypeFromName(dlg.value("type", "Info"));
-            item.dialog.title   = dlg.value("title", "");
-            item.dialog.content = dlg.value("content", "");
-            item.dialog.link    = dlg.value("link", "");
+            item.dialog.title   = Common::Sanitize::string(dlg.value("title", ""), "dialog.title");
+            item.dialog.content = Common::Sanitize::string(dlg.value("content", ""), "dialog.content");
+            item.dialog.link    = Common::Sanitize::string(dlg.value("link", ""), "dialog.link");
             item.dialog.icon    = Common::Sanitize::filePath(dlg.value("icon", ""), "dialog.icon");
             item.dialog.file    = Common::Sanitize::filePath(dlg.value("file", ""), "dialog.file");
             item.dialog.width   = Ui::Convert::parseCssNumber(dlg.value("width", ""));
@@ -284,15 +277,15 @@ public:
                 }
 
                 Ui::Res::Type::menu_t menu;
-                menu.label     = j.value("label", "");
+                menu.label     = Common::Sanitize::string(j.value("label", ""), "menu.label");
                 menu.order     = j.value("order", int16_t {});
                 menu.visible   = j.value("visible", true);
                 menu.icon      = Common::Sanitize::filePath(j.value("icon", ""), "menu.icon");
-                menu.actionKey = j.value("action", "");
+                menu.actionKey = Common::Sanitize::string(j.value("action", ""), "menu.action");
 
                 if (j.contains("items") && j["items"].is_array()) {
                     for (const auto & itemJson : j["items"]) {
-                        menu.items.emplace_back(parseMenuItem(itemJson));
+                        menu.items.emplace_back(parseMenuItem(itemJson, 1));
                     }
                 }
 
@@ -413,8 +406,8 @@ public:
                 }
 
                 Ui::Res::Type::button_t btn;
-                btn.label     = j.value("label", "");
-                btn.actionKey = j.value("action", "");
+                btn.label     = Common::Sanitize::string(j.value("label", ""), "button.label");
+                btn.actionKey = Common::Sanitize::string(j.value("action", ""), "button.action");
                 btn.icon      = Common::Sanitize::filePath(j.value("icon", ""), "button.icon");
                 btn.tooltip   = j.value("tooltip", "");
                 btn.width     = j.value("width", fpx_t {});
@@ -455,7 +448,7 @@ public:
             return items;
         }
 
-        struct entry_t {
+        struct alignas(128) entry_t {
             int         order = 0;
             std::string key;
             std::string display;
@@ -473,7 +466,7 @@ public:
             } catch (const std::exception &) {
                 continue;
             }
-            const std::string display = j.value("name", std::string {});
+            const std::string display = Common::Sanitize::string(j.value("name", std::string {}), "submenu.name");
             if (display.empty()) {
                 continue;
             }
@@ -527,6 +520,30 @@ public:
         }
         for (const auto & btn : m_buttons) {
             registerItem(btn.id, btn.actionKey);
+        }
+    }
+
+private:
+    // Shared walker for the enable/disable setters: marks every item bound to
+    // `actionKey` (and, when `label` is non-empty, matching that label too).
+    // Iterative worklist walk - visit order does not matter here.
+    static void setEnabledInTree(const std::string &                  actionKey,
+                                 const std::string &                  label,
+                                 bool                                 enabled,
+                                 std::vector<Ui::Res::Type::menu_t> & items)
+    {
+        std::vector<std::reference_wrapper<std::vector<Ui::Res::Type::menu_t>>> pending { items };
+        while (!pending.empty()) {
+            std::vector<Ui::Res::Type::menu_t> & current = pending.back();
+            pending.pop_back();
+            for (Ui::Res::Type::menu_t & item : current) {
+                if (item.actionKey == actionKey && (label.empty() || item.label == label)) {
+                    item.enabled = enabled;
+                }
+                if (!item.items.empty()) {
+                    pending.emplace_back(item.items);
+                }
+            }
         }
     }
 };

@@ -20,6 +20,7 @@
 #include "common/unicode.h"
 #include "ui/gl/textalign.h"
 #include "ui/render/popup/popuprendererbase.h"
+#include "ui/render/uielementstate.h"
 #include "ui/res/type/dialog.h"
 #include "ui/type.h"
 
@@ -56,15 +57,14 @@ class DialogRenderer final : public PopupRendererBase {
 public:
     using DialogCloseFn = std::function<void(Ui::Res::Type::DialogAction)>;
 
-    DialogRenderer(Ui::IWindow & window, const Ui::Res::ResManager & resManager, const Ui::Res::Type::dialog_t & dialog)
-        : PopupRendererBase(window, resManager)
+    DialogRenderer(Ui::task_fn_t                   makeCurrent,
+                   const Ui::Res::ResManager &     resManager,
+                   const Ui::Res::Type::dialog_t & dialog)
+        : PopupRendererBase(std::move(makeCurrent), resManager)
         , m_dialog(dialog)
+        , m_font(m_fontRenderer.createFont(resManager.theme().dialogFont))
+        , m_titleFont(m_fontRenderer.createFont(resManager.theme().dialogTitleFont))
     {
-        if (m_uiRender->fontRenderer() != nullptr) {
-            m_font      = m_uiRender->fontRenderer()->createFont(m_resManager.theme().dialogFont);
-            m_titleFont = m_uiRender->fontRenderer()->createFont(m_resManager.theme().dialogTitleFont);
-        }
-
         // Cache SVG icon keys
         if (!m_dialog.icon.empty()) {
             const std::string iconPath = m_resManager.resPath().icon(m_dialog.icon);
@@ -78,15 +78,8 @@ public:
 
     ~DialogRenderer() override { cleanup(); }
 
-    DialogRenderer(const DialogRenderer &)             = delete;
-    DialogRenderer(DialogRenderer &&)                  = delete;
-    DialogRenderer & operator=(const DialogRenderer &) = delete;
-    DialogRenderer & operator=(DialogRenderer &&)      = delete;
-
-    using RenderRequestFn = std::function<void()>;
-
     void setCloseCallback(DialogCloseFn fn) { m_onClose = std::move(fn); }
-    void setRenderRequest(RenderRequestFn fn) { m_renderRequest = std::move(fn); }
+    void setRenderRequest(Ui::task_fn_t fn) { m_renderRequest = std::move(fn); }
 
     void confirmPrimary()
     {
@@ -247,7 +240,7 @@ public:
         return true;
     }
 
-    bool onMousePress(int x, int y, int /*clickCount*/ = 1) override
+    bool onMousePress(int x, int y, int /*clickCount*/) override
     {
         const fpx_t cssX = toCss(x);
         const fpx_t cssY = toCss(y);
@@ -473,9 +466,9 @@ private:
         fpx_t totalW = 0;
         for (auto & btn : m_buttons) {
             fpx_t textW = layout.dialogButtonMinW;
-            if (m_uiRender && m_uiRender->fontRenderer() != nullptr && m_font != 0) {
+            if (m_font != 0) {
                 const std::string & text = m_resManager.localeManager().get(btn.label);
-                auto                tw   = m_uiRender->fontRenderer()->textWidth(m_font, text);
+                auto                tw   = m_fontRenderer.textWidth(m_font, text);
                 textW                    = std::max(layout.dialogButtonMinW, tw + layout.dialogButtonPad * 2);
             }
             btn.bound = { 0, btnY, textW, layout.dialogButtonH };
@@ -505,7 +498,7 @@ private:
 
     void renderDialog(bool premultiplied)
     {
-        if (!m_uiRender || m_window == nullptr) {
+        if (m_width <= 0 || m_height <= 0) {
             return;
         }
 
@@ -552,10 +545,7 @@ private:
 
         Ui::Gl::Rounded::end();
 
-        auto * fontRenderer = m_uiRender->fontRenderer();
-        if (fontRenderer == nullptr) {
-            return;
-        }
+        auto & fontRenderer = m_fontRenderer;
 
         // SVG icons (fixed-function pipeline)
         beginSvgDraw();
@@ -591,9 +581,9 @@ private:
         // Title text
         const std::string & titleText = m_resManager.localeManager().get(m_dialog.title);
         if (!titleText.empty() && m_titleFont != 0) {
-            auto * titleFr = fontRenderer->font(m_titleFont);
+            auto * titleFr = fontRenderer.font(m_titleFont);
             if (titleFr != nullptr && titleFr->program != 0U) {
-                const auto textW    = fontRenderer->textWidth(m_titleFont, titleText);
+                const auto textW    = fontRenderer.textWidth(m_titleFont, titleText);
                 const auto startX   = Ui::Gl::TextAlign::startXCenter({ 0, 0, cssW, 0 }, textW, g_config.scale);
                 const auto baseline = titleFr->metrics.baselineCap(m_resManager.layout().dialog.padding,
                                                                    m_resManager.layout().dialogTitleHeight,
@@ -613,7 +603,7 @@ private:
             contentText = Common::Unicode::fromUtf8(m_resManager.localeManager().get(m_dialog.content));
         }
         if (!contentText.empty() && m_font != 0) {
-            auto * fr = fontRenderer->font(m_font);
+            auto * fr = fontRenderer.font(m_font);
             if (fr != nullptr && fr->program != 0U) {
                 const auto & layout = m_resManager.layout();
                 m_lineHeight        = fr->metrics.height * m_resManager.theme().dialogLineHeight;
@@ -743,7 +733,7 @@ private:
         if (m_dialog.type == Ui::Res::Type::DialogType::InfoLink && !m_dialog.link.empty() && m_font != 0) {
             const std::string & linkText = m_resManager.localeManager().get(m_dialog.link);
             if (!linkText.empty()) {
-                auto * fr = fontRenderer->font(m_font);
+                auto * fr = fontRenderer.font(m_font);
                 if (fr != nullptr && fr->program != 0U) {
                     const fpx_t lineH = fr->metrics.height * m_resManager.theme().dialogLineHeight;
                     const fpx_t linkY = cssH - m_resManager.layout().dialog.padding
@@ -761,7 +751,7 @@ private:
 
         // Button text
         if (m_font != 0) {
-            auto * fr = fontRenderer->font(m_font);
+            auto * fr = fontRenderer.font(m_font);
             if (fr != nullptr && fr->program != 0U) {
                 for (const auto & btn : m_buttons) {
                     const std::string & text = m_resManager.localeManager().get(btn.label);
@@ -774,7 +764,7 @@ private:
                                                           ? shiftedBound(btn.bound,
                                                                          m_resManager.layout().dialogButtonShift)
                                                           : btn.bound;
-                    const auto                   tw       = fontRenderer->textWidth(m_font, text);
+                    const auto                   tw       = fontRenderer.textWidth(m_font, text);
                     const auto                   startX = Ui::Gl::TextAlign::startXCenter(btnBound, tw, g_config.scale);
                     const auto baseline = fr->metrics.baselineCap(btnBound.y, btnBound.h, g_config.scale);
                     auto       verts    = Ui::Gl::FontRenderer::buildTextVerts(*fr, text, startX, baseline);
@@ -825,7 +815,7 @@ private:
     fpx_t                                 m_dragStartY {};
     fpx_t                                 m_dragStartScroll {};
     std::chrono::steady_clock::time_point m_lastFrameTime {};
-    RenderRequestFn                       m_renderRequest;
+    Ui::task_fn_t                         m_renderRequest;
 
     // Keyboard animation state
     size_t                                m_keyboardFocus = Ui::INVALID_ID;

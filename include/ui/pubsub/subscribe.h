@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
 #include "ui/type.h"
 
 #include <algorithm>
@@ -26,31 +27,26 @@
 
 namespace Ui::PubSub {
 
-class Subscribe final {
-    struct alignas(32) entry_t final {
-        id_t                  source {};
-        id_t                  subscriber {};
-        std::function<void()> callback;
+class Subscribe final : private Common::NonCopyable {
+    struct alignas(64) entry_t final {
+        id_t          source {};
+        id_t          subscriber {};
+        Ui::task_fn_t callback;
     };
 
-    std::vector<entry_t>               m_entries;
-    std::vector<std::function<void()>> m_deferred;
+    std::vector<entry_t>       m_entries;
+    std::vector<Ui::task_fn_t> m_deferred;
 
 public:
     Subscribe()  = default;
     ~Subscribe() = default;
 
-    Subscribe(const Subscribe &)             = delete;
-    Subscribe(Subscribe &&)                  = delete;
-    Subscribe & operator=(const Subscribe &) = delete;
-    Subscribe & operator=(Subscribe &&)      = delete;
-
-    void add(id_t source, id_t subscriber, std::function<void()> callback)
+    void add(id_t source, id_t subscriber, Ui::task_fn_t callback)
     {
         m_entries.emplace_back(entry_t { source, subscriber, std::move(callback) });
     }
 
-    void add(std::initializer_list<id_t> sources, id_t subscriber, std::function<void()> callback)
+    void add(std::initializer_list<id_t> sources, id_t subscriber, const Ui::task_fn_t & callback)
     {
         for (const id_t source : sources) {
             m_entries.emplace_back(entry_t { source, subscriber, callback });
@@ -78,12 +74,15 @@ public:
         }
     }
 
-    void defer(std::function<void()> action) { m_deferred.emplace_back(std::move(action)); }
+    void defer(Ui::task_fn_t action) { m_deferred.emplace_back(std::move(action)); }
 
     void drainDeferred()
     {
         while (!m_deferred.empty()) {
             auto actions = std::move(m_deferred);
+            // A moved-from vector is valid-but-unspecified; reset to a known-empty
+            // state so the loop condition and any re-entrant defer() are well-defined.
+            m_deferred.clear();
             for (auto & action : actions) {
                 if (action) {
                     action();

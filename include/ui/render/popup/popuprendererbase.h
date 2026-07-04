@@ -18,6 +18,7 @@
 #pragma once
 
 #include "common/bit.h"
+#include "common/noncopyable.h"
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/fontrenderer.h"
@@ -25,10 +26,9 @@
 #include "ui/gl/rounded.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/interface/ipopuprenderer.h"
-#include "ui/interface/iwindow.h"
-#include "ui/render/uirenderer.h"
+#include "ui/type.h"
 
-#include <memory>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -40,25 +40,29 @@ namespace Ui::Render::Popup {
  * Provides common GL setup, text rendering, SVG icon rendering,
  * corner pixel management, and boilerplate Ui::IRenderer overrides.
  */
-class PopupRendererBase : public Ui::IPopupRenderer {
+class PopupRendererBase : public Ui::IPopupRenderer, private Common::NonCopyable {
 public:
-    PopupRendererBase(Ui::IWindow & window, const Ui::Res::ResManager & resManager)
+    // The window layer makes its context current before constructing/driving the
+    // renderer; the renderer only needs an abstract "make current" capability
+    // (passed to its FontRenderer for lazy glyph upload + teardown).
+    PopupRendererBase(Ui::task_fn_t makeCurrent, const Ui::Res::ResManager & resManager)
         : m_resManager(resManager)
-        , m_window(&window)
+        , m_makeCurrent(std::move(makeCurrent))
+        , m_fontRenderer(m_makeCurrent, resManager.resPath().fontDir())
     {
-        m_window->makeCurrent();
-        m_uiRender = std::make_unique<Ui::Render::UiRenderer>([w = &window] { w->makeCurrent(); },
-                                                              window.bound().w,
-                                                              window.bound().h,
-                                                              m_resManager);
     }
 
-    ~PopupRendererBase() override = default;
-
-    PopupRendererBase(const PopupRendererBase &)             = delete;
-    PopupRendererBase(PopupRendererBase &&)                  = delete;
-    PopupRendererBase & operator=(const PopupRendererBase &) = delete;
-    PopupRendererBase & operator=(PopupRendererBase &&)      = delete;
+    ~PopupRendererBase() override
+    {
+        // A dtor body runs before members are destroyed: make our window's GL
+        // context current here so the Rounded/Svg/Font members below glDelete in
+        // THIS context, not whatever is current at destruction time. Contexts are
+        // not shared, so deleting in the wrong one destroys another window's GL
+        // objects of the same numeric ids and blanks it.
+        if (m_makeCurrent) {
+            m_makeCurrent();
+        }
+    }
 
     // -- Ui::IPopupRenderer --
 
@@ -93,24 +97,24 @@ public:
 
     void cleanup() override
     {
-        m_uiRender.reset();
-        m_window = nullptr;
+        if (m_makeCurrent) {
+            m_makeCurrent();
+        }
         m_rounded.cleanup();
     }
 
-    bool onScroll(int, int, fpx_t) override { return false; }
+    bool onScroll(int /*x*/, int /*y*/, fpx_t /*deltaY*/) override { return false; }
 
 protected:
     // Begin a render frame: clear, viewport, blend, corner underlay.
     // Returns true if premultiplied alpha is active.
     bool beginRender()
     {
-        if (!m_uiRender || m_window == nullptr || m_width <= 0 || m_height <= 0) {
+        if (m_width <= 0 || m_height <= 0) {
             return false;
         }
 
-        m_window->makeCurrent();
-
+        // Context is already current: the window made it so before driving render().
         const bool usePremultiplied = m_rounded.hasAlpha() || m_rounded.hasCornerPixels();
 
         if (usePremultiplied) {
@@ -170,13 +174,13 @@ protected:
 
     // -- Shared members --
 
-    const Ui::Res::ResManager &             m_resManager;
-    Ui::IWindow *                           m_window = nullptr;
-    std::unique_ptr<Ui::Render::UiRenderer> m_uiRender;
-    fpx_t                                   m_width  = 0;
-    fpx_t                                   m_height = 0;
-    Ui::Gl::SvgRenderer                     m_svgRenderer;
-    Ui::Gl::Rounded                         m_rounded;
+    const Ui::Res::ResManager & m_resManager;
+    Ui::task_fn_t               m_makeCurrent; // makes this renderer's window context current (for GL teardown)
+    fpx_t                       m_width  = 0;
+    fpx_t                       m_height = 0;
+    Ui::Gl::FontRenderer        m_fontRenderer;
+    Ui::Gl::SvgRenderer         m_svgRenderer;
+    Ui::Gl::Rounded             m_rounded;
 };
 
 } // namespace Ui::Render::Popup

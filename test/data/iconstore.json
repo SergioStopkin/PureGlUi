@@ -1,0 +1,10 @@
+{
+  "_comment": "Fixture for TestIconStore - synthetic names, not real UI data.",
+  "leaf": { "icon": "leaf.svg", "place": "right" },
+  "alias": { "icon": "alias.svg" },
+  "role": { "icon": "alias" },
+  "rolePlaced": { "icon": "alias", "place": "right" },
+  "roleNoInherit": { "icon": "leaf" },
+  "broken": { "icon": "missing" },
+  "bad": "not-an-object"
+}

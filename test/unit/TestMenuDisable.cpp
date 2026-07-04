@@ -26,8 +26,8 @@
 
 #include "ui/res/store/menudisable.h"
 #include "ui/res/type/menu.h"
+#include "ui/type.h"
 
-#include <functional>
 #include <gtest/gtest.h>
 #include <set>
 #include <string>
@@ -74,12 +74,12 @@ menu_t parent(std::vector<menu_t> children)
 }
 
 // Predicate: only the listed keys report as handled.
-std::function<bool(const std::string &)> handled(std::set<std::string> keys)
+Ui::predicate_fn_t handled(std::set<std::string> keys)
 {
     return [keys = std::move(keys)](const std::string & key) { return keys.count(key) > 0; };
 }
 
-std::function<bool(const std::string &)> noneHandled() { return handled({}); }
+Ui::predicate_fn_t noneHandled() { return handled({}); }
 
 } // namespace
 

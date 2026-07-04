@@ -58,16 +58,13 @@ public:
     }
     ~Win32Window() override
     {
-        if (renderer()) {
-            renderer()->cleanup();
+        if (m_renderer) {
+            m_renderer->cleanup();
         }
-        destroy();
+        // Qualified: in a destructor virtual dispatch stops at this class anyway;
+        // spelling it out documents that and keeps derived overrides out of play.
+        Win32Window::destroy();
     }
-
-    Win32Window(const Win32Window &)             = delete;
-    Win32Window(Win32Window &&)                  = delete;
-    Win32Window & operator=(const Win32Window &) = delete;
-    Win32Window & operator=(Win32Window &&)      = delete;
 
     // -------- Ui::IWindow implementation --------
 
@@ -75,9 +72,9 @@ public:
 
     bool create(fpx_t               width,
                 fpx_t               height,
-                NativeDisplayHandle display      = nullptr,
-                NativeWindowHandle  parentWindow = nullptr,
-                const std::string & title        = "PureGlUi") override
+                NativeDisplayHandle display,
+                NativeWindowHandle  parentWindow,
+                const std::string & title) override
     {
         (void)display;
 
@@ -148,7 +145,7 @@ public:
                                      nullptr,
                                      hInstance,
                                      this);
-            SetWindowLongPtrW(m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+            SetWindowLongPtrW(m_hwnd, GWLP_USERDATA, asUserData(this));
         }
 
         // Child windows (content surface) - the content surface manages its own GL context on the HWND.
@@ -346,14 +343,14 @@ public:
         g_object_unref(handle);
 
         if (hSmall != nullptr) {
-            SendMessageW(m_hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hSmall));
+            SendMessageW(m_hwnd, WM_SETICON, ICON_SMALL, asLParam(hSmall));
             if (m_hIconSmall != nullptr) {
                 DestroyIcon(m_hIconSmall);
             }
             m_hIconSmall = hSmall;
         }
         if (hBig != nullptr) {
-            SendMessageW(m_hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(hBig));
+            SendMessageW(m_hwnd, WM_SETICON, ICON_BIG, asLParam(hBig));
             if (m_hIconBig != nullptr) {
                 DestroyIcon(m_hIconBig);
             }
@@ -442,10 +439,10 @@ public:
     // WM_CLOSE is re-posted as WM_APP_CLOSE so pollEvent() can pick it up.
     static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
-        auto * self = reinterpret_cast<Win32Window *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        auto * self = fromUserData(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         switch (msg) {
         case WM_SIZE:
-            if (self) {
+            if (self != nullptr) {
                 RECT rect;
                 GetClientRect(hwnd, &rect);
                 self->syncDimensions(static_cast<fpx_t>(rect.right - rect.left),
@@ -461,6 +458,39 @@ public:
     }
 
 private:
+    // BITMAPV5HEADER is the extended first member of the BITMAPINFO layout;
+    // CreateDIBSection reads it through BITMAPINFO* (Win32 idiom). Project rule:
+    // no reinterpret_cast - the two-step static_cast through void* is the same
+    // defined operation, and this named helper is its single home.
+    static BITMAPINFO * asBitmapInfo(BITMAPV5HEADER * header)
+    {
+        return static_cast<BITMAPINFO *>(static_cast<void *>(header));
+    }
+
+    // GWLP_USERDATA stashes `this` for the static windowProc. LONG_PTR is an
+    // integer, so static_cast cannot express the conversion - these named
+    // helpers are the sanctioned reinterpret_cast exception (int<->ptr, Win32
+    // API contract).
+    static LONG_PTR asUserData(Win32Window * self)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return reinterpret_cast<LONG_PTR>(self);
+    }
+
+    static Win32Window * fromUserData(LONG_PTR userData)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
+        return reinterpret_cast<Win32Window *>(userData);
+    }
+
+    // WM_SETICON passes the HICON through the integer LPARAM - same sanctioned
+    // int<->ptr exception as above.
+    static LPARAM asLParam(HICON icon)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return reinterpret_cast<LPARAM>(icon);
+    }
+
     // Render an SVG at a given size into a Windows HICON with alpha.
     // Cairo's CAIRO_FORMAT_ARGB32 on little-endian is B,G,R,A in memory -
     // matches the BGRA layout a 32-bit DIB with BI_BITFIELDS expects, so
@@ -511,8 +541,7 @@ private:
 
         HDC     screenDC = GetDC(nullptr);
         void *  bits     = nullptr;
-        HBITMAP colorBmp =
-        CreateDIBSection(screenDC, reinterpret_cast<BITMAPINFO *>(&bi), DIB_RGB_COLORS, &bits, nullptr, 0);
+        HBITMAP colorBmp = CreateDIBSection(screenDC, asBitmapInfo(&bi), DIB_RGB_COLORS, &bits, nullptr, 0);
         ReleaseDC(nullptr, screenDC);
 
         HICON hIcon = nullptr;

@@ -49,20 +49,17 @@ public:
     }
     ~MacOsWindow() override
     {
-        if (renderer()) {
-            renderer()->cleanup();
+        if (m_renderer) {
+            m_renderer->cleanup();
         }
         // Tear the renderer down while the GL context is still alive.
         // ~WindowBase would otherwise destroy it *after* destroy() has released the NSOpenGLView,
         // leaving the renderer's ~dtor calling glDelete* against a dead context.
         setRenderer(nullptr);
-        destroy();
+        // Qualified: in a destructor virtual dispatch stops at this class anyway;
+        // spelling it out documents that and keeps derived overrides out of play.
+        MacOsWindow::destroy();
     }
-
-    MacOsWindow(const MacOsWindow&) = delete;
-    MacOsWindow(MacOsWindow&&) = delete;
-    MacOsWindow& operator=(const MacOsWindow&) = delete;
-    MacOsWindow& operator=(MacOsWindow&&) = delete;
 
     // -------- Ui::IWindow implementation --------
 
@@ -147,8 +144,8 @@ public:
         }
     }
 
-    bool create(fpx_t width, fpx_t height, NativeDisplayHandle /*display*/ = nullptr, NativeWindowHandle parentWindow = nullptr,
-        const std::string& title = "PureGlUi") override
+    bool create(fpx_t width, fpx_t height, NativeDisplayHandle /*display*/, NativeWindowHandle parentWindow,
+        const std::string& title) override
     {
         // Parent given -> embed as a subview of the parent window (NativeWindowHandle is NSView*).
         if (parentWindow) {

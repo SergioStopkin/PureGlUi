@@ -30,7 +30,7 @@ namespace Ui::Res::Dock {
 //
 // No min/max width bounds: floor is 0 (clamped in DockColumn::onMouseMove),
 // ceiling is the dynamic viewport-available space (clamped by WindowManager).
-struct alignas(32) dock_layout_t final {
+struct alignas(64) dock_layout_t final {
     fpx_t       gripWidth {};      // grip-strip width (Inkscape-style 3-dot handle)
     fpx_t       gripRadius {};     // grip corner radius on the viewport-facing edge (0 = sharp)
     fpx_t       clickThreshold {}; // drag distance under this counts as a click, not a resize

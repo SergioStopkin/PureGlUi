@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
 #include "ui/color.h"
 #include "ui/const.h"
 #include "ui/gl/glutil.h"
@@ -64,16 +65,11 @@ namespace Ui::Gl {
  *   m_rounded.draw(bound, radii, fgColor, bgColor);
  *   m_rounded.end();
  */
-class Rounded final {
+class Rounded final : private Common::NonCopyable {
 public:
     Rounded() = default;
 
     ~Rounded() { cleanup(); }
-
-    Rounded(const Rounded &)             = delete;
-    Rounded(Rounded &&)                  = delete;
-    Rounded & operator=(const Rounded &) = delete;
-    Rounded & operator=(Rounded &&)      = delete;
 
     void setAlpha(bool hasAlpha) { m_hasAlpha = hasAlpha; }
 
@@ -149,6 +145,7 @@ public:
         case 1: m_cornerRadii.topRight = radius; break;
         case 2: m_cornerRadii.bottomRight = radius; break;
         case 3: m_cornerRadii.bottomLeft = radius; break;
+        default: break;
         }
 
         if (radius <= 0 || pixels.empty()) {
@@ -209,16 +206,16 @@ public:
         glBindVertexArray(m_cornerVao);
         glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 
-        const fpx_t cssRadii[4] = { m_cornerRadii.topLeft / scale,
-                                    m_cornerRadii.topRight / scale,
-                                    m_cornerRadii.bottomRight / scale,
-                                    m_cornerRadii.bottomLeft / scale };
+        const std::array<fpx_t, 4> cssRadii = { m_cornerRadii.topLeft / scale,
+                                                m_cornerRadii.topRight / scale,
+                                                m_cornerRadii.bottomRight / scale,
+                                                m_cornerRadii.bottomLeft / scale };
 
         for (id_t i = 0; i < 4; ++i) {
             if (m_cornerTex.at(i) == 0) {
                 continue;
             }
-            const fpx_t r = cssRadii[i];
+            const fpx_t r = cssRadii.at(i);
             if (r <= 0) {
                 continue;
             }

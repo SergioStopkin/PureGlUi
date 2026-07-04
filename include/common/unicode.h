@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace Common {
 
@@ -106,11 +107,19 @@ public:
 private:
     static constexpr uint32_t REPLACEMENT = 0xFFFDU;
 
+    // Numeric value of a code unit, widened through its unsigned counterpart so a
+    // negative (sign-extended) char/wchar_t can't corrupt the high bits.
+    template <typename CharT>
+    static uint32_t codeUnit(CharT ch)
+    {
+        return static_cast<uint32_t>(static_cast<std::make_unsigned_t<CharT>>(ch));
+    }
+
     static uint32_t decodeUtf8(std::string_view text, size_t & i)
     {
-        const auto b = static_cast<unsigned char>(text[i]);
-        uint32_t   cp;
-        size_t     extra;
+        const auto b     = static_cast<unsigned char>(text[i]);
+        uint32_t   cp    = 0;
+        size_t     extra = 0;
         if (b < 0x80U) {
             cp    = b;
             extra = 0;
@@ -144,10 +153,10 @@ private:
 
     static uint32_t decodeUtf16(std::u16string_view text, size_t & i)
     {
-        const auto unit = static_cast<uint32_t>(text[i]);
+        const auto unit = codeUnit(text[i]);
         ++i;
         if (unit >= 0xD800U && unit <= 0xDBFFU && i < text.size()) {
-            const auto low = static_cast<uint32_t>(text[i]);
+            const auto low = codeUnit(text[i]);
             if (low >= 0xDC00U && low <= 0xDFFFU) {
                 ++i;
                 return 0x10000U + (((unit - 0xD800U) << 10U) | (low - 0xDC00U));
@@ -159,10 +168,10 @@ private:
     static uint32_t decodeWide(std::wstring_view text, size_t & i)
     {
         if constexpr (sizeof(wchar_t) == 2) {
-            const auto unit = static_cast<uint32_t>(text[i]);
+            const auto unit = codeUnit(text[i]);
             ++i;
             if (unit >= 0xD800U && unit <= 0xDBFFU && i < text.size()) {
-                const auto low = static_cast<uint32_t>(text[i]);
+                const auto low = codeUnit(text[i]);
                 if (low >= 0xDC00U && low <= 0xDFFFU) {
                     ++i;
                     return 0x10000U + (((unit - 0xD800U) << 10U) | (low - 0xDC00U));
@@ -170,7 +179,7 @@ private:
             }
             return unit;
         } else {
-            const auto cp = static_cast<uint32_t>(text[i]);
+            const auto cp = codeUnit(text[i]);
             ++i;
             return cp;
         }

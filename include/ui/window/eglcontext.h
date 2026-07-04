@@ -18,6 +18,7 @@
 #pragma once
 
 #include "common/bit.h"
+#include "common/noncopyable.h"
 #include "ui/interface/icontext.h"
 #include "ui/window/nativedisplayhandle.h"
 
@@ -62,14 +63,10 @@ enum class EglPlatform : unsigned char { X11, Wayland };
  * - Compatibility profile for legacy GL support
  * - Both X11 and Wayland platforms
  */
-class EglContext final : public Ui::IContext {
+class EglContext final : public Ui::IContext, private Common::NonCopyable {
 public:
     EglContext() = default;
     ~EglContext() override { cleanup(); }
-
-    // Non-copyable
-    EglContext(const EglContext &)             = delete;
-    EglContext & operator=(const EglContext &) = delete;
 
     /**
      * @brief Factory method to create and initialize EGL context for a platform
@@ -90,6 +87,37 @@ public:
      * @brief Initialize EGL with X11 display (backward compatible)
      */
     bool init(Ui::Window::NativeDisplayHandle display) override { return init(display, EglPlatform::X11); }
+
+    /**
+     * @brief Cache the current display+config so a sibling context (e.g. the next
+     * popup) can skip the slow eglInitialize + config search.
+     */
+    void cacheConfig() override
+    {
+#ifdef __linux__
+        s_cachedDisplay = m_eglDisplay;
+        s_cachedConfig  = m_eglConfig;
+        s_cachedMsaa    = m_hasMsaa;
+        s_cachedValid   = true;
+#endif
+    }
+
+    /**
+     * @brief Initialize from the cached display+config. Returns false if nothing
+     * has been cached yet.
+     */
+    bool initCachedConfig(Ui::Window::NativeDisplayHandle display) override
+    {
+#ifdef __linux__
+        if (!s_cachedValid) {
+            return false;
+        }
+        return initWithCachedConfig(s_cachedDisplay, s_cachedConfig, s_cachedMsaa, false, display);
+#else
+        (void)display;
+        return false;
+#endif
+    }
 
 #ifdef __linux__
     /**
@@ -132,7 +160,9 @@ public:
         m_platform      = platform;
         m_nativeDisplay = display;
 
-        // Get EGL display based on platform
+        // Get EGL display based on platform. eglGetProcAddress returns a generic
+        // function pointer; converting to the typed PFN is a function-pointer cast,
+        // which static_cast cannot express - sanctioned reinterpret_cast exception.
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         auto eglGetPlatformDisplayEXT = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
         eglGetProcAddress("eglGetPlatformDisplayEXT"));
@@ -273,7 +303,7 @@ public:
      * @param wantMsaa If true, prefer configs with MSAA
      * @return true if a matching config was found
      */
-    bool chooseConfigForVisual(uint64_t targetVisualId, bool wantMsaa)
+    bool chooseConfigForVisual(uint64_t targetVisualId, bool wantMsaa) override
     {
 #ifdef __linux__
         if (!m_initialized || m_platform == EglPlatform::Wayland) {
@@ -392,7 +422,7 @@ public:
      * @param width Surface width (required for Wayland)
      * @param height Surface height (required for Wayland)
      */
-    bool createSurface(Ui::Window::NativeWindowHandle window, int width = 0, int height = 0)
+    bool createSurface(Ui::Window::NativeWindowHandle window, fpx_t width, fpx_t height) override
     {
 #ifdef __linux__
         if (!m_initialized || m_eglConfig == nullptr) {
@@ -411,11 +441,14 @@ public:
                 std::cerr << "[EglContext] Invalid dimensions for Wayland surface" << std::endl;
                 return false;
             }
-            m_wlEglWindow = wl_egl_window_create(window, width, height);
+            m_wlEglWindow = wl_egl_window_create(window, static_cast<int>(width), static_cast<int>(height));
             if (!m_wlEglWindow) {
                 std::cerr << "[EglContext] wl_egl_window_create failed" << std::endl;
                 return false;
             }
+            // EGLNativeWindowType is platform-defined: with X11 headers in the TU it
+            // is Window (an integer), so this is int<->ptr - static_cast cannot
+            // express it. Sanctioned reinterpret_cast exception.
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             nativeWindow = reinterpret_cast<EGLNativeWindowType>(m_wlEglWindow);
             std::cout << "[EglContext] Created wl_egl_window " << width << "x" << height << std::endl;
@@ -458,17 +491,21 @@ public:
 
     bool createSurface(Ui::Window::NativeWindowHandle window) override { return createSurface(window, 0, 0); }
 
-#ifdef HAVE_WAYLAND
     /**
-     * @brief Resize Wayland EGL window
+     * @brief Resize the drawable. Only Wayland's wl_egl_window needs this; the
+     * X11/EGL surface tracks the window, so it is a no-op there.
      */
-    void resizeWaylandWindow(fpx_t width, fpx_t height)
+    void resize(fpx_t width, fpx_t height) override
     {
+#ifdef HAVE_WAYLAND
         if (m_wlEglWindow && m_platform == EglPlatform::Wayland) {
             wl_egl_window_resize(m_wlEglWindow, static_cast<int>(width), static_cast<int>(height), 0, 0);
         }
-    }
+#else
+        (void)width;
+        (void)height;
 #endif
+    }
 
     bool createContext() override
     {
@@ -580,10 +617,8 @@ public:
 
     // Additional accessors for platform-specific needs
 #ifdef __linux__
-    [[nodiscard]] EGLDisplay eglDisplay() const { return m_eglDisplay; }
     [[nodiscard]] EGLContext eglContext() const { return m_eglContext; }
     [[nodiscard]] EGLSurface eglSurface() const { return m_eglSurface; }
-    [[nodiscard]] EGLConfig  eglConfig() const { return m_eglConfig; }
     /**
      * @brief Query actual EGL surface dimensions
      * @param width Output: surface width in pixels
@@ -619,6 +654,13 @@ private:
     EGLContext                      m_eglContext    = EGL_NO_CONTEXT;
     EGLSurface                      m_eglSurface    = EGL_NO_SURFACE;
     EGLConfig                       m_eglConfig     = nullptr;
+
+    // Process-wide cache of a discovered display+config, reused across sibling
+    // contexts (e.g. each popup) to skip the slow eglInitialize + config search.
+    inline static EGLDisplay s_cachedDisplay = EGL_NO_DISPLAY;
+    inline static EGLConfig  s_cachedConfig  = nullptr;
+    inline static bool       s_cachedMsaa    = false;
+    inline static bool       s_cachedValid   = false;
 
 #ifdef HAVE_WAYLAND
     wl_egl_window * m_wlEglWindow = nullptr;

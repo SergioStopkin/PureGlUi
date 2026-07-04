@@ -17,10 +17,13 @@
 
 #pragma once
 
+#include "common/cstr.h"
+#include "common/noncopyable.h"
 #include "common/system.h"
 #include "common/unicode.h"
 #include "ui/action/actionmap.h"
 #include "ui/action/registry.h"
+#include "ui/gl/localglew.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/intent.h"
 #include "ui/pubsub/subscribeid.h"
@@ -29,6 +32,7 @@
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
 #include "ui/result.h"
+#include "ui/type.h"
 #include "ui/window/event.h"
 #include "ui/window/windowmanager.h"
 
@@ -55,15 +59,10 @@ namespace Ui {
  * temp status). A host composes a Shell, adds content +
  * domain actions, and wires the domain hooks (tab activate/close, key press).
  */
-class Shell final {
+class Shell final : private Common::NonCopyable {
 public:
     Shell() { std::cout << "Hello!" << std::endl; }
     ~Shell() { std::cout << "Bye!" << std::endl; }
-
-    Shell(const Shell &)             = delete;
-    Shell(Shell &&)                  = delete;
-    Shell & operator=(const Shell &) = delete;
-    Shell & operator=(Shell &&)      = delete;
 
     [[nodiscard]] Ui::Res::ResManager &       resManager() { return m_resManager; }
     [[nodiscard]] const Ui::Res::ResManager & resManager() const { return m_resManager; }
@@ -80,14 +79,14 @@ public:
     // Host hooks (domain-blind seams; unset on a standalone shell):
     // - frameTasks runs once at the top of every loop iteration (host async drain).
     // - onTick runs after an event batch is processed (host per-frame upkeep).
-    void setFrameTasks(std::function<void()> fn) { m_frameTasks = std::move(fn); }
-    void setOnTick(std::function<void()> fn) { m_onTick = std::move(fn); }
+    void setFrameTasks(Ui::task_fn_t fn) { m_frameTasks = std::move(fn); }
+    void setOnTick(Ui::task_fn_t fn) { m_onTick = std::move(fn); }
 
     // Domain hooks: the chrome fires these on tab activate/close + key press so
     // the host runs the domain side (workspaces, content surfaces, mouse-rotation toggle).
     void setOnTabActivated(std::function<void(id_t)> fn) { m_onTabActivated = std::move(fn); }
     void setOnTabClosed(std::function<void(id_t)> fn) { m_onTabClosed = std::move(fn); }
-    void setOnKeyPress(std::function<bool(const std::string &)> fn) { m_onKeyPress = std::move(fn); }
+    void setOnKeyPress(Ui::predicate_fn_t fn) { m_onKeyPress = std::move(fn); }
 
     // Register a loader for a file extension (lowercase, no dot, e.g. "step").
     // OpenFile routes picked files here; an extension with no handler shows a
@@ -118,7 +117,7 @@ public:
     // supplies only the domain reload step. The open menu is remembered as a
     // single hierarchical key (the deepest active node), since numeric ids are
     // reassigned by loadAll() but label-derived keys survive it.
-    void reloadChrome(const std::function<void()> & reloadResources)
+    void reloadChrome(const Ui::task_fn_t & reloadResources)
     {
         const bool                    hadDialog   = m_windowManager.hasDialog();
         const Ui::Res::Type::dialog_t savedDialog = hadDialog ? m_windowManager.lastDialogData()
@@ -283,7 +282,7 @@ public:
     // afterLoadResources (optional) runs once after resources load but before the
     // window is created - the point at which a host restores persisted state
     // (theme, window geometry) so the first window picks it up.
-    [[nodiscard]] bool initialize(const std::function<void()> & afterLoadResources = {})
+    [[nodiscard]] bool initialize(const Ui::task_fn_t & afterLoadResources = {})
     {
         loadResources();
         if (afterLoadResources) {
@@ -389,7 +388,9 @@ public:
                         const int menuBarHeight = toPhysFloor(m_resManager.layout().topMenu.height);
                         if (mainY >= 0 && mainY < menuBarHeight) {
                             if (mainX < menusTotalWidthPhysical()) {
-                                const bool hitMenuItem = m_windowManager.onMousePress(mainX, mainY);
+                                const bool hitMenuItem = m_windowManager.onMousePress(mainX,
+                                                                                      mainY,
+                                                                                      event.mouse.clickCount);
                                 m_windowManager.requestMainRender();
                                 if (hitMenuItem) {
                                     shouldClosePopup = false;
@@ -415,7 +416,7 @@ public:
                         destroyPopup();
                         // Forward click to main window
                         if (event.mouse.button == Ui::Window::MouseButton::Left) {
-                            m_windowManager.onMousePress(mainX, mainY);
+                            m_windowManager.onMousePress(mainX, mainY, event.mouse.clickCount);
                             m_windowManager.requestMainRender();
                         }
                     }
@@ -615,10 +616,10 @@ public:
         // GL info (requires current context)
         auto & mainWindow = m_windowManager.mainWindow();
         mainWindow.makeCurrent();
-        const auto *      gpu    = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
-        const auto *      gl     = reinterpret_cast<const char *>(glGetString(GL_VERSION));
-        const std::string gpuStr = gpu != nullptr ? gpu : "N/A";
-        std::string       glStr  = gl != nullptr ? gl : "N/A";
+        const GLubyte *   gpu    = glGetString(GL_RENDERER);
+        const GLubyte *   gl     = glGetString(GL_VERSION);
+        const std::string gpuStr = gpu != nullptr ? Common::fromCString(gpu) : "N/A";
+        std::string       glStr  = gl != nullptr ? Common::fromCString(gl) : "N/A";
         glStr += mainWindow.isHardwareGl() ? " (hardware)" : " (software)";
         replace(L"%GPU%", Common::Unicode::fromUtf8(gpuStr));
         replace(L"%GL%", Common::Unicode::fromUtf8(glStr));
@@ -678,13 +679,13 @@ private:
     Ui::Render::Context       m_context { m_resManager };
     Ui::Action::Registry      m_actions;
 
-    std::function<void()> m_frameTasks;
-    std::function<void()> m_onTick;
+    Ui::task_fn_t m_frameTasks;
+    Ui::task_fn_t m_onTick;
 
     // Domain hooks (host-provided; empty on a standalone shell).
-    std::function<void(id_t)>                m_onTabActivated;
-    std::function<void(id_t)>                m_onTabClosed;
-    std::function<bool(const std::string &)> m_onKeyPress;
+    std::function<void(id_t)> m_onTabActivated;
+    std::function<void(id_t)> m_onTabClosed;
+    Ui::predicate_fn_t        m_onKeyPress;
 
     // Per-extension file loaders (host-registered; empty on a standalone shell,
     // so OpenFile warns for every file type).

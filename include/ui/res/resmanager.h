@@ -63,10 +63,10 @@ class ResManager final {
     // field. Both menu-driven settings (themeName, displayMode, ambience) and
     // programmatic ones (themeMode, lastOpenDir) flow through the same path.
     struct alignas(128) persisted_setting_t final {
-        std::string                              sessionKey;          // camelCase key in session.json
-        std::function<std::string()>             get;                 // current value -> string
-        std::function<void(const std::string &)> set;                 // string -> apply to typed field
-        bool                                     skipIfEmpty = false; // omit from save when value is empty
+        std::string       sessionKey;          // camelCase key in session.json
+        Ui::provider_fn_t get;                 // current value -> string
+        Ui::action_fn_t   set;                 // string -> apply to typed field
+        bool              skipIfEmpty = false; // omit from save when value is empty
     };
 
     Store::LayoutStore     m_layoutStore; // res/css/layout.json: layout_t + popup_t (logical sub-store)
@@ -109,7 +109,7 @@ class ResManager final {
     std::vector<persisted_setting_t>   m_persistedSettings;
     // Host hook invoked whenever a persisted setting changes. The fw owns no
     // session concept; a host wires this to its own session save.
-    std::function<void()> m_onPersistChange = [] {};
+    Ui::task_fn_t m_onPersistChange = [] {};
 
     // Accumulate a Changed flag into the pending reload mask. Sub-store loads
     // and runtime setters funnel their Changed return through here.
@@ -255,7 +255,7 @@ public:
     // Disable menu nodes that can do nothing: a leaf whose actionKey has no
     // handler, or a parent (submenu / top-menu) whose every child is disabled
     // (`isHandled` reports handler presence). Dialog items stay enabled.
-    void disableUnhandledMenuItems(const std::function<bool(const std::string &)> & isHandled)
+    void disableUnhandledMenuItems(const Ui::predicate_fn_t & isHandled)
     {
         m_menuStore.disableUnhandledMenuItems(isHandled);
     }
@@ -294,7 +294,7 @@ public:
     // (see isActiveItem); the host wires actions whose value lives host-side
     // (SetDisplayMode, SetAmbience). Internal-valued actions (SwitchTheme) are
     // wired by registerPersistedSettings.
-    void setActionValueProvider(const std::string & actionKey, std::function<std::string()> provider)
+    void setActionValueProvider(const std::string & actionKey, Ui::provider_fn_t provider)
     {
         m_menuStore.setActionValueProvider(actionKey, std::move(provider));
     }
@@ -359,10 +359,7 @@ public:
         m_onPersistChange();
     }
 
-    void registerPersisted(std::string                              key,
-                           std::function<std::string()>             getter,
-                           std::function<void(const std::string &)> setter,
-                           bool                                     skipIfEmpty = false)
+    void registerPersisted(std::string key, Ui::provider_fn_t getter, Ui::action_fn_t setter, bool skipIfEmpty = false)
     {
         m_persistedSettings.push_back({ std::move(key), std::move(getter), std::move(setter), skipIfEmpty });
     }
@@ -447,7 +444,7 @@ public:
     // location, from app.json) and wires setOnPersistChange to its own save. The
     // fw owns the FORMAT: serializeSession()/deserializeSession() encode/decode
     // the persisted state, so JSON never leaks into the host.
-    void setOnPersistChange(std::function<void()> onPersistChange) { m_onPersistChange = std::move(onPersistChange); }
+    void setOnPersistChange(Ui::task_fn_t onPersistChange) { m_onPersistChange = std::move(onPersistChange); }
 
     [[nodiscard]] const std::string & sessionDir() const { return m_sessionDir; }
     [[nodiscard]] const std::string & sessionFile() const { return m_sessionFile; }

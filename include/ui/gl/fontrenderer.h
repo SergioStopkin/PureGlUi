@@ -17,11 +17,14 @@
 
 #pragma once
 
+#include "common/cstr.h"
+#include "common/noncopyable.h"
 #include "common/unicode.h"
 #include "ui/config.h"
 #include "ui/gl/fonttypes.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/font.h"
+#include "ui/type.h"
 
 // NOLINTBEGIN(llvm-include-order)
 #include <ft2build.h>
@@ -62,7 +65,7 @@ constexpr bool LOG_TEXT_LAYOUT = false;
  * - Font caching to prevent duplicate atlases
  * - GL shader/VBO management for text rendering
  */
-class FontRenderer final {
+class FontRenderer final : private Common::NonCopyable {
 public:
     struct alignas(64) glyph_bitmap_t final {
         fpx_t width   = 0;
@@ -111,7 +114,7 @@ public:
 
     // makeCurrent makes the owning GL context current; called before GL
     // resource teardown (textures/atlases must be deleted in their context).
-    FontRenderer(std::function<void()> makeCurrent, std::string fontDir)
+    FontRenderer(Ui::task_fn_t makeCurrent, std::string fontDir)
         : m_makeCurrent(std::move(makeCurrent))
         , m_fontDir(std::move(fontDir))
     {
@@ -131,11 +134,6 @@ public:
             FcFini();
         }
     }
-
-    FontRenderer(const FontRenderer &)             = delete;
-    FontRenderer(FontRenderer &&)                  = delete;
-    FontRenderer & operator=(const FontRenderer &) = delete;
-    FontRenderer & operator=(FontRenderer &&)      = delete;
 
     // Live FontRenderer count. The last destructor calls FcFini() to release
     // fontconfig's global FcConfig (otherwise leaked at process exit).
@@ -544,7 +542,7 @@ public:
                 if (git != fr->glyphs.end()) {
                     w += git->second.advance;
                 } else {
-                    w += fr->key.size / 2;
+                    w += fr->key.size / 2.0F;
                 }
             }
             w = toCss(w);
@@ -597,7 +595,7 @@ public:
                               && actualCs != nullptr && FcCharSetHasChar(actualCs, static_cast<FcChar32>(cp)) == FcTrue;
             FcChar8 * filePtr = nullptr;
             if (hasChar && FcPatternGetString(match, FC_FILE, 0, &filePtr) == FcResultMatch && filePtr != nullptr) {
-                const std::string path(reinterpret_cast<const char *>(filePtr));
+                const std::string path     = Common::fromCString(filePtr);
                 const auto        existing = fr.fallback_faces.find(path);
                 if (existing != fr.fallback_faces.end()) {
                     resolved = existing->second;
@@ -694,19 +692,23 @@ public:
         const int h = std::max(2, (static_cast<int>(fr.key.size) * 7) / 10);
 
         glyph_bitmap_t g;
-        g.width   = static_cast<fpx_t>(w);
-        g.height  = static_cast<fpx_t>(h);
-        g.left    = 1;
-        g.top     = h;
-        g.advance = w + 2;
-        g.buf.assign(static_cast<size_t>(w * h), 0);
+        g.width       = static_cast<fpx_t>(w);
+        g.height      = static_cast<fpx_t>(h);
+        g.left        = 1;
+        g.top         = h;
+        g.advance     = w + 2;
+        const auto ws = static_cast<size_t>(w);
+        const auto hs = static_cast<size_t>(h);
+        g.buf.assign(ws * hs, 0);
         for (int x = 0; x < w; ++x) {
-            g.buf[static_cast<size_t>(x)]               = 0xFF;
-            g.buf[static_cast<size_t>((h - 1) * w + x)] = 0xFF;
+            const auto xs             = static_cast<size_t>(x);
+            g.buf[xs]                 = 0xFF;
+            g.buf[(hs - 1) * ws + xs] = 0xFF;
         }
         for (int y = 0; y < h; ++y) {
-            g.buf[static_cast<size_t>(y * w)]           = 0xFF;
-            g.buf[static_cast<size_t>(y * w + (w - 1))] = 0xFF;
+            const auto ys             = static_cast<size_t>(y);
+            g.buf[ys * ws]            = 0xFF;
+            g.buf[ys * ws + (ws - 1)] = 0xFF;
         }
 
         commitGlyph(fr, ch, std::move(g));
@@ -828,8 +830,8 @@ public:
         std::wstring_view         remaining = text;
 
         while (!remaining.empty()) {
-            auto              nl        = remaining.find(L'\n');
-            std::wstring_view paragraph = remaining.substr(0, nl);
+            auto                    nl        = remaining.find(L'\n');
+            const std::wstring_view paragraph = remaining.substr(0, nl);
 
             if (paragraph.empty()) {
                 result.emplace_back();
@@ -937,7 +939,7 @@ private:
         }
     }
 
-    std::function<void()>                                              m_makeCurrent;
+    Ui::task_fn_t                                                      m_makeCurrent;
     std::string                                                        m_fontDir;
     std::unordered_map<Ui::font_handle_t, std::unique_ptr<font_rec_t>> m_fonts;
     Ui::font_handle_t                                                  m_nextFontHandle = 1;

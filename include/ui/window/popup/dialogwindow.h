@@ -25,6 +25,7 @@
 
 #include <functional>
 #include <iostream>
+#include <memory>
 
 namespace Ui::Window::Popup {
 
@@ -38,21 +39,22 @@ using Ui::Window::NativeWindow;
  */
 class DialogWindow final : public PopupWindow {
 public:
-    using CloseFn = std::function<void(Ui::Res::Type::DialogAction)>;
+    using CloseFn = Ui::Render::Popup::DialogRenderer::DialogCloseFn; // one definition of the close signature
 
     explicit DialogWindow(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID)
         : PopupWindow(subscribe, subscribeId)
     {
     }
 
-    [[nodiscard]] Ui::Render::Popup::DialogRenderer * dialogRenderer() { return m_dialogRenderer; }
+    // DialogWindow owns its renderer as DialogRenderer; the base drives it through
+    // these overrides, so nothing downcasts.
+    [[nodiscard]] bool                 hasRenderer() const override { return m_dialogRenderer != nullptr; }
+    [[nodiscard]] Ui::IRenderer &      activeRenderer() override { return *m_dialogRenderer; }
+    [[nodiscard]] Ui::IPopupRenderer & popupRenderer() override { return *m_dialogRenderer; }
+
+    [[nodiscard]] Ui::Render::Popup::DialogRenderer & dialogRenderer() { return *m_dialogRenderer; }
 
     ~DialogWindow() override = default;
-
-    DialogWindow(const DialogWindow &)             = delete;
-    DialogWindow(DialogWindow &&)                  = delete;
-    DialogWindow & operator=(const DialogWindow &) = delete;
-    DialogWindow & operator=(DialogWindow &&)      = delete;
 
     /**
      * @brief Open the dialog centered on the parent window
@@ -90,14 +92,13 @@ public:
             setPosition(pos.x, pos.y);
         }
 
-        auto dialogRenderer = std::make_unique<Ui::Render::Popup::DialogRenderer>(*this, resManager, dialog);
-        m_dialogRenderer    = dialogRenderer.get();
-
-        dialogRenderer->resize(m_bound.w, m_bound.h);
-        dialogRenderer->setAlpha(hasAlpha());
-        dialogRenderer->setCloseCallback(std::move(onClose));
-
-        m_renderer = std::move(dialogRenderer);
+        makeCurrent();
+        m_dialogRenderer = std::make_unique<Ui::Render::Popup::DialogRenderer>([this] { makeCurrent(); },
+                                                                               resManager,
+                                                                               dialog);
+        m_dialogRenderer->resize(m_bound.w, m_bound.h);
+        m_dialogRenderer->setAlpha(hasAlpha());
+        m_dialogRenderer->setCloseCallback(std::move(onClose));
 
         std::cout << "[DialogWindow] Opened dialog type=" << static_cast<int>(dialog.type) << std::endl;
         return true;
@@ -108,8 +109,8 @@ public:
         const auto pos = centeredPosition(parentBound, m_bound.w, m_bound.h, uiTop, uiBottom);
         if (g_config.isCompositing) {
             setPosition(pos.x, pos.y);
-            if (m_renderer) {
-                m_renderer->move();
+            if (hasRenderer()) {
+                activeRenderer().move();
             }
         } else {
             move(pos.x, pos.y);
@@ -129,7 +130,7 @@ private:
                  dialogH };
     }
 
-    Ui::Render::Popup::DialogRenderer * m_dialogRenderer = nullptr;
+    std::unique_ptr<Ui::Render::Popup::DialogRenderer> m_dialogRenderer;
 };
 
 } // namespace Ui::Window::Popup

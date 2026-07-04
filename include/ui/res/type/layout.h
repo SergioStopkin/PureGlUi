@@ -28,7 +28,10 @@
 
 namespace Ui::Res::Type {
 
+// Fields are grouped by member size, largest first, to minimize alignment
+// padding; trailing comments carry each field's meaning.
 struct alignas(128) layout_t final {
+    // Regions (from layout.json element blocks)
     Ui::Res::Type::region_t topMenu;
     Ui::Res::Type::region_t topMenuDropdown; // popup dropdown styling (border-radius etc)
     Ui::Res::Type::region_t leftToolbar;
@@ -36,91 +39,70 @@ struct alignas(128) layout_t final {
     Ui::Res::Type::region_t statusBar;
     Ui::Res::Type::region_t workspace;
     Ui::Res::Type::region_t workspaceTab;
+    Ui::Res::Type::region_t dialog; // dialog window layout
 
-    // Parsed numeric values (from layout.json element-specific blocks)
-    fpx_t                   menuButtonPadH = 16;     // top-menu-button-label horizontal padding
-    Ui::Res::Type::border_t menuButtonHoverBorder;   // top-menu-button-label:hover border-radius
-    Ui::Res::Type::border_t menuButtonActiveBorder;  // top-menu-button-label:active border-radius
-    Ui::Res::Type::border_t menuItemHoverBorder;     // top-menu-item:hover border-radius
-    fpx_t                   menuItemHoverMarginV {}; // top-menu-item:hover vertical margin (px)
-    fpx_t                   menuItemHoverMarginH {}; // top-menu-item:hover horizontal margin (px)
-    fpx_t                   menuItemIconWidth = 16;  // top-menu-item-icon: width (svg render box)
-    int                     buttonImgSize     = 24;  // :root --button-img-size
+    // Composite primitives
+    Ui::Res::Dock::dock_layout_t
+    dockDefaults; // shared dimensional/interaction tunables (grip width, min/max, snap, click threshold)
+    theme_preview_t themePreview; // theme preview swatch geometry (rendered next to each theme submenu entry)
 
-    // Window defaults (from :root)
-    fpx_t windowWidth  = 1600; // :root --window-width
-    fpx_t windowHeight = 1000; // :root --window-height
+    // Borders + bounds
+    Ui::Res::Type::border_t menuButtonHoverBorder;  // top-menu-button-label:hover border-radius
+    Ui::Res::Type::border_t menuButtonActiveBorder; // top-menu-button-label:active border-radius
+    Ui::Res::Type::border_t menuItemHoverBorder;    // top-menu-item:hover border-radius
+    Ui::Res::Type::border_t tabCloseBorderRadius;   // workspace-tab-close border-radius
+    Ui::Res::Type::bound_t  dialogIcon { 16, 16, 20, 20 };
+    Ui::Res::Type::border_t dialogCloseBorder;
+    Ui::Res::Type::border_t dialogButtonBorder;
+    Ui::Res::Type::border_t dialogScrollbarBorder;
+    Ui::Res::Type::border_t dialogScrollbarHoverBorder;
 
-    // Button icon interaction params (from :root)
+    // Containers + strings
+    std::vector<Ui::Res::Dock::dock_config_t>
+                docks;            // per-dock anchor + order + first-launch state (from "docks" array in layout.json)
+    std::string tabCloseIcon;     // workspace-tab-close icon
+    std::string tabArrowIconLeft; // workspace-tab-arrow icons
+    std::string tabArrowIconRight;
+    std::string dialogCloseIcon;
+
+    // Scalars (from layout.json element blocks + :root vars)
+    int   menuMaxDepth   = 8;          // --menu-max-depth: submenu nesting cap (guards parser recursion)
+    fpx_t menuButtonPadH = 16;         // top-menu-button-label horizontal padding
+    fpx_t menuItemHoverMarginV {};     // top-menu-item:hover vertical margin (px)
+    fpx_t menuItemHoverMarginH {};     // top-menu-item:hover horizontal margin (px)
+    fpx_t menuItemIconWidth   = 16;    // top-menu-item-icon: width (svg render box)
+    int   buttonImgSize       = 24;    // :root --button-img-size
+    fpx_t windowWidth         = 1600;  // :root --window-width
+    fpx_t windowHeight        = 1000;  // :root --window-height
     float iconHoverShadowX    = 2.0F;  // :root --button-icon-hover-shadow-x
     float iconHoverShadowY    = 2.0F;  // :root --button-icon-hover-shadow-y
     float iconHoverShadowBlur = 4.0F;  // :root --button-icon-hover-shadow-blur
     float iconActiveScale     = 0.85F; // :root --button-icon-active-scale
-
-    // Fallback character width for text measurement when font renderer unavailable
-    fpx_t fallbackCharWidth = 8; // :root --fallback-char-width
-
-    // Workspace tab min width for shrinking (from layout.json "workspace-tab" min-width)
-    fpx_t tabMinWidth {};
-
-    // Workspace tab close button style (from layout.json "workspace-tab-close")
-    fpx_t                   tabCloseMargin {};
-    fpx_t                   tabCloseRight {};
-    fpx_t                   tabCloseIconSize {};
-    Ui::Res::Type::border_t tabCloseBorderRadius;
-    std::string             tabCloseIcon;
-
-    // Workspace tab arrow dimensions and icons (from layout.json "workspace-tab-arrow")
-    fpx_t       tabArrowWidth {};
-    fpx_t       tabArrowHeight {};
-    std::string tabArrowIconLeft;
-    std::string tabArrowIconRight;
-
-    // Progress bar sectors: tabW / TL_radius (ensures each sector >= radius width)
-    int progressSectors = 3;
-
-    // Theme preview swatch geometry (rendered next to each theme submenu entry)
-    theme_preview_t themePreview;
-
-    // Dialog window layout
-    Ui::Res::Type::region_t dialog;
-    fpx_t                   dialogTitleHeight = 24;
-    fpx_t                   dialogTitleMargin {}; // gap below title before text
-    Ui::Res::Type::bound_t  dialogIcon { 16, 16, 20, 20 };
-    fpx_t                   dialogTextMargin {}; // gap below text before buttons
-
-    // Dialog close button (X)
-    fpx_t                   dialogCloseSize = 12;
-    Ui::Res::Type::border_t dialogCloseBorder;
-    fpx_t                   dialogCloseMargin = 2;
-    fpx_t                   dialogCloseTop    = 8;
-    fpx_t                   dialogCloseRight  = 8;
-    std::string             dialogCloseIcon;
-
-    // Dialog action buttons (OK, Cancel, etc.)
-    fpx_t                   dialogButtonH {};
-    Ui::Res::Type::border_t dialogButtonBorder;
-    fpx_t                   dialogButtonPad {};
-    fpx_t                   dialogButtonMinW {};
-    fpx_t                   dialogButtonShift {};
-
-    // Dialog scrollbar
-    fpx_t                   dialogScrollbarW {};
-    fpx_t                   dialogScrollbarRight {};
-    Ui::Res::Type::border_t dialogScrollbarBorder;
-    fpx_t                   dialogScrollbarMinThumb {};
-
-    // Dialog scrollbar hover
-    fpx_t                   dialogScrollbarHoverW {};
-    fpx_t                   dialogScrollbarHoverRight {};
-    Ui::Res::Type::border_t dialogScrollbarHoverBorder;
-    fpx_t                   dialogScrollbarHoverMinThumb {};
-
-    // Dock primitive
-    Ui::Res::Dock::dock_layout_t
-    dockDefaults; // shared dimensional/interaction tunables (grip width, min/max, snap, click threshold)
-    std::vector<Ui::Res::Dock::dock_config_t>
-    docks; // per-dock anchor + order + first-launch state (from "docks" array in layout.json)
+    fpx_t fallbackCharWidth   = 8;     // :root --fallback-char-width (text measurement fallback)
+    fpx_t tabMinWidth {};              // workspace-tab min-width (shrinking)
+    fpx_t tabCloseMargin {};           // workspace-tab-close style
+    fpx_t tabCloseRight {};
+    fpx_t tabCloseIconSize {};
+    fpx_t tabArrowWidth {}; // workspace-tab-arrow dimensions
+    fpx_t tabArrowHeight {};
+    int   progressSectors   = 3;  // tabW / TL_radius (ensures each sector >= radius width)
+    fpx_t dialogTitleHeight = 24; // dialog title bar
+    fpx_t dialogTitleMargin {};   // gap below title before text
+    fpx_t dialogTextMargin {};    // gap below text before buttons
+    fpx_t dialogCloseSize   = 12; // dialog close button (X)
+    fpx_t dialogCloseMargin = 2;
+    fpx_t dialogCloseTop    = 8;
+    fpx_t dialogCloseRight  = 8;
+    fpx_t dialogButtonH {}; // dialog action buttons (OK, Cancel, etc.)
+    fpx_t dialogButtonPad {};
+    fpx_t dialogButtonMinW {};
+    fpx_t dialogButtonShift {};
+    fpx_t dialogScrollbarW {}; // dialog scrollbar
+    fpx_t dialogScrollbarRight {};
+    fpx_t dialogScrollbarMinThumb {};
+    fpx_t dialogScrollbarHoverW {}; // dialog scrollbar hover
+    fpx_t dialogScrollbarHoverRight {};
+    fpx_t dialogScrollbarHoverMinThumb {};
 
     bool operator==(const layout_t &) const = default;
 };

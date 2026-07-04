@@ -38,7 +38,7 @@ enum class Codepoint : char32_t {
 // surrogate pair correctly; on Linux / macOS this is a single wide char.
 [[nodiscard]] inline std::wstring wstr(Codepoint cp)
 {
-    const char32_t value = static_cast<char32_t>(cp);
+    const auto value = static_cast<char32_t>(cp);
     return Common::Unicode::fromUtf32(std::u32string_view(&value, 1));
 }
 

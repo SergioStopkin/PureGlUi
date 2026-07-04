@@ -75,6 +75,17 @@ public:
     }
 
 private:
+#if defined(_WIN32)
+    // COM out-parameter: interfaces are returned through void**. Project rule:
+    // no reinterpret_cast - the two-step static_cast through void* is the same
+    // defined operation, and this named helper is its single home.
+    template <typename T>
+    static void ** comOut(T ** interfacePointer)
+    {
+        return static_cast<void **>(static_cast<void *>(interfacePointer));
+    }
+#endif
+
     // Canonical spec is semicolon-separated globs ("*.step;*.iges"). Most native
     // dialogs want space-separated; macOS wants bare extensions.
     static std::string specToSpaces(const std::string & spec)
@@ -98,11 +109,7 @@ private:
         }
 
         IFileOpenDialog * dialog = nullptr;
-        hr                       = CoCreateInstance(CLSID_FileOpenDialog,
-                              nullptr,
-                              CLSCTX_ALL,
-                              IID_IFileOpenDialog,
-                              reinterpret_cast<void **>(&dialog));
+        hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_IFileOpenDialog, comOut(&dialog));
         if (FAILED(hr)) {
             CoUninitialize();
             return files;
@@ -134,10 +141,7 @@ private:
         if (!startDir.empty()) {
             const std::wstring wideDir = Common::Unicode::fromUtf8(startDir);
             IShellItem *       folder  = nullptr;
-            hr                         = SHCreateItemFromParsingName(wideDir.c_str(),
-                                             nullptr,
-                                             IID_IShellItem,
-                                             reinterpret_cast<void **>(&folder));
+            hr = SHCreateItemFromParsingName(wideDir.c_str(), nullptr, IID_IShellItem, comOut(&folder));
             if (SUCCEEDED(hr)) {
                 dialog->SetFolder(folder);
                 folder->Release();

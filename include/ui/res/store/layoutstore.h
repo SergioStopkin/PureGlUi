@@ -337,6 +337,14 @@ public:
         if (cssVariables.contains("--fallback-char-width")) {
             m_layout.fallbackCharWidth = Ui::Convert::str2fpx(cssVariables["--fallback-char-width"]);
         }
+        if (cssVariables.contains("--menu-max-depth")) {
+            // Nonpositive/malformed value keeps the default: a cap of 0 would
+            // drop every submenu at the first descent.
+            const int menuMaxDepth = Ui::Convert::str2int(cssVariables["--menu-max-depth"]);
+            if (menuMaxDepth > 0) {
+                m_layout.menuMaxDepth = menuMaxDepth;
+            }
+        }
 
         // Parse dialog layout
         if (j.contains("dialog") && j["dialog"].is_object()) {

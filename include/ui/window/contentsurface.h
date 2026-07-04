@@ -27,11 +27,11 @@ namespace Ui::Window {
 // The framework drives it blind through IWindow + its IRenderer;
 // composite holds the Wayland offscreen->texture cache. window/renderer are
 // non-owning - the host owns the actual window.
-struct alignas(64) content_surface_t final {
+struct alignas(128) content_surface_t final {
+    CompositeTexture composite;
     Ui::IWindow *    window   = nullptr;
     Ui::IRenderer *  renderer = nullptr;
-    CompositeTexture composite;
-    bool             isReady = true; // false while the host is mid async-load (skip rendering)
+    bool             isReady  = true; // false while the host is mid async-load (skip rendering)
 };
 
 } // namespace Ui::Window

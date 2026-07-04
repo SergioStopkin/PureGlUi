@@ -26,9 +26,9 @@ namespace Ui::Res::Type {
 // Loaded from layout.json's "theme-preview" block. Per-theme colors are
 // stored separately in ResManager (see themePreviewColors).
 struct alignas(32) theme_preview_t final {
-    fpx_t                   width  = 20;
-    fpx_t                   height = 14;
     Ui::Res::Type::border_t border;
+    fpx_t                   width      = 20;
+    fpx_t                   height     = 14;
     fpx_t                   right      = 10; // distance from item's right edge
     fpx_t                   splitAngle = 45; // degrees CCW; 45 = "/" line
 
