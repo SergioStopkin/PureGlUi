@@ -31,12 +31,14 @@
 #include "ui/pubsub/subscribe.h"
 #include "ui/pubsub/subscribeid.h"
 #include "ui/render/dockcolumn.h"
+#include "ui/render/popup/dialogrenderer.h"
 #include "ui/render/popup/popuprenderer.h"
 #include "ui/render/uirenderer.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/changed.h"
 #include "ui/type.h"
 #include "ui/window/compositetexture.h"
+#include "ui/window/connector.h"
 #include "ui/window/contenthit.h"
 #include "ui/window/contentsurface.h"
 #include "ui/window/event.h"
@@ -60,6 +62,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace Ui::Window {
@@ -87,9 +90,12 @@ constexpr bool WM_ROUTE_DEBUG = true;
  * - Window layout management (UI margins)
  */
 class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
-    std::unique_ptr<NativeWindow> m_mainWindow;
-    const Ui::Res::ResManager &   m_resManager;           // non-owning; lifetime guaranteed by the owner (Shell/host)
-    Ui::Render::UiRenderer *      m_uiRenderer = nullptr; // non-owning; mainWindow owns via setRenderer()
+    // Main pairing: NativeWindow + chrome UiRenderer bound by a Connector -
+    // typed access to both sides, renderer structurally destroyed before the
+    // window's GL context.
+    using MainConnector = Ui::Window::Connector<NativeWindow, Ui::Render::UiRenderer>;
+    std::unique_ptr<MainConnector> m_main;
+    const Ui::Res::ResManager &    m_resManager; // non-owning; lifetime guaranteed by the owner (Shell/host)
 
     // Dock columns (left/right collapsible panels). Keyed by dockSourceId
     // so the map key doubles as the Subscribe source id for state-change
@@ -103,29 +109,35 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     // even when the cursor wanders into the content surface or another area.
     id_t m_activeDragDock = Ui::INVALID_ID;
 
+    // Popup/submenu pairings: a PopupWindow surface + a PopupRenderer bound by a
+    // Connector (typed both sides, renderer destroyed before the window's GL
+    // context). Submenu is anchored to the popup.
+    using PopupConnector  = Ui::Window::Connector<Ui::Window::Popup::PopupWindow, Ui::Render::Popup::PopupRenderer>;
+    using DialogConnector = Ui::Window::Connector<Ui::Window::Popup::DialogWindow, Ui::Render::Popup::DialogRenderer>;
+
     // Popup window for dropdowns
-    std::unique_ptr<Ui::Window::Popup::PopupWindow> m_popupWindow {};
+    std::unique_ptr<PopupConnector> m_popupWindow {};
 
     // Submenu popup window (child of m_popupWindow)
-    std::unique_ptr<Ui::Window::Popup::PopupWindow> m_submenuWindow {};
-    id_t                                            m_submenuItemId = Ui::INVALID_ID;
+    std::unique_ptr<PopupConnector> m_submenuWindow {};
+    id_t                            m_submenuItemId = Ui::INVALID_ID;
 
-    // The menu/submenu windows both own a PopupRenderer; resolve it (nullptr if
-    // the window or its renderer is not yet created).
+    // The menu/submenu connectors both own a PopupRenderer; resolve it (nullptr
+    // if the window or its renderer is not yet created).
     [[nodiscard]] Ui::Render::Popup::PopupRenderer * popupRenderer() const
     {
-        return (m_popupWindow && m_popupWindow->hasRenderer()) ? &m_popupWindow->menuRenderer() : nullptr;
+        return (m_popupWindow && m_popupWindow->hasRenderer()) ? &m_popupWindow->renderer() : nullptr;
     }
 
     [[nodiscard]] Ui::Render::Popup::PopupRenderer * submenuRenderer() const
     {
-        return (m_submenuWindow && m_submenuWindow->hasRenderer()) ? &m_submenuWindow->menuRenderer() : nullptr;
+        return (m_submenuWindow && m_submenuWindow->hasRenderer()) ? &m_submenuWindow->renderer() : nullptr;
     }
 
-    // Dialog window (modal)
-    std::unique_ptr<Ui::Window::Popup::DialogWindow> m_dialogWindow {};
-    Ui::Res::Type::DialogAction                      m_lastDialogResult = Ui::Res::Type::DialogAction::None;
-    Ui::Res::Type::dialog_t                          m_lastDialogData;
+    // Dialog pairing (modal): a DialogWindow surface + a DialogRenderer.
+    std::unique_ptr<DialogConnector> m_dialogWindow {};
+    Ui::Res::Type::DialogAction      m_lastDialogResult = Ui::Res::Type::DialogAction::None;
+    Ui::Res::Type::dialog_t          m_lastDialogData;
 
     CompositeTexture m_popupComposite;
     CompositeTexture m_submenuComposite;
@@ -249,11 +261,11 @@ public:
     // Register a host-owned content surface. The framework wires its render
     // request to the queue, registers it with the event handler, and positions
     // it in the viewport. window/renderer must outlive the registration.
-    void addContentSurface(id_t id, Ui::IWindow & window, Ui::IRenderer & renderer)
+    void addContentSurface(id_t id, Ui::IWindow & window, Ui::IRenderer & pairing)
     {
         content_surface_t & entry = m_contentSurfaces[id];
         entry.window              = &window;
-        entry.renderer            = &renderer;
+        entry.pairing             = &pairing;
 
         const id_t renderId = WS_GROUP_ID + id;
         window.setRenderRequest([this, renderId]() { m_renderQueue.request(renderId); });
@@ -281,8 +293,8 @@ public:
         }
 #endif
         // Composite texture lives in the main GL context; delete it there.
-        if (it->second.composite.texture != 0 && m_mainWindow) {
-            m_mainWindow->makeCurrent();
+        if (it->second.composite.texture != 0 && m_main) {
+            m_main->window().makeCurrent();
             it->second.composite.destroy();
         }
         m_contentSurfaces.erase(it);
@@ -335,6 +347,16 @@ public:
 
     [[nodiscard]] Ui::IWindow * activeContentWindow() const { return contentWindow(m_activeContent); }
 
+    // The host's window+renderer pairing (an IRenderer/IEventApp) for a content
+    // surface - the sink for its events and frame production.
+    [[nodiscard]] Ui::IRenderer * contentPairing(id_t id) const
+    {
+        auto it = m_contentSurfaces.find(id);
+        return (it != m_contentSurfaces.end()) ? it->second.pairing : nullptr;
+    }
+
+    [[nodiscard]] Ui::IRenderer * activeContentPairing() const { return contentPairing(m_activeContent); }
+
     // Hit-test the active content surface, returning child-local coords on hit
     // (see ContentHit). Single lookup so the window pointer and its bound match.
     [[nodiscard]] ContentHit hitTestActiveContent(int x, int y) const
@@ -350,7 +372,7 @@ public:
         if (!b.contains(x, y)) {
             return {};
         }
-        return { it->second.window, x - static_cast<int>(b.x), y - static_cast<int>(b.y) };
+        return { it->second.pairing, x - static_cast<int>(b.x), y - static_cast<int>(b.y) };
     }
 
     // Read the active content surface's framebuffer into its composite cache
@@ -397,7 +419,7 @@ public:
      */
     [[nodiscard]] bool popupContainsPoint(int x, int y) const
     {
-        return m_popupWindow && m_popupWindow->containsPoint(x, y);
+        return m_popupWindow && m_popupWindow->window().containsPoint(x, y);
     }
 
     /**
@@ -406,8 +428,8 @@ public:
     void popupToMainCoords(int popupX, int popupY, int & mainX, int & mainY) const
     {
         if (m_popupWindow) {
-            mainX = static_cast<int>(m_popupWindow->bound().x) + popupX;
-            mainY = static_cast<int>(m_popupWindow->bound().y) + popupY;
+            mainX = static_cast<int>(m_popupWindow->window().bound().x) + popupX;
+            mainY = static_cast<int>(m_popupWindow->window().bound().y) + popupY;
         } else {
             mainX = popupX;
             mainY = popupY;
@@ -425,31 +447,41 @@ public:
      * The shell subscribes to event notifications for policy decisions (menu
      * management, shortcuts, popup close logic).
      */
-    void dispatchEvent(Event event)
+    void dispatchEvent(const Event & incoming)
     {
         m_lastClickResult    = {};
         m_popupEventConsumed = false;
 
-        // Classify event source window.
-        // In composite mode: popups are offscreen, classify by bounds.
-        // In non-composite mode: classify by native window handle.
-        Ui::Window::Popup::PopupWindow * popupTarget = classifyPopupEvent(event);
+        // Local mutable copy: classify/route rebase coords + set isPopupEvent.
+        // Event is over-aligned (alignas(128)); MSVC (C2719) forbids that as a
+        // by-value parameter but allows it as a local.
+        Event event = incoming;
 
-        m_currentEvent = event;
-
-        // Dialog is modal - only route events to the dialog window, block everything else
+        // Dialog is modal - when one is open it is the only event target. It is a
+        // different connector type than the popup/submenu, but classification is
+        // the same (matchPopupTarget), so this stays a one-liner.
         if (m_dialogWindow) {
-            if (popupTarget == m_dialogWindow.get()) {
+            matchPopupTarget<DialogConnector>(event, { m_dialogWindow.get() });
+            m_currentEvent = event;
+            if (event.isPopupEvent) {
                 routePopupEvent(event, *m_dialogWindow);
             }
             m_subscribe.notify(Ui::PubSub::eventSourceId(event.type));
             return;
         }
 
+        // Classify event source window.
+        // In composite mode: popups are offscreen, classify by bounds.
+        // In non-composite mode: classify by native window handle.
+        // Popup and submenu are the same type, so a single PopupConnector* covers both.
+        PopupConnector * popupTarget = classifyPopupEvent(event);
+
+        m_currentEvent = event;
+
         const bool isChildEvent = (event.childWindowId != Ui::INVALID_ID);
         const bool isPopupEvent = event.isPopupEvent;
 
-        // Route popup-type events (dialog, submenu, popup menu)
+        // Route popup-type events (submenu, popup menu)
         if (isPopupEvent && popupTarget != nullptr) {
             routePopupEvent(event, *popupTarget);
         }
@@ -533,19 +565,19 @@ public:
         }
 
         // Create main window
-        m_mainWindow = std::make_unique<NativeWindow>(m_subscribe, MAIN_WINDOW_ID);
+        m_main = std::make_unique<MainConnector>(m_subscribe, MAIN_WINDOW_ID);
 
         // Set background color before create() so window uses correct bg pixel
-        m_mainWindow->setBackground(m_resManager.theme().second.bg);
+        m_main->window().setBackground(m_resManager.theme().second.bg);
 
-        if (!m_mainWindow->create(m_windowWidth, m_windowHeight, nullptr, 0, m_resManager.title())) {
+        if (!m_main->window().create(m_windowWidth, m_windowHeight, nullptr, 0, m_resManager.title())) {
             std::cerr << "[WindowManager] Failed to create main window" << std::endl;
             return false;
         }
 
         // Update dimensions from actual window
-        m_windowWidth  = m_mainWindow->bound().w;
-        m_windowHeight = m_mainWindow->bound().h;
+        m_windowWidth  = m_main->window().bound().w;
+        m_windowHeight = m_main->window().bound().h;
 
         // Restore window position. create() doesn't accept x/y, so we apply
         // the saved position after mapping via moveResize. May cause a brief
@@ -556,18 +588,18 @@ public:
         // are the just-validated bound() values so we don't fight the WM
         // on its sizing decision.
         if (sessionW > 0 && sessionH > 0) {
-            m_mainWindow->moveResize({ static_cast<fpx_t>(m_resManager.sessionWindowX()),
-                                       static_cast<fpx_t>(m_resManager.sessionWindowY()),
-                                       m_windowWidth,
-                                       m_windowHeight });
+            m_main->window().moveResize({ static_cast<fpx_t>(m_resManager.sessionWindowX()),
+                                          static_cast<fpx_t>(m_resManager.sessionWindowY()),
+                                          m_windowWidth,
+                                          m_windowHeight });
         }
 
         // Wire render request to Subscribe render queue
-        m_mainWindow->setRenderRequest([this]() { m_renderQueue.request(MAIN_WINDOW_ID); });
+        m_main->window().setRenderRequest([this]() { m_renderQueue.request(MAIN_WINDOW_ID); });
 
         applyWindowIcon();
 
-        m_mainWindow->makeCurrent();
+        m_main->window().makeCurrent();
 
 #ifndef __APPLE__
         // Initialize GLEW (experimental mode required for core profile contexts)
@@ -625,10 +657,10 @@ public:
         // Initialize platform-specific event handler. Double-click thresholds
         // come from the host via setDoubleClickConfig() after initialize().
         m_eventHandler = EventFactory::create();
-        m_eventHandler->init(*m_mainWindow);
+        m_eventHandler->init(m_main->window());
 
-        std::cout << "[WindowManager] Main window initialized: " << m_mainWindow->nativeHandle() << " " << m_windowWidth
-                  << "x" << m_windowHeight << std::endl;
+        std::cout << "[WindowManager] Main window initialized: " << m_main->window().nativeHandle() << " "
+                  << m_windowWidth << "x" << m_windowHeight << std::endl;
 
         m_running = true;
         return true;
@@ -646,11 +678,11 @@ public:
      */
     bool refreshDisplayMetrics()
     {
-        if (!m_mainWindow) {
+        if (!m_main) {
             return false;
         }
         const float prevScale = g_config.scale;
-        g_config.dpi          = NativeWindow::queryDpi(m_mainWindow->nativeDisplay());
+        g_config.dpi          = NativeWindow::queryDpi(m_main->window().nativeDisplay());
         g_config.scale        = static_cast<float>(g_config.dpi) / 96.0F;
 
         const auto & layout = m_resManager.layout();
@@ -696,7 +728,7 @@ public:
     // ResManager::setDockState whenever its committed state changes.
     void reflowDocksAndViewport()
     {
-        if (!m_mainWindow) {
+        if (!m_main) {
             return;
         }
         const auto & layout = m_resManager.layout();
@@ -714,8 +746,8 @@ public:
                 continue;
             }
             positionContentSurface(*entry.window);
-            if (entry.renderer != nullptr) {
-                entry.renderer->resize(newViewport.w, newViewport.h);
+            if (entry.pairing != nullptr) {
+                entry.pairing->resize(newViewport.w, newViewport.h);
             }
         }
         m_renderQueue.request(MAIN_WINDOW_ID);
@@ -822,7 +854,7 @@ public:
     // trying to load the icon directory as an SVG.
     void applyWindowIcon()
     {
-        if (!m_mainWindow) {
+        if (!m_main) {
             return;
         }
         const std::string mainIcon = m_resManager.iconDefault("window-icon").icon;
@@ -831,8 +863,8 @@ public:
         }
         const std::string symbolicIcon = m_resManager.iconDefault("window-icon-symbolic").icon;
         const auto &      resPath      = m_resManager.resPath();
-        m_mainWindow->setWindowIcon(resPath.icon(mainIcon),
-                                    symbolicIcon.empty() ? std::string {} : resPath.icon(symbolicIcon));
+        m_main->window().setWindowIcon(resPath.icon(mainIcon),
+                                       symbolicIcon.empty() ? std::string {} : resPath.icon(symbolicIcon));
     }
 
     /**
@@ -873,13 +905,13 @@ public:
         }
 
         // Main window: setBackground() calls makeCurrent() internally
-        if (m_mainWindow && Common::Bit::And(changed, Ui::Res::Type::Changed::Theme) != 0) {
-            m_mainWindow->setBackground(m_resManager.theme().second.bg);
+        if (m_main && Common::Bit::And(changed, Ui::Res::Type::Changed::Theme) != 0) {
+            m_main->window().setBackground(m_resManager.theme().second.bg);
         }
 
-        if (m_mainWindow && m_mainWindow->hasRenderer()) {
-            m_mainWindow->activeRenderer().apply(changed);
-            m_mainWindow->requestRender();
+        if (hasUiRenderer()) {
+            m_main->apply(changed); // connector makes the main context current, then applies
+            m_main->window().requestRender();
         }
 
         // Content surfaces: each setBackground() makes its own context current.
@@ -890,26 +922,30 @@ public:
             if (Common::Bit::And(changed, Ui::Res::Type::Changed::Theme) != 0) {
                 entry.window->setBackground(m_resManager.theme().workspace.bg);
             }
-            if (entry.renderer != nullptr) {
-                entry.renderer->apply(changed);
+            if (entry.pairing != nullptr) {
+                entry.pairing->apply(changed);
                 entry.window->requestRender();
             }
         }
 
         // Restore main window context (a content setBackground may have switched it)
-        if (m_mainWindow) {
-            m_mainWindow->makeCurrent();
+        if (m_main) {
+            m_main->window().makeCurrent();
         }
     }
 
     /**
      * @brief Get popup window (or nullptr if not created)
      */
-    Ui::Window::Popup::PopupWindow * popupWindow() { return m_popupWindow.get(); }
+    Ui::Window::Popup::PopupWindow * popupWindow() { return m_popupWindow ? &m_popupWindow->window() : nullptr; }
+
+    // Render the popup's first frame through its connector (make current -> draw).
+    // Returns true if a frame was drawn. The shell presents/shows it afterward.
+    bool renderPopup() { return m_popupWindow && m_popupWindow->render(); }
 
     // True when the open popup is an X11 child of the main window and so tracks
     // the parent's move/resize itself - the shell must not move/recreate it.
-    [[nodiscard]] bool popupFollowsParent() const { return m_popupWindow && m_popupWindow->followsParent(); }
+    [[nodiscard]] bool popupFollowsParent() const { return m_popupWindow && m_popupWindow->window().followsParent(); }
 
     /**
      * @brief Create popup window at screen coordinates with uniform corner radius
@@ -939,7 +975,7 @@ public:
             destroyPopup(true);
         }
 
-        m_popupWindow = std::make_unique<Ui::Window::Popup::PopupWindow>(m_subscribe, ++m_nextPopupId);
+        m_popupWindow = std::make_unique<PopupConnector>(m_subscribe, ++m_nextPopupId);
 
         // Convert absolute screen coords to coordinates relative to main window
         int parentScreenX {};
@@ -949,15 +985,15 @@ public:
         const fpx_t relY = bound.y - parentScreenY;
 
         // Set position and background before create
-        m_popupWindow->setPosition(relX, relY);
-        m_popupWindow->setBackground(bgColor);
+        m_popupWindow->window().setPosition(relX, relY);
+        m_popupWindow->window().setBackground(bgColor);
 
         // Set per-corner radii (values < 0.5 treated as zero)
         if (radii.anyNonZero()) {
-            m_popupWindow->setCornerRadii(radii);
+            m_popupWindow->window().setCornerRadii(radii);
         }
 
-        if (!m_popupWindow->create(*m_mainWindow, bound.w, bound.h)) {
+        if (!m_popupWindow->window().create(m_main->window(), bound.w, bound.h)) {
             std::cerr << "[WindowManager] Failed to create popup window (screen=" << bound.x << "," << bound.y
                       << ", rel=" << relX << "," << relY << ")" << std::endl;
             m_popupWindow.reset();
@@ -966,21 +1002,22 @@ public:
 
         // Register popup with event handler
         if (m_eventHandler) {
-            m_eventHandler->addPopupWindow(m_popupWindow->nativeHandle());
+            m_eventHandler->addPopupWindow(m_popupWindow->window().nativeHandle());
         }
 
         // On Wayland, move popup offscreen to prevent XWayland surface flicker.
         // Keep it mapped for valid EGL rendering.
         if (g_config.isCompositing) {
-            m_popupWindow->move(-bound.w, -bound.h);
-            m_popupWindow->setPosition(relX, relY);
+            m_popupWindow->window().move(-bound.w, -bound.h);
+            m_popupWindow->window().setPosition(relX, relY);
         }
 
         // Wire popup render request to Subscribe render queue
-        m_popupWindow->setRenderRequest([this]() { m_renderQueue.request(m_popupWindow->subscribeId()); });
+        m_popupWindow->window().setRenderRequest(
+        [this]() { m_renderQueue.request(m_popupWindow->window().subscribeId()); });
 
         // Subscribe popup to content changes from main window + content surfaces
-        const id_t popupSubId = m_popupWindow->subscribeId();
+        const id_t popupSubId = m_popupWindow->window().subscribeId();
         m_subscribe.add(MAIN_WINDOW_ID, popupSubId, [this]() { recapturePopupCorners(); });
         for (const auto & [id, entry] : m_contentSurfaces) {
             m_subscribe.add(WS_GROUP_ID + id, popupSubId, [this]() { recapturePopupCorners(); });
@@ -1016,22 +1053,31 @@ public:
         // Render main window to get fresh back buffer for corner capture
         renderMainWindow(true);
 
-        m_popupWindow->initRenderer(m_resManager, *it);
-
-        // Wire submenu hover callback
-        auto * popupRenderer = (m_popupWindow->hasRenderer() ? &m_popupWindow->menuRenderer() : nullptr);
-        if (popupRenderer != nullptr) {
-            popupRenderer->setSubmenuHoverCallback(
-            [this](const Ui::Res::Type::bound_t & itemBound,
-                   const Ui::Res::Type::menu_t &  item,
-                   bool                           isFirst,
-                   bool                           isLast) { onSubmenuHover(itemBound, item, isFirst, isLast); });
-        }
+        // Emplace the popup renderer on the connector and wire the submenu hover callback.
+        emplacePopupRenderer(*m_popupWindow, *it)
+        .setSubmenuHoverCallback([this](const Ui::Res::Type::bound_t & itemBound,
+                                        const Ui::Res::Type::menu_t &  item,
+                                        bool                           isFirst,
+                                        bool isLast) { onSubmenuHover(itemBound, item, isFirst, isLast); });
 
         // Initial corner capture
         recapturePopupCorners();
 
         swapMainWindow();
+    }
+
+    // Emplace a PopupRenderer on a menu/submenu connector. emplaceRenderer makes
+    // the window's GL context current for construction; size + alpha come from
+    // the just-created window.
+    Ui::Render::Popup::PopupRenderer & emplacePopupRenderer(PopupConnector &              connector,
+                                                            const Ui::Res::Type::menu_t & menu)
+    {
+        auto & renderer = connector.emplaceRenderer([&window = connector.window()] { window.makeCurrent(); },
+                                                    m_resManager,
+                                                    menu);
+        renderer.resize(connector.window().bound().w, connector.window().bound().h);
+        renderer.setAlpha(connector.window().hasAlpha());
+        return renderer;
     }
 
     /**
@@ -1051,17 +1097,16 @@ public:
             // already in m_submenuItemId).
 
             // Restore parent popup's TR and BR corners
-            if (m_popupWindow && m_mainWindow) {
+            if (m_popupWindow && m_main) {
                 const Ui::Res::Type::border_t originalRadii = m_resManager.layout().topMenuDropdown.border.scaled(
                 g_config.scale);
-                Ui::Res::Type::border_t parentRadii = m_popupWindow->cornerRadii();
+                Ui::Res::Type::border_t parentRadii = m_popupWindow->window().cornerRadii();
                 parentRadii.topRight                = originalRadii.topRight;
                 parentRadii.bottomRight             = originalRadii.bottomRight;
-                m_popupWindow->setCornerRadii(parentRadii);
+                m_popupWindow->window().setCornerRadii(parentRadii);
 
-                auto * popupRenderer = (m_popupWindow->hasRenderer() ? &m_popupWindow->menuRenderer() : nullptr);
-                if (popupRenderer != nullptr) {
-                    popupRenderer->setContainerBorder(m_resManager.layout().topMenuDropdown.border);
+                if (auto * renderer = popupRenderer(); renderer != nullptr) {
+                    renderer->setContainerBorder(m_resManager.layout().topMenuDropdown.border);
                 }
 
                 // Render main window for fresh back buffer, then recapture BR corner
@@ -1071,14 +1116,14 @@ public:
                 swapMainWindow();
             }
 
-            if (m_mainWindow) {
-                m_mainWindow->makeCurrent();
+            if (m_main) {
+                m_main->window().makeCurrent();
             }
             std::cout << "[WindowManager] Destroyed submenu window" << std::endl;
         }
     }
 
-    [[nodiscard]] bool hasSubmenu() const { return m_submenuWindow && m_submenuWindow->isValid(); }
+    [[nodiscard]] bool hasSubmenu() const { return m_submenuWindow && m_submenuWindow->window().isValid(); }
 
     [[nodiscard]] id_t submenuItemId() const { return m_submenuItemId; }
 
@@ -1090,11 +1135,11 @@ public:
         if (parentItemId == Ui::INVALID_ID || !m_popupWindow) {
             return;
         }
-        auto * popupRenderer = (m_popupWindow->hasRenderer() ? &m_popupWindow->menuRenderer() : nullptr);
-        if (popupRenderer == nullptr) {
+        auto * renderer = popupRenderer();
+        if (renderer == nullptr) {
             return;
         }
-        const Ui::Render::UiElement * el = popupRenderer->findElementById(parentItemId);
+        const Ui::Render::UiElement * el = renderer->findElementById(parentItemId);
         if (el == nullptr) {
             return;
         }
@@ -1106,22 +1151,21 @@ public:
                                                    toPhysRound(el->bound.y),
                                                    toPhysRound(el->bound.w),
                                                    toPhysRound(el->bound.h) };
-        const bool                   isFirst   = popupRenderer->isFirstElement(parentItemId);
-        const bool                   isLast    = popupRenderer->isLastElement(parentItemId);
+        const bool                   isFirst   = renderer->isFirstElement(parentItemId);
+        const bool                   isLast    = renderer->isLastElement(parentItemId);
         onSubmenuHover(physBound, item, isFirst, isLast);
     }
 
-    Ui::Window::Popup::PopupWindow * submenuWindow() { return m_submenuWindow.get(); }
+    Ui::Window::Popup::PopupWindow * submenuWindow() { return m_submenuWindow ? &m_submenuWindow->window() : nullptr; }
 
     void updateSubmenuParentHighlight(id_t parentId)
     {
         if (!m_popupWindow) {
             return;
         }
-        auto * popupRenderer = (m_popupWindow->hasRenderer() ? &m_popupWindow->menuRenderer() : nullptr);
-        if (popupRenderer != nullptr) {
-            popupRenderer->setSubmenuParentId(parentId);
-            m_popupWindow->requestRender();
+        if (auto * renderer = popupRenderer(); renderer != nullptr) {
+            renderer->setSubmenuParentId(parentId);
+            m_popupWindow->window().requestRender();
         }
     }
 
@@ -1145,12 +1189,12 @@ public:
     {
         if (auto * renderer = submenuRenderer(); renderer != nullptr && renderer->findElementById(id) != nullptr) {
             renderer->setHoveredItem(id);
-            m_submenuWindow->requestRender();
+            m_submenuWindow->window().requestRender();
             return;
         }
         if (auto * renderer = popupRenderer(); renderer != nullptr && renderer->findElementById(id) != nullptr) {
             renderer->setHoveredItem(id);
-            m_popupWindow->requestRender();
+            m_popupWindow->window().requestRender();
         }
     }
 
@@ -1164,7 +1208,7 @@ public:
         destroySubmenu();
 
         const id_t submenuId = ++m_nextPopupId;
-        m_submenuWindow      = std::make_unique<Ui::Window::Popup::PopupWindow>(m_subscribe, submenuId);
+        m_submenuWindow      = std::make_unique<PopupConnector>(m_subscribe, submenuId);
 
         int parentScreenX {};
         int parentScreenY {};
@@ -1172,25 +1216,26 @@ public:
         const fpx_t relX = bound.x - parentScreenX;
         const fpx_t relY = bound.y - parentScreenY;
 
-        m_submenuWindow->setPosition(relX, relY);
-        m_submenuWindow->setBackground(bgColor);
+        m_submenuWindow->window().setPosition(relX, relY);
+        m_submenuWindow->window().setBackground(bgColor);
 
         if (radii.anyNonZero()) {
-            m_submenuWindow->setCornerRadii(radii);
+            m_submenuWindow->window().setCornerRadii(radii);
         }
 
-        if (!m_submenuWindow->create(*m_mainWindow, bound.w, bound.h)) {
+        if (!m_submenuWindow->window().create(m_main->window(), bound.w, bound.h)) {
             std::cerr << "[WindowManager] Failed to create submenu window" << std::endl;
             m_submenuWindow.reset();
             return false;
         }
 
         if (g_config.isCompositing) {
-            m_submenuWindow->move(-bound.w, -bound.h);
-            m_submenuWindow->setPosition(relX, relY);
+            m_submenuWindow->window().move(-bound.w, -bound.h);
+            m_submenuWindow->window().setPosition(relX, relY);
         }
 
-        m_submenuWindow->setRenderRequest([this]() { m_renderQueue.request(m_submenuWindow->subscribeId()); });
+        m_submenuWindow->window().setRenderRequest(
+        [this]() { m_renderQueue.request(m_submenuWindow->window().subscribeId()); });
 
         // Subscribe submenu to content changes from main window + content surfaces
         // (same pattern as popup - keeps corner capture fresh when a content
@@ -1217,7 +1262,7 @@ public:
         // Render main window to back buffer for corner capture (do NOT swap -
         // swapping without popup composite would flash the popup away)
         renderMainWindow(true);
-        m_submenuWindow->initRenderer(m_resManager, submenu);
+        emplacePopupRenderer(*m_submenuWindow, submenu);
         recaptureCorners(*m_submenuWindow, m_submenuComposite);
 
         // Redraw popup composite on main window before swap
@@ -1254,32 +1299,36 @@ public:
         }
 
         const id_t dialogId = ++m_nextPopupId;
-        m_dialogWindow      = std::make_unique<Ui::Window::Popup::DialogWindow>(m_subscribe, dialogId);
+        m_dialogWindow      = std::make_unique<DialogConnector>(m_subscribe, dialogId);
 
-        m_dialogWindow->setRenderRequest([this]() { m_renderQueue.request(m_dialogWindow->subscribeId()); });
+        m_dialogWindow->window().setRenderRequest(
+        [this]() { m_renderQueue.request(m_dialogWindow->window().subscribeId()); });
 
-        if (!m_dialogWindow->open(*m_mainWindow,
-                                  m_resManager,
-                                  resolved,
-                                  [this, resolved](Ui::Res::Type::DialogAction result) {
-                                      m_lastDialogResult = result;
-                                      m_lastDialogData   = resolved;
-                                      m_subscribe.defer([this]() {
-                                          if (m_onDialogClose) {
-                                              m_onDialogClose();
-                                          }
-                                          closeDialog();
-                                      });
-                                  })) {
+        // Create the dialog window (centered), then emplace its renderer on the
+        // connector (needs the window's GL context, made current by emplaceRenderer).
+        if (!m_dialogWindow->window().open(m_main->window(), m_resManager, resolved)) {
             m_dialogWindow.reset();
             return;
         }
 
+        auto & dialogRenderer = m_dialogWindow->emplaceRenderer(
+        [&window = m_dialogWindow->window()] { window.makeCurrent(); },
+        m_resManager,
+        resolved);
+        dialogRenderer.resize(m_dialogWindow->window().bound().w, m_dialogWindow->window().bound().h);
+        dialogRenderer.setAlpha(m_dialogWindow->window().hasAlpha());
+        dialogRenderer.setCloseCallback([this, resolved](Ui::Res::Type::DialogAction result) {
+            m_lastDialogResult = result;
+            m_lastDialogData   = resolved;
+            m_subscribe.defer([this]() {
+                if (m_onDialogClose) {
+                    m_onDialogClose();
+                }
+                closeDialog();
+            });
+        });
         // Wire smooth scroll animation to render queue
-        if (m_dialogWindow->hasRenderer()) {
-            m_dialogWindow->dialogRenderer().setRenderRequest(
-            [this]() { m_renderQueue.request(m_dialogWindow->subscribeId()); });
-        }
+        dialogRenderer.setRenderRequest([this]() { m_renderQueue.request(m_dialogWindow->window().subscribeId()); });
 
         renderMainWindow(true);
         recaptureCorners(*m_dialogWindow, m_dialogComposite);
@@ -1289,20 +1338,20 @@ public:
         // Render dialog content into its back buffer BEFORE making the window visible;
         // otherwise an empty borderless NSWindow flashes for a frame (macOS orderFront is synchronous).
         if (!g_config.isCompositing && m_dialogWindow->render()) {
-            m_dialogWindow->swapBuffers();
+            m_dialogWindow->window().swapBuffers();
         }
 
         if (!g_config.isCompositing) {
-            m_dialogWindow->show();
+            m_dialogWindow->window().show();
         }
 
         // Dialogs have no hover/mouse activity to piggy-back on after open, so the first
         // render+swap above can land on a drawable that is not yet attached to a visible
         // window (macOS NSOpenGLView - Platform::MacOsWindow::show binds the drawable on first show).
         // Queue one more frame so renderAll() repaints onto the now-bound surface.
-        m_renderQueue.request(m_dialogWindow->subscribeId());
+        m_renderQueue.request(m_dialogWindow->window().subscribeId());
 
-        m_mainWindow->makeCurrent();
+        m_main->window().makeCurrent();
     }
 
     void closeDialog()
@@ -1311,40 +1360,37 @@ public:
             m_dialogWindow.reset();
             m_dialogComposite.clear();
 
-            if (m_mainWindow) {
-                m_mainWindow->makeCurrent();
+            if (m_main) {
+                m_main->window().makeCurrent();
                 renderMainAndSwap();
             }
             std::cout << "[WindowManager] Dialog closed" << std::endl;
         }
     }
 
-    [[nodiscard]] bool                        hasDialog() const { return m_dialogWindow && m_dialogWindow->isValid(); }
-    [[nodiscard]] Ui::Res::Type::DialogAction lastDialogAction() const { return m_lastDialogResult; }
+    [[nodiscard]] bool hasDialog() const { return m_dialogWindow && m_dialogWindow->window().isValid(); }
+    [[nodiscard]] Ui::Res::Type::DialogAction     lastDialogAction() const { return m_lastDialogResult; }
     [[nodiscard]] const Ui::Res::Type::dialog_t & lastDialogData() const { return m_lastDialogData; }
 
     void confirmDialog()
     {
-        if (!m_dialogWindow || !m_dialogWindow->hasRenderer()) {
-            return;
+        if (m_dialogWindow && m_dialogWindow->hasRenderer()) {
+            m_dialogWindow->renderer().confirmPrimary();
         }
-        m_dialogWindow->dialogRenderer().confirmPrimary();
     }
 
     void dismissDialog()
     {
-        if (!m_dialogWindow || !m_dialogWindow->hasRenderer()) {
-            return;
+        if (m_dialogWindow && m_dialogWindow->hasRenderer()) {
+            m_dialogWindow->renderer().dismiss();
         }
-        m_dialogWindow->dialogRenderer().dismiss();
     }
 
     void dialogKeyPress(const std::string & key)
     {
-        if (!m_dialogWindow || !m_dialogWindow->hasRenderer()) {
-            return;
+        if (m_dialogWindow && m_dialogWindow->hasRenderer()) {
+            m_dialogWindow->renderer().onKeyPress(key);
         }
-        m_dialogWindow->dialogRenderer().onKeyPress(key);
     }
 
     /**
@@ -1374,7 +1420,7 @@ public:
         m_submenuItemId = item.id;
 
         // Calculate submenu position: to the right of the hovered item
-        const Ui::Res::Type::bound_t & popupBound = m_popupWindow->bound();
+        const Ui::Res::Type::bound_t popupBound = m_popupWindow->window().bound();
 
         int parentScreenX {};
         int parentScreenY {};
@@ -1410,10 +1456,10 @@ public:
         submenuRadii.topLeft = 0;
 
         if (isFirst || isLast) {
-            Ui::Res::Type::border_t parentRadii = m_popupWindow->cornerRadii();
+            Ui::Res::Type::border_t parentRadii = m_popupWindow->window().cornerRadii();
             Ui::Res::Type::border_t cssBorder   = m_resManager.layout().topMenuDropdown.border;
 
-            auto * popupRenderer = (m_popupWindow->hasRenderer() ? &m_popupWindow->menuRenderer() : nullptr);
+            auto * renderer = popupRenderer();
 
             if (isFirst) {
                 parentRadii.topRight = 0;
@@ -1424,20 +1470,20 @@ public:
                 cssBorder.bottomRight   = 0;
             }
 
-            m_popupWindow->setCornerRadii(parentRadii);
+            m_popupWindow->window().setCornerRadii(parentRadii);
 
-            if (popupRenderer != nullptr) {
-                popupRenderer->setContainerBorder(cssBorder);
-                m_popupWindow->makeCurrent();
+            if (renderer != nullptr) {
+                renderer->setContainerBorder(cssBorder);
+                m_popupWindow->window().makeCurrent();
                 if (isFirst) {
-                    popupRenderer->updateCorner(1, {}, 0);
+                    renderer->updateCorner(1, {}, 0);
                 }
                 if (isLast) {
-                    popupRenderer->updateCorner(2, {}, 0);
+                    renderer->updateCorner(2, {}, 0);
                 }
-                m_mainWindow->makeCurrent();
+                m_main->window().makeCurrent();
             }
-            m_popupWindow->requestRender();
+            m_popupWindow->window().requestRender();
         }
 
         const Ui::Res::Type::bound_t submenuBound = { submenuX, submenuY, submenuW, submenuH };
@@ -1450,28 +1496,20 @@ public:
         submenu.popupHeight = contentCssH;
         initSubmenuRenderer(submenu);
 
-        auto * submenuWin = submenuWindow();
-        if (submenuWin == nullptr) {
+        if (!m_submenuWindow) {
             return;
         }
 
-        if (submenuWin->render()) {
-            if (g_config.isCompositing) {
-                captureComposite(*submenuWin, m_submenuComposite);
-                refreshComposite();
-            } else {
-                submenuWin->swapBuffers();
-            }
-        }
+        renderPopupWindow(*m_submenuWindow, m_submenuComposite);
 
         if (!g_config.isCompositing) {
-            submenuWin->show();
+            m_submenuWindow->window().show();
         }
 
         // Mark submenu parent in parent popup so it stays highlighted
         updateSubmenuParentHighlight(item.id);
 
-        m_mainWindow->makeCurrent();
+        m_main->window().makeCurrent();
     }
 
     /**
@@ -1485,7 +1523,7 @@ public:
         if (m_popupWindow) {
             // Unregister from event handler
             if (m_eventHandler) {
-                m_eventHandler->removePopupWindow(m_popupWindow->nativeHandle());
+                m_eventHandler->removePopupWindow(m_popupWindow->window().nativeHandle());
             }
             // reset() triggers destructor which calls cleanupWayland() (xdg_popup,
             // xdg_surface) then Platform::WaylandWindow::destroy() (wl_surface, EGL).
@@ -1495,22 +1533,22 @@ public:
 
             // Sync to ensure the popup is removed from screen before we capture corners
             // for a new popup (otherwise we capture the old popup content)
-            if (syncDisplay && m_mainWindow) {
+            if (syncDisplay && m_main) {
 #if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
-                auto * display = m_mainWindow->nativeDisplay(); // NOLINT(cppcoreguidelines-init-variables)
+                auto * display = m_main->window().nativeDisplay(); // NOLINT(cppcoreguidelines-init-variables)
                 if (display != nullptr) {
                     XSync(display, Ui::Window::Platform::X11::False);
                 }
 #elif defined(HAVE_WAYLAND)
-                if (m_mainWindow->nativeDisplay() != nullptr) {
-                    wl_display_roundtrip(m_mainWindow->nativeDisplay());
+                if (m_main->window().nativeDisplay() != nullptr) {
+                    wl_display_roundtrip(m_main->window().nativeDisplay());
                 }
 #endif
             }
 
             // Restore main window context (popup destruction may have invalidated it)
-            if (m_mainWindow) {
-                m_mainWindow->makeCurrent();
+            if (m_main) {
+                m_main->window().makeCurrent();
             }
 
             std::cout << "[WindowManager] Destroyed popup window" << std::endl;
@@ -1520,7 +1558,7 @@ public:
     /**
      * @brief Check if popup window exists
      */
-    [[nodiscard]] bool hasPopup() const { return m_popupWindow && m_popupWindow->isValid(); }
+    [[nodiscard]] bool hasPopup() const { return m_popupWindow && m_popupWindow->window().isValid(); }
 
     /**
      * @brief Capture popup pixels for composite mode (Wayland)
@@ -1529,7 +1567,7 @@ public:
     void capturePopupPixels()
     {
         if (m_popupWindow) {
-            captureComposite(*m_popupWindow, m_popupComposite);
+            captureComposite(m_popupWindow->window(), m_popupComposite);
         }
     }
 
@@ -1541,15 +1579,18 @@ public:
     /**
      * @brief Get the main window
      */
-    [[nodiscard]] NativeWindow & mainWindow() { return *m_mainWindow; }
+    [[nodiscard]] NativeWindow & mainWindow() { return m_main->window(); }
+
+    // Clear main-UI hover state only (popups and docks handle their own leave).
+    bool mainWindowMouseLeave() { return m_main != nullptr && m_main->onMouseLeave(); }
 
     /**
      * @brief Get main window's absolute screen position
      */
     void mainWindowScreenPosition(int & screenX, int & screenY) const
     {
-        if (m_mainWindow) {
-            m_mainWindow->screenPosition(screenX, screenY);
+        if (m_main) {
+            m_main->window().screenPosition(screenX, screenY);
         } else {
             screenX = 0;
             screenY = 0;
@@ -1562,8 +1603,8 @@ public:
     // drifting on restart. See Ui::IWindow::screenFramePosition for the why.
     void mainWindowScreenFramePosition(int & screenX, int & screenY) const
     {
-        if (m_mainWindow) {
-            m_mainWindow->screenFramePosition(screenX, screenY);
+        if (m_main) {
+            m_main->window().screenFramePosition(screenX, screenY);
         } else {
             screenX = 0;
             screenY = 0;
@@ -1582,19 +1623,16 @@ public:
     {
         // The fw renderer never holds a window; give it a makeCurrent callback
         // over the main window plus the current physical size.
-        auto uiRenderer = std::make_unique<Ui::Render::UiRenderer>(
-        [window = m_mainWindow.get()] { window->makeCurrent(); },
-        m_windowWidth,
-        m_windowHeight,
-        m_resManager);
-        m_uiRenderer = uiRenderer.get();
-        m_uiRenderer->setContent();
-        m_uiRenderer->setExtraOpsHook([this](Ui::Render::UiRenderer & out) {
+        m_main->emplaceRenderer([&window = m_main->window()] { window.makeCurrent(); },
+                                m_windowWidth,
+                                m_windowHeight,
+                                m_resManager);
+        m_main->renderer().setContent();
+        m_main->renderer().setExtraOpsHook([this](Ui::Render::UiRenderer & out) {
             for (const auto & [id, dock] : m_docks) {
                 dock.render(out);
             }
         });
-        m_mainWindow->setRenderer(std::move(uiRenderer));
     }
 
     /**
@@ -1602,8 +1640,8 @@ public:
      */
     void setOnElementHover(std::function<void(Ui::Render::UiElementType, id_t)> cb)
     {
-        if (m_uiRenderer != nullptr) {
-            m_uiRenderer->setOnElementHover(std::move(cb));
+        if (hasUiRenderer()) {
+            m_main->renderer().setOnElementHover(std::move(cb));
         }
     }
 
@@ -1613,7 +1651,7 @@ public:
     [[nodiscard]] const Ui::Res::Type::bound_t & elementBound(id_t id) const
     {
         static const Ui::Res::Type::bound_t empty {};
-        return m_uiRenderer != nullptr ? m_uiRenderer->bound(id) : empty;
+        return hasUiRenderer() ? m_main->renderer().bound(id) : empty;
     }
 
     /**
@@ -1621,8 +1659,8 @@ public:
      */
     void setUIContent()
     {
-        if (m_uiRenderer != nullptr) {
-            m_uiRenderer->setContent();
+        if (hasUiRenderer()) {
+            m_main->renderer().setContent();
         }
     }
 
@@ -1631,8 +1669,8 @@ public:
      */
     void resizeMainRenderer(fpx_t w, fpx_t h)
     {
-        if (m_uiRenderer != nullptr) {
-            m_uiRenderer->resize(w, h);
+        if (hasUiRenderer()) {
+            m_main->renderer().resize(w, h);
         }
     }
 
@@ -1649,19 +1687,19 @@ public:
      */
     void renderMainWindow(bool fullRedraw)
     {
-        if (m_uiRenderer == nullptr || !m_mainWindow) {
+        if (!hasUiRenderer()) {
             return;
         }
-        m_mainWindow->makeCurrent();
+        m_main->window().makeCurrent();
 
         if (fullRedraw) {
-            m_mainWindow->clear();
+            m_main->window().clear();
         }
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         Ui::Gl::SvgRenderer::setUploadPremultiplied(true);
-        m_uiRenderer->Render(m_windowWidth, m_windowHeight);
+        m_main->renderer().Render(m_windowWidth, m_windowHeight);
 
         // In composite mode, draw content surfaces as textures (no popup yet --
         // popup composite is drawn after corner capture to avoid ghost artifacts)
@@ -1682,13 +1720,13 @@ public:
             return;
         }
         if (m_popupWindow && !m_popupComposite.pixels.empty()) {
-            drawCompositeTexture(m_popupComposite, m_popupWindow->bound());
+            drawCompositeTexture(m_popupComposite, m_popupWindow->window().bound());
         }
         if (m_submenuWindow && !m_submenuComposite.pixels.empty()) {
-            drawCompositeTexture(m_submenuComposite, m_submenuWindow->bound());
+            drawCompositeTexture(m_submenuComposite, m_submenuWindow->window().bound());
         }
         if (m_dialogWindow && !m_dialogComposite.pixels.empty()) {
-            drawCompositeTexture(m_dialogComposite, m_dialogWindow->bound());
+            drawCompositeTexture(m_dialogComposite, m_dialogWindow->window().bound());
         }
     }
 
@@ -1725,7 +1763,7 @@ public:
         //    may have left the content surface's context current, and font/texture creation here
         //    needs the main window's context.
         if (m_contentIsDirty) {
-            m_mainWindow->makeCurrent();
+            m_main->window().makeCurrent();
             setUIContent();
             m_contentIsDirty = false;
         }
@@ -1754,9 +1792,9 @@ public:
         m_renderQueue.clear();
 
         const bool renderMain    = pending.contains(MAIN_WINDOW_ID);
-        const bool renderPopup   = m_popupWindow && pending.contains(m_popupWindow->subscribeId());
-        const bool renderSubmenu = m_submenuWindow && pending.contains(m_submenuWindow->subscribeId());
-        const bool renderDialog  = m_dialogWindow && pending.contains(m_dialogWindow->subscribeId());
+        const bool renderPopup   = m_popupWindow && pending.contains(m_popupWindow->window().subscribeId());
+        const bool renderSubmenu = m_submenuWindow && pending.contains(m_submenuWindow->window().subscribeId());
+        const bool renderDialog  = m_dialogWindow && pending.contains(m_dialogWindow->window().subscribeId());
 
         // 1. Render main window
         if (renderMain) {
@@ -1780,17 +1818,17 @@ public:
 
     void swapMainWindow()
     {
-        if (m_mainWindow) {
-            m_mainWindow->swapBuffers();
+        if (m_main) {
+            m_main->window().swapBuffers();
         }
     }
 
     /** @brief Force main window GL flush (makeCurrent + swap) for EGL surface resize */
     void flushMainWindow()
     {
-        if (m_mainWindow) {
-            m_mainWindow->makeCurrent();
-            m_mainWindow->swapBuffers();
+        if (m_main) {
+            m_main->window().makeCurrent();
+            m_main->window().swapBuffers();
         }
     }
 
@@ -1802,19 +1840,19 @@ public:
      */
     void refreshComposite()
     {
-        if (m_uiRenderer == nullptr || !m_mainWindow) {
+        if (!hasUiRenderer()) {
             return;
         }
-        m_mainWindow->makeCurrent();
-        m_mainWindow->clear();
+        m_main->window().makeCurrent();
+        m_main->window().clear();
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         Ui::Gl::SvgRenderer::setUploadPremultiplied(true);
-        m_uiRenderer->Render(m_windowWidth, m_windowHeight);
+        m_main->renderer().Render(m_windowWidth, m_windowHeight);
         if (g_config.isCompositing) {
             drawCompositeTextures();
         }
-        m_mainWindow->swapBuffers();
+        m_main->window().swapBuffers();
     }
 
     void renderMainAndSwap()
@@ -1824,45 +1862,52 @@ public:
         swapMainWindow();
     }
 
-    void renderPopupWindow(Ui::Window::Popup::PopupWindow & window, CompositeTexture & texture)
+    // Render a popup/submenu/dialog connector's frame, then present (composite
+    // capture on Wayland, swap otherwise) and restore the main context.
+    template <typename C>
+    void renderPopupWindow(C & connector, CompositeTexture & texture)
     {
-        window.render();
+        connector.render(); // connector makes its context current, then draws
         if (g_config.isCompositing) {
-            captureComposite(window, texture);
+            captureComposite(connector.window(), texture);
             refreshComposite();
         } else {
-            window.swapBuffers();
+            connector.window().swapBuffers();
         }
-        m_mainWindow->makeCurrent();
+        m_main->window().makeCurrent();
     }
 
     void recapturePopupCorners() { recaptureCorners(*m_popupWindow, m_popupComposite); }
 
     void recaptureSubmenuCorners() { recaptureCorners(*m_submenuWindow, m_submenuComposite); }
 
-    void recaptureCorners(Ui::Window::Popup::PopupWindow & window, CompositeTexture & texture)
+    // Recapture the parent-behind-the-corners pixels and push them into the
+    // popup/dialog renderer for software-rounded corners. Works on any popup-type
+    // connector (its renderer derives PopupRendererBase, which has setCornerPixels).
+    template <typename C>
+    void recaptureCorners(C & connector, CompositeTexture & texture)
     {
-        if (!window.hasRenderer()) {
+        if (!connector.hasRenderer()) {
             return;
         }
 
-        const auto & cb = window.bound();
-        const auto & cr = window.cornerRadii();
+        const auto & cb = connector.window().bound();
+        const auto & cr = connector.window().cornerRadii();
 
         std::array<std::vector<uint8_t>, 4> cornerPixels;
         Ui::Res::Type::border_t             capturedRadii {};
-        captureCornerPixels(cb, cr, window.background(), cornerPixels, capturedRadii);
+        captureCornerPixels(cb, cr, connector.window().background(), cornerPixels, capturedRadii);
 
-        window.makeCurrent();
-        window.popupRenderer().setCornerPixels(std::move(cornerPixels), capturedRadii);
-        window.requestRender();
-        window.render();
+        connector.window().makeCurrent();
+        connector.renderer().setCornerPixels(std::move(cornerPixels), capturedRadii);
+        connector.window().requestRender();
+        connector.render();
 
         if (g_config.isCompositing) {
-            captureComposite(window, texture);
+            captureComposite(connector.window(), texture);
         }
 
-        m_mainWindow->makeCurrent();
+        m_main->window().makeCurrent();
     }
 
     /**
@@ -1876,72 +1921,86 @@ public:
      */
 
     /**
-     * @brief Classify which popup-type window an event belongs to.
+     * @brief Match a mouse event against popup-type connectors (topmost first).
      *
-     * In composite mode: checks bounds (topmost first: dialog > submenu > popup).
-     * In non-composite mode: matches sourceWindow handle against known windows.
-     * Sets event.isPopupEvent, event.childWindowId, and adjusts mouse coords.
-     * @return Target popup window, or nullptr if event is for main/child window.
+     * Composite mode: popups are offscreen, so match by bounds and rebase the
+     * coords into the hit window. Otherwise: match the native source handle.
+     * Sets event.isPopupEvent on a hit. Shared by the popup/submenu and the
+     * (modal) dialog classification - they differ only in the connector type.
+     * @return the hit connector, or nullptr.
      */
-    Ui::Window::Popup::PopupWindow * classifyPopupEvent(Event & event)
+    template <typename C>
+    static C * matchPopupTarget(Event & event, std::initializer_list<C *> candidates)
     {
         const bool isMouse = (event.type == EventType::MouseMove || event.type == EventType::MouseButtonPress
                               || event.type == EventType::MouseButtonRelease || event.type == EventType::Scroll
                               || event.type == EventType::MouseLeave);
 
         if (g_config.isCompositing) {
-            // Composite mode: popups are offscreen, classify by bounds.
-            // MouseLeave has no meaningful coords - let dispatchEvent handle it globally.
+            // MouseLeave has no meaningful coords - handled globally by the caller.
             if (!isMouse || event.type == EventType::MouseLeave) {
                 return nullptr;
             }
-
-            // Check topmost first: dialog > submenu > popup
-            const std::array<Ui::Window::Popup::PopupWindow *, 3> candidates = {
-                m_dialogWindow.get(),
-                m_submenuWindow.get(),
-                m_popupWindow.get(),
-            };
-
-            for (auto * candidate : candidates) {
-                if (candidate != nullptr) {
-                    const Ui::Res::Type::bound_t & b = candidate->bound();
-                    if (b.contains(event.mouse.x, event.mouse.y)) {
-                        event.mouse.x -= static_cast<int>(b.x);
-                        event.mouse.y -= static_cast<int>(b.y);
-                        event.isPopupEvent = true;
-                        return candidate;
-                    }
+            for (C * candidate : candidates) {
+                if (candidate == nullptr) {
+                    continue;
+                }
+                const Ui::Res::Type::bound_t & b = candidate->window().bound();
+                if (b.contains(event.mouse.x, event.mouse.y)) {
+                    event.mouse.x -= static_cast<int>(b.x);
+                    event.mouse.y -= static_cast<int>(b.y);
+                    event.isPopupEvent = true;
+                    return candidate;
                 }
             }
             return nullptr;
         }
 
-        // Non-composite mode: classify by native window handle
         const auto src = event.sourceWindow;
-        if (src == 0 || (m_mainWindow && src == m_mainWindow->nativeHandle())) {
+        for (C * candidate : candidates) {
+            if (candidate != nullptr && src == candidate->window().nativeHandle()) {
+                event.isPopupEvent = true;
+                return candidate;
+            }
+        }
+        return nullptr;
+    }
+
+    /**
+     * @brief Classify which popup-type window a (non-dialog) event belongs to.
+     *
+     * Matches the popup/submenu first (same type, submenu topmost), then falls
+     * through to main/content-surface routing. Sets event.isPopupEvent,
+     * event.childWindowId, and adjusts mouse coords.
+     * @return Target popup connector, or nullptr if event is for main/child window.
+     */
+    PopupConnector * classifyPopupEvent(Event & event)
+    {
+        if (auto * hit = matchPopupTarget<PopupConnector>(event, { m_submenuWindow.get(), m_popupWindow.get() });
+            hit != nullptr) {
+            return hit;
+        }
+
+        // Composite mode routes popups by bounds (above) and content surfaces by
+        // hit-test elsewhere - no handle-based classification here.
+        if (g_config.isCompositing) {
+            return nullptr;
+        }
+
+        // Non-composite mode: classify remaining source handles.
+        const bool isMouse = (event.type == EventType::MouseMove || event.type == EventType::MouseButtonPress
+                              || event.type == EventType::MouseButtonRelease || event.type == EventType::Scroll
+                              || event.type == EventType::MouseLeave);
+        const auto src     = event.sourceWindow;
+        if (src == 0 || (m_main && src == m_main->window().nativeHandle())) {
             if constexpr (WM_ROUTE_DEBUG) {
                 if (isMouse) {
                     std::cout << "[WM] route=main src=" << src
-                              << " main=" << (m_mainWindow ? m_mainWindow->nativeHandle() : NativeWindowHandle {})
+                              << " main=" << (m_main ? m_main->window().nativeHandle() : NativeWindowHandle {})
                               << " type=" << static_cast<int>(event.type) << std::endl;
                 }
             }
             return nullptr;
-        }
-
-        // Check popup-type windows
-        if (m_dialogWindow && src == m_dialogWindow->nativeHandle()) {
-            event.isPopupEvent = true;
-            return m_dialogWindow.get();
-        }
-        if (m_submenuWindow && src == m_submenuWindow->nativeHandle()) {
-            event.isPopupEvent = true;
-            return m_submenuWindow.get();
-        }
-        if (m_popupWindow && src == m_popupWindow->nativeHandle()) {
-            event.isPopupEvent = true;
-            return m_popupWindow.get();
         }
 
         // Check content surfaces (host viewports)
@@ -1967,51 +2026,55 @@ public:
     }
 
     /**
-     * @brief Route a popup event to the target popup window.
+     * @brief Route a popup event to the target connector (popup/submenu/dialog).
+     *
+     * Events go through the connector (make current -> renderer, request render);
+     * geometry (containsPoint) and the render request are on its window.
      */
-    void routePopupEvent(const Event & event, Ui::Window::Popup::PopupWindow & target)
+    template <typename C>
+    void routePopupEvent(const Event & event, C & target)
     {
         switch (event.type) {
         case EventType::MouseMove: {
-            const bool insideVisual = target.containsPoint(event.mouse.x, event.mouse.y);
+            const bool insideVisual = target.window().containsPoint(event.mouse.x, event.mouse.y);
             if (insideVisual) {
                 if (target.onMouseMove(event.mouse.x, event.mouse.y)) {
-                    target.requestRender();
+                    target.window().requestRender();
                 }
                 m_popupEventConsumed = true;
-                if (m_mainWindow && m_mainWindow->onMouseLeave()) {
+                if (m_main && m_main->onMouseLeave()) {
                     requestMainRender();
                 }
             } else if (target.onMouseLeave()) {
-                target.requestRender();
+                target.window().requestRender();
             }
             break;
         }
         case EventType::MouseButtonPress:
             if (event.mouse.button == MouseButton::Left) {
-                const bool insideVisual = target.containsPoint(event.mouse.x, event.mouse.y);
+                const bool insideVisual = target.window().containsPoint(event.mouse.x, event.mouse.y);
                 if (insideVisual) {
                     target.onMousePress(event.mouse.x, event.mouse.y, event.mouse.clickCount);
-                    target.requestRender();
+                    target.window().requestRender();
                     m_popupEventConsumed = true;
                 }
             }
             break;
         case EventType::MouseButtonRelease:
             if (event.mouse.button == MouseButton::Left) {
-                const bool insideVisual = target.containsPoint(event.mouse.x, event.mouse.y);
+                const bool insideVisual = target.window().containsPoint(event.mouse.x, event.mouse.y);
                 if (insideVisual) {
                     m_lastClickResult = target.onMouseRelease(event.mouse.x, event.mouse.y);
-                    target.requestRender();
+                    target.window().requestRender();
                     m_popupEventConsumed = true;
                 }
             }
             break;
         case EventType::Scroll: {
-            const bool insideVisual = target.containsPoint(event.mouse.x, event.mouse.y);
+            const bool insideVisual = target.window().containsPoint(event.mouse.x, event.mouse.y);
             if (insideVisual) {
                 if (target.onScroll(event.mouse.x, event.mouse.y, event.scroll.deltaY)) {
-                    target.requestRender();
+                    target.window().requestRender();
                 }
                 m_popupEventConsumed = true;
             }
@@ -2019,7 +2082,7 @@ public:
         }
         case EventType::MouseLeave:
             target.onMouseLeave();
-            target.requestRender();
+            target.window().requestRender();
             break;
         default: break;
         }
@@ -2031,7 +2094,7 @@ public:
                              std::array<std::vector<uint8_t>, 4> & outPixels,
                              Ui::Res::Type::border_t &             outRadii)
     {
-        if (!m_mainWindow) {
+        if (!m_main) {
             return false;
         }
 
@@ -2041,7 +2104,7 @@ public:
         outRadii = clampRadii(cornerRadii, popupBound.w, popupBound.h);
 
         bool anyCapture = false;
-        m_mainWindow->makeCurrent();
+        m_main->window().makeCurrent();
 
         // Corner capture rects and buffers (indexed TL=0, TR=1, BR=2, BL=3)
         std::array<Ui::Res::Type::bound_t, 4> caps {};
@@ -2232,20 +2295,20 @@ public:
                 }
             };
             if (auto cit = m_contentSurfaces.find(m_activeContent);
-                cit != m_contentSurfaces.end() && cit->second.window != nullptr && cit->second.renderer != nullptr
+                cit != m_contentSurfaces.end() && cit->second.window != nullptr && cit->second.pairing != nullptr
                 && cit->second.isReady) {
-                compositeContent(cit->second.window->bound(), *cit->second.renderer);
+                compositeContent(cit->second.window->bound(), *cit->second.pairing);
             }
         }
 
-        m_mainWindow->makeCurrent();
+        m_main->window().makeCurrent();
         return anyCapture;
     }
 
     /**
      * @brief Check if Ui::Render::UiRenderer is initialized
      */
-    [[nodiscard]] bool hasUiRenderer() const { return m_uiRenderer != nullptr; }
+    [[nodiscard]] bool hasUiRenderer() const { return m_main != nullptr && m_main->hasRenderer(); }
 
     [[nodiscard]] bool isRunning() const { return m_running.load(); }
     void               stop() { m_running = false; }
@@ -2259,7 +2322,7 @@ public:
         if (!m_eventHandler) {
             return false;
         }
-        return m_eventHandler->pollEvent(event, *m_mainWindow);
+        return m_eventHandler->pollEvent(event, m_main->window());
     }
 
     /**
@@ -2270,7 +2333,7 @@ public:
         if (!m_eventHandler) {
             return false;
         }
-        return m_eventHandler->hasPendingEvents(*m_mainWindow);
+        return m_eventHandler->hasPendingEvents(m_main->window());
     }
 
     /**
@@ -2279,14 +2342,14 @@ public:
     void flush()
     {
         if (m_eventHandler) {
-            m_eventHandler->flush(*m_mainWindow);
+            m_eventHandler->flush(m_main->window());
         }
     }
 
     bool copyToClipboard(const std::string & text)
     {
-        if (m_eventHandler && m_mainWindow) {
-            return m_eventHandler->copyToClipboard(*m_mainWindow, text);
+        if (m_eventHandler && m_main) {
+            return m_eventHandler->copyToClipboard(m_main->window(), text);
         }
         return false;
     }
@@ -2327,16 +2390,16 @@ public:
         layoutDocks();
 
         // Sync main window internal dimensions first - recenter/resize reads bound()
-        m_mainWindow->syncDimensions(width, height);
+        m_main->window().syncDimensions(width, height);
 
         // Resize UI renderer to new dimensions
-        if (m_uiRenderer != nullptr) {
-            m_uiRenderer->resize(width, height);
+        if (hasUiRenderer()) {
+            m_main->renderer().resize(width, height);
         }
 
         // Recenter dialog (position only - corner recapture after content surface resize below)
         if (m_dialogWindow) {
-            m_dialogWindow->recenter(m_mainWindow->bound(), m_uiTop, m_uiBottom);
+            m_dialogWindow->window().recenter(m_main->window().bound(), m_uiTop, m_uiBottom);
         }
 
         const Ui::Res::Type::bound_t newBound = viewportBound();
@@ -2346,14 +2409,14 @@ public:
             }
             positionContentSurface(*entry.window);
 
-            // Resize the renderer; only redraw + capture the active surface.
-            if (entry.renderer != nullptr) {
-                entry.renderer->resize(newBound.w, newBound.h);
+            // Resize the pairing; only redraw + capture the active surface.
+            if (entry.pairing != nullptr) {
+                entry.pairing->resize(newBound.w, newBound.h);
 
                 const bool isActive = (id == m_activeContent);
                 if (isActive) {
                     entry.window->requestRender();
-                    entry.window->render();
+                    entry.pairing->render();
                     if (g_config.isCompositing) {
                         captureContentComposite(entry);
                     }
@@ -2403,29 +2466,29 @@ public:
             m_renderQueue.request(MAIN_WINDOW_ID);
         }
 
-        if (auto hit = hitTestActiveContent(x, y); hit.window != nullptr) {
-            if (m_mainWindow) {
-                m_mainWindow->onMouseLeave();
+        if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
+            if (m_main) {
+                m_main->onMouseLeave();
             }
-            return hit.window->onMouseMove(hit.lx, hit.ly);
+            return hit.pairing->onMouseMove(hit.lx, hit.ly);
         }
 
         // Cursor left the content viewport but stayed in the app; clear the
         // active surface's drag state so it doesn't resume on re-entry.
-        if (Ui::IWindow * active = activeContentWindow()) {
+        if (Ui::IRenderer * active = activeContentPairing()) {
             active->onMouseLeave();
         }
 
         if (m_popupWindow) {
             m_popupWindow->onMouseLeave();
-            m_popupWindow->requestRender();
+            m_popupWindow->window().requestRender();
         }
         if (m_submenuWindow) {
             m_submenuWindow->onMouseLeave();
-            m_submenuWindow->requestRender();
+            m_submenuWindow->window().requestRender();
         }
 
-        return m_mainWindow ? m_mainWindow->onMouseMove(x, y) : dockHoverChanged;
+        return m_main ? m_main->onMouseMove(x, y) : dockHoverChanged;
     }
 
     bool onMousePress(int x, int y, int clickCount) override
@@ -2456,10 +2519,10 @@ public:
             }
         }
 
-        if (auto hit = hitTestActiveContent(x, y); hit.window != nullptr) {
-            return hit.window->onMousePress(hit.lx, hit.ly, clickCount);
+        if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
+            return hit.pairing->onMousePress(hit.lx, hit.ly, clickCount);
         }
-        return m_mainWindow ? m_mainWindow->onMousePress(x, y, clickCount) : false;
+        return m_main ? m_main->onMousePress(x, y, clickCount) : false;
     }
 
     Ui::Render::click_result_t onMouseRelease(int x, int y) override
@@ -2475,10 +2538,10 @@ public:
             return {};
         }
 
-        if (auto hit = hitTestActiveContent(x, y); hit.window != nullptr) {
-            return hit.window->onMouseRelease(hit.lx, hit.ly);
+        if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
+            return hit.pairing->onMouseRelease(hit.lx, hit.ly);
         }
-        return m_mainWindow ? m_mainWindow->onMouseRelease(x, y) : Ui::Render::click_result_t {};
+        return m_main ? m_main->onMouseRelease(x, y) : Ui::Render::click_result_t {};
     }
 
     bool onMouseLeave() override
@@ -2486,11 +2549,11 @@ public:
         bool changed = false;
 
         // Active content surface can be mid-drag; clear its drag state too
-        if (Ui::IWindow * active = activeContentWindow()) {
+        if (Ui::IRenderer * active = activeContentPairing()) {
             changed |= active->onMouseLeave();
         }
-        if (m_mainWindow) {
-            changed = m_mainWindow->onMouseLeave();
+        if (m_main) {
+            changed = m_main->onMouseLeave();
         }
         if (m_popupWindow) {
             changed |= m_popupWindow->onMouseLeave();
@@ -2528,10 +2591,10 @@ public:
     {
         // Scroll passes raw (main-local) coords, matching the prior contract -
         // the renderer uses scroll for zoom, not a hit point.
-        if (auto hit = hitTestActiveContent(x, y); hit.window != nullptr) {
-            return hit.window->onScroll(x, y, deltaY);
+        if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
+            return hit.pairing->onScroll(x, y, deltaY);
         }
-        return m_mainWindow ? m_mainWindow->onScroll(x, y, deltaY) : false;
+        return m_main ? m_main->onScroll(x, y, deltaY) : false;
     }
 
     // Child-routed overloads (child-local coordinates, bypass hit-testing).
@@ -2539,26 +2602,26 @@ public:
 
     bool onMouseMove(int x, int y, id_t childId)
     {
-        Ui::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
-        return window != nullptr ? window->onMouseMove(x, y) : onMouseMove(x, y);
+        Ui::IRenderer * pairing = (childId != Ui::INVALID_ID) ? contentPairing(childId) : nullptr;
+        return pairing != nullptr ? pairing->onMouseMove(x, y) : onMouseMove(x, y);
     }
 
     bool onMousePress(int x, int y, id_t childId, int clickCount)
     {
-        Ui::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
-        return window != nullptr ? window->onMousePress(x, y, clickCount) : onMousePress(x, y, clickCount);
+        Ui::IRenderer * pairing = (childId != Ui::INVALID_ID) ? contentPairing(childId) : nullptr;
+        return pairing != nullptr ? pairing->onMousePress(x, y, clickCount) : onMousePress(x, y, clickCount);
     }
 
     Ui::Render::click_result_t onMouseRelease(int x, int y, id_t childId)
     {
-        Ui::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
-        return window != nullptr ? window->onMouseRelease(x, y) : onMouseRelease(x, y);
+        Ui::IRenderer * pairing = (childId != Ui::INVALID_ID) ? contentPairing(childId) : nullptr;
+        return pairing != nullptr ? pairing->onMouseRelease(x, y) : onMouseRelease(x, y);
     }
 
     bool onScroll(int x, int y, fpx_t deltaY, id_t childId)
     {
-        Ui::IWindow * window = (childId != Ui::INVALID_ID) ? contentWindow(childId) : nullptr;
-        return window != nullptr ? window->onScroll(x, y, deltaY) : onScroll(x, y, deltaY);
+        Ui::IRenderer * pairing = (childId != Ui::INVALID_ID) ? contentPairing(childId) : nullptr;
+        return pairing != nullptr ? pairing->onScroll(x, y, deltaY) : onScroll(x, y, deltaY);
     }
 
     /**
@@ -2566,7 +2629,7 @@ public:
      */
     void shutdown()
     {
-        if (!m_mainWindow) {
+        if (!m_main) {
             return;
         }
 
@@ -2578,7 +2641,7 @@ public:
         m_dialogWindow.reset();
 
         // Clean up GL resources in main window's context
-        m_mainWindow->makeCurrent();
+        m_main->window().makeCurrent();
         cleanupCompositeShader();
         m_popupComposite.destroy();
         m_submenuComposite.destroy();
@@ -2595,14 +2658,13 @@ public:
         // into ResManager's layout.
         m_docks.clear();
 
-        m_uiRenderer = nullptr; // mainWindow owns renderer; dtor cleans it up
-
         // Destroy event handler before main window - pointer/keyboard proxies
         // require a live display connection
         m_eventHandler.reset();
 
-        // Main window dtor handles renderer cleanup + EGL/display destroy
-        m_mainWindow.reset();
+        // Connector dtor destroys the renderer first (window context still
+        // alive), then the window's EGL/display
+        m_main.reset();
 
         std::cout << "[WindowManager] Shutdown complete" << std::endl;
     }
@@ -2632,7 +2694,7 @@ public:
                 continue;
             }
 
-            const bool rendered = entry.window->render();
+            const bool rendered = entry.pairing != nullptr && entry.pairing->render();
 
 #ifdef HAVE_WAYLAND
             // Native Wayland: the surface uses our subsurface's EGL context but

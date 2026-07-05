@@ -18,14 +18,12 @@
 #pragma once
 
 #include "ui/config.h"
-#include "ui/render/popup/dialogrenderer.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/dialog.h"
 #include "ui/window/popup/popupwindow.h"
 
-#include <functional>
+#include <cmath>
 #include <iostream>
-#include <memory>
 
 namespace Ui::Window::Popup {
 
@@ -34,36 +32,26 @@ using Ui::Window::NativeWindow;
 /**
  * @brief Modal dialog window
  *
- * Owns all dialog-specific logic: sizing, centering, renderer init,
- * close callback. WindowManager just creates/destroys this.
+ * Owns the dialog-specific window logic: sizing, centering, creation.
+ * The DialogRenderer pairing lives in the coordinator's Connector.
  */
 class DialogWindow final : public PopupWindow {
 public:
-    using CloseFn = Ui::Render::Popup::DialogRenderer::DialogCloseFn; // one definition of the close signature
-
     explicit DialogWindow(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID)
         : PopupWindow(subscribe, subscribeId)
     {
     }
 
-    // DialogWindow owns its renderer as DialogRenderer; the base drives it through
-    // these overrides, so nothing downcasts.
-    [[nodiscard]] bool                 hasRenderer() const override { return m_dialogRenderer != nullptr; }
-    [[nodiscard]] Ui::IRenderer &      activeRenderer() override { return *m_dialogRenderer; }
-    [[nodiscard]] Ui::IPopupRenderer & popupRenderer() override { return *m_dialogRenderer; }
-
-    [[nodiscard]] Ui::Render::Popup::DialogRenderer & dialogRenderer() { return *m_dialogRenderer; }
-
     ~DialogWindow() override = default;
 
     /**
-     * @brief Open the dialog centered on the parent window
+     * @brief Open the dialog window centered on the parent (window only -
+     * the coordinator emplaces the renderer on the connector afterwards)
      * @return true on success
      */
     bool open(NativeWindow &                  parentWindow,
               const Ui::Res::ResManager &     resManager,
-              const Ui::Res::Type::dialog_t & dialog,
-              CloseFn                         onClose)
+              const Ui::Res::Type::dialog_t & dialog)
     {
         const auto & dlg     = resManager.layout().dialog;
         const fpx_t  dialogW = toPhys(dialog.width > 0 ? dialog.width : dlg.width);
@@ -92,14 +80,6 @@ public:
             setPosition(pos.x, pos.y);
         }
 
-        makeCurrent();
-        m_dialogRenderer = std::make_unique<Ui::Render::Popup::DialogRenderer>([this] { makeCurrent(); },
-                                                                               resManager,
-                                                                               dialog);
-        m_dialogRenderer->resize(m_bound.w, m_bound.h);
-        m_dialogRenderer->setAlpha(hasAlpha());
-        m_dialogRenderer->setCloseCallback(std::move(onClose));
-
         std::cout << "[DialogWindow] Opened dialog type=" << static_cast<int>(dialog.type) << std::endl;
         return true;
     }
@@ -109,9 +89,6 @@ public:
         const auto pos = centeredPosition(parentBound, m_bound.w, m_bound.h, uiTop, uiBottom);
         if (g_config.isCompositing) {
             setPosition(pos.x, pos.y);
-            if (hasRenderer()) {
-                activeRenderer().move();
-            }
         } else {
             move(pos.x, pos.y);
         }
@@ -129,8 +106,6 @@ private:
                  dialogW,
                  dialogH };
     }
-
-    std::unique_ptr<Ui::Render::Popup::DialogRenderer> m_dialogRenderer;
 };
 
 } // namespace Ui::Window::Popup

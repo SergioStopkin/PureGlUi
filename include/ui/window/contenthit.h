@@ -17,17 +17,18 @@
 
 #pragma once
 
-#include "ui/interface/iwindow.h"
+#include "ui/interface/irenderer.h"
 
 namespace Ui::Window {
 
 // Hit-test result with coords pre-translated to the content surface's own
 // frame. In xwaylandComposite mode the offscreen child receives main-local
 // coords, so the renderer would otherwise see out-of-bounds x/y.
+// Events route to the surface's pairing (the host's Connector).
 struct alignas(16) ContentHit final {
-    Ui::IWindow * window = nullptr;
-    int           lx     = 0;
-    int           ly     = 0;
+    Ui::IRenderer * pairing = nullptr;
+    int             lx      = 0;
+    int             ly      = 0;
 };
 
 } // namespace Ui::Window

@@ -25,6 +25,7 @@
 #include "ui/window/event.h"
 #include "ui/window/platform/x11include.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <vector>

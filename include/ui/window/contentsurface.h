@@ -23,15 +23,16 @@
 
 namespace Ui::Window {
 
-// A host-provided content surface embedded in the viewport
-// The framework drives it blind through IWindow + its IRenderer;
-// composite holds the Wayland offscreen->texture cache. window/renderer are
-// non-owning - the host owns the actual window.
+// A host-provided content surface embedded in the viewport.
+// window carries geometry/visibility/native ops only; pairing is the host's
+// window+renderer Connector (an IRenderer) that drives frame production,
+// events, resize, apply, and readPixels. composite holds the Wayland
+// offscreen->texture cache. Both pointers are non-owning - the host owns them.
 struct alignas(128) content_surface_t final {
     CompositeTexture composite;
-    Ui::IWindow *    window   = nullptr;
-    Ui::IRenderer *  renderer = nullptr;
-    bool             isReady  = true; // false while the host is mid async-load (skip rendering)
+    Ui::IWindow *    window  = nullptr;
+    Ui::IRenderer *  pairing = nullptr;
+    bool             isReady = true; // false while the host is mid async-load (skip rendering)
 };
 
 } // namespace Ui::Window

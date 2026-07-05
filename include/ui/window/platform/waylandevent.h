@@ -26,6 +26,7 @@
 #include "ui/window/event.h"
 #include "ui/window/platform/waylandwindow.h"
 
+#include <algorithm>
 #include <iostream>
 #include <poll.h>
 #include <queue>

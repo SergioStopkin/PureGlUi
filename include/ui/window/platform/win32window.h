@@ -58,9 +58,6 @@ public:
     }
     ~Win32Window() override
     {
-        if (m_renderer) {
-            m_renderer->cleanup();
-        }
         // Qualified: in a destructor virtual dispatch stops at this class anyway;
         // spelling it out documents that and keeps derived overrides out of play.
         Win32Window::destroy();

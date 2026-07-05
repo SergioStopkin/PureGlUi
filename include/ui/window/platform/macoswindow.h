@@ -24,6 +24,7 @@
 #include "ui/window/windowbase.h"
 
 #include <iostream>
+#include <utility>
 
 // NOLINTBEGIN(clang-diagnostic-import-preprocessor-directive-pedantic)
 // Workaround for Xcode 16.4 SDK regression: Icons.h in HIServices uses CALLBACK_API
@@ -49,13 +50,6 @@ public:
     }
     ~MacOsWindow() override
     {
-        if (m_renderer) {
-            m_renderer->cleanup();
-        }
-        // Tear the renderer down while the GL context is still alive.
-        // ~WindowBase would otherwise destroy it *after* destroy() has released the NSOpenGLView,
-        // leaving the renderer's ~dtor calling glDelete* against a dead context.
-        setRenderer(nullptr);
         // Qualified: in a destructor virtual dispatch stops at this class anyway;
         // spelling it out documents that and keeps derived overrides out of play.
         MacOsWindow::destroy();

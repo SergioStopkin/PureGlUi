@@ -51,10 +51,6 @@ public:
     }
     ~WaylandWindow() override
     {
-        // Renderer cleanup needs EGL context alive - must happen before destroy()
-        if (m_renderer) {
-            m_renderer->cleanup();
-        }
         // Qualified: in a destructor virtual dispatch stops at this class anyway;
         // spelling it out documents that and keeps derived overrides out of play.
         WaylandWindow::destroy();

@@ -54,9 +54,6 @@ public:
     }
     ~X11Window() override
     {
-        if (m_renderer) {
-            m_renderer->cleanup();
-        }
         // Qualified: in a destructor virtual dispatch stops at this class anyway;
         // spelling it out documents that and keeps derived overrides out of play.
         X11Window::destroy();
@@ -129,10 +126,6 @@ public:
     void destroy() override
     {
         // Cleanup and release renderer before EGL context (needs valid GL for GPU resource cleanup)
-        if (m_renderer) {
-            m_renderer->cleanup();
-            m_renderer.reset();
-        }
         if (m_context) {
             m_context->cleanup();
             m_context.reset();

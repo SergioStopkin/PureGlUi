@@ -53,17 +53,6 @@ public:
     virtual void resize(fpx_t width, fpx_t height) = 0;
 
     /**
-     * @brief Handle window move (marks renderer dirty for re-render)
-     */
-    virtual void move() = 0;
-
-    /**
-     * @brief Get current dimensions
-     */
-    [[nodiscard]] virtual fpx_t width() const  = 0;
-    [[nodiscard]] virtual fpx_t height() const = 0;
-
-    /**
      * @brief Apply resource changes (theme, layout, etc.)
      */
     virtual void apply(Ui::Res::Type::Changed changed) = 0;

@@ -161,13 +161,7 @@ public:
         m_height = h;
     }
 
-    void move() override
-    { /* main window move needs no re-render */
-    }
-
-    [[nodiscard]] fpx_t width() const override { return m_width; }
-    [[nodiscard]] fpx_t height() const override { return m_height; }
-    void                cleanup() override { m_layout = UiLayout(); }
+    void cleanup() override { m_layout = UiLayout(); }
 
     void apply(Ui::Res::Type::Changed /*changed*/) override
     {

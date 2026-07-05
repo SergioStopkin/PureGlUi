@@ -18,7 +18,6 @@
 #pragma once
 
 #include "ui/color.h"
-#include "ui/interface/ieventapp.h"
 #include "ui/res/type/bound.h"
 #include "ui/type.h"
 #include "ui/window/nativedisplayhandle.h"
@@ -32,11 +31,13 @@ namespace Ui {
  * @brief Base window interface
  *
  * Common interface for all window types (native, child, managed).
- * Provides core functionality shared across NativeWindow and ChildWindow.
+ * A window is a pure presentation surface: GL context + geometry +
+ * visibility. It never renders or consumes events - a Connector pairs it
+ * with a renderer and owns that glue.
  */
-class IWindow : public Ui::IEventApp {
+class IWindow {
 public:
-    ~IWindow() override = default;
+    virtual ~IWindow() = default;
 
     // Pre-creation helpers
     virtual void setPosition(fpx_t x, fpx_t y) = 0;
@@ -97,10 +98,8 @@ public:
     virtual void swapBuffers() = 0; // Swap the front/back buffers
     virtual void clear()       = 0; // Clear framebuffer with background color
 
-    // Render lifecycle (implemented by WindowBase): makeCurrent + renderer->render,
-    // re-present the last frame, and queue a render via the render-request callback.
-    virtual bool render()        = 0;
-    virtual void refresh()       = 0;
+    // Queue a render via the render-request callback (the pairing/coordinator
+    // does the actual frame production).
     virtual void requestRender() = 0;
 
     // Wire the render-request callback (the window layer points this at its render queue).

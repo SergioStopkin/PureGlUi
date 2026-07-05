@@ -36,6 +36,7 @@
 #include "ui/render/uirenderer.h"
 #include "ui/res/resmanager.h"
 #include "ui/type.h"
+#include "ui/window/connector.h"
 #include "ui/window/popup/popupwindow.h"
 
 #include <GL/glew.h>
@@ -504,8 +505,11 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
         sequence = { 0, 1, 0, 1, 0, 1, 0 };
     }
 
-    int                                             failures = 0;
-    std::unique_ptr<Ui::Window::Popup::PopupWindow> prevPopup;
+    // A popup is a window+renderer pairing bound by a Connector (matches WindowManager).
+    using PopupConnector = Ui::Window::Connector<Ui::Window::Popup::PopupWindow, Ui::Render::Popup::PopupRenderer>;
+
+    int                             failures = 0;
+    std::unique_ptr<PopupConnector> prevPopup;
 
     for (int step = 0; step < static_cast<int>(sequence.size()); ++step) {
         int         menuIdx = sequence[step];
@@ -516,8 +520,8 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
 
         // Step A: Destroy previous popup (same as App::destroyPopup(true))
         if (prevPopup) {
-            prevPopup->makeCurrent();
-            prevPopup->destroy();
+            prevPopup->window().makeCurrent();
+            prevPopup->window().destroy();
             prevPopup.reset();
             // std::this_thread::sleep_for(std::chrono::milliseconds(600));
             XSync(m_mainWindow.nativeDisplay(), Ui::Window::Platform::X11::False);
@@ -536,12 +540,12 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
         std::cout << "[Test] " << label << ": popup at rel(" << relX << "," << relY << ") size " << popupW << "x"
                   << popupH << std::endl;
 
-        auto popup = std::make_unique<Ui::Window::Popup::PopupWindow>(m_subscribe);
-        popup->setPosition(relX, relY);
-        popup->setBackground(m_resManager.theme().dropdown.bg);
-        popup->setCornerRadii(physRadii);
+        auto popup = std::make_unique<PopupConnector>(m_subscribe);
+        popup->window().setPosition(relX, relY);
+        popup->window().setBackground(m_resManager.theme().dropdown.bg);
+        popup->window().setCornerRadii(physRadii);
 
-        if (!popup->create(m_mainWindow, popupW, popupH)) {
+        if (!popup->window().create(m_mainWindow, popupW, popupH)) {
             ADD_FAILURE() << label << ": Failed to create popup";
             ++failures;
             continue;
@@ -554,7 +558,11 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
         auto         menuIt = std::find_if(menuList.begin(), menuList.end(), [menuId](const Ui::Res::Type::menu_t & m) {
             return m.id == menuId;
         });
-        popup->initRenderer(m_resManager, *menuIt);
+        auto &       popupRendererRef = popup->emplaceRenderer([&window = popup->window()] { window.makeCurrent(); },
+                                                         m_resManager,
+                                                         *menuIt);
+        popupRendererRef.resize(popup->window().bound().w, popup->window().bound().h);
+        popupRendererRef.setAlpha(popup->window().hasAlpha());
 
         // Capture corner pixels from parent back buffer (simplified version of
         // WindowManager::captureCornerPixels -- reads entire parent FB as source)
@@ -572,8 +580,8 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
             parentPixels = readMainFB();
 
             if (popup->hasRenderer()) {
-                Ui::Render::Popup::PopupRenderer *  popupRenderer = &popup->menuRenderer();
-                const Ui::Res::Type::border_t &     cr            = popup->cornerRadii();
+                Ui::Render::Popup::PopupRenderer *  popupRenderer = &popup->renderer();
+                const Ui::Res::Type::border_t &     cr            = popup->window().cornerRadii();
                 std::array<std::vector<uint8_t>, 4> cornerPixels;
                 for (id_t ci = 0; ci < 4; ++ci) {
                     const int r = static_cast<int>(Ui::Gl::Rounded::borderRadius(cr, ci));
@@ -609,7 +617,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
                     // Init buffer with bg color
                     auto & buf = cornerPixels.at(ci);
                     buf.resize(static_cast<size_t>(r * r * 4));
-                    auto bg = popup->background();
+                    auto bg = popup->window().background();
                     for (int j = 0; j < r * r; ++j) {
                         buf[static_cast<size_t>(j * 4 + 0)] = bg.r();
                         buf[static_cast<size_t>(j * 4 + 1)] = bg.g();
@@ -661,7 +669,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
                         }
                     }
                 }
-                popup->makeCurrent();
+                popup->window().makeCurrent();
                 popupRenderer->setCornerPixels(std::move(cornerPixels), cr);
             }
         }
@@ -669,19 +677,19 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
         if (!popup->render()) {
             ADD_FAILURE() << label << ": popup->render() failed";
             ++failures;
-            popup->destroy();
+            popup->window().destroy();
             continue;
         }
 
         // Read popup framebuffer BEFORE swapBuffers - after swap the back buffer is undefined per EGL spec
-        popup->makeCurrent();
+        popup->window().makeCurrent();
         glFinish();
         int                  popupWi = static_cast<int>(popupW);
         int                  popupHi = static_cast<int>(popupH);
         std::vector<uint8_t> popupRaw(static_cast<size_t>(popupWi * popupHi * 4));
         glReadPixels(0, 0, popupWi, popupHi, GL_RGBA, GL_UNSIGNED_BYTE, popupRaw.data());
 
-        popup->swapBuffers();
+        popup->window().swapBuffers();
         XSync(m_mainWindow.nativeDisplay(), Ui::Window::Platform::X11::False);
         std::vector<uint8_t> popupPixels(popupRaw.size());
         int                  popupRowBytes = popupWi * 4;
@@ -828,8 +836,8 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
 
     // Final cleanup
     if (prevPopup) {
-        prevPopup->makeCurrent();
-        prevPopup->destroy();
+        prevPopup->window().makeCurrent();
+        prevPopup->window().destroy();
         prevPopup.reset();
     }
     m_mainWindow.makeCurrent();

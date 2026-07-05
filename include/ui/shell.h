@@ -520,7 +520,7 @@ public:
                     // sets dragging=true, first move rotates + notifies, this branch
                     // would then clear dragging before the second move arrives.
                     if (event.childWindowId != Ui::INVALID_ID) {
-                        if (m_windowManager.mainWindow().onMouseLeave()) {
+                        if (m_windowManager.mainWindowMouseLeave()) {
                             m_windowManager.requestMainRender();
                         }
                         return;
@@ -991,7 +991,7 @@ private:
         m_windowManager.initPopupRenderer();
 
         // Render first frame before showing to avoid visible flat/unrounded flash
-        if (popupWindow->render()) {
+        if (m_windowManager.renderPopup()) {
             if (g_config.isCompositing) {
                 m_windowManager.capturePopupPixels();
                 m_windowManager.refreshComposite();
@@ -1090,7 +1090,7 @@ private:
     {
         std::cout << "[Shell] handleResize(): " << m_windowWidth << "x" << m_windowHeight << std::endl;
 
-        // Update window dimensions (so m_mainWindow->bound() returns new size)
+        // Update window dimensions (so mainWindow().bound() returns new size)
         m_windowManager.onMainWindowResize(m_windowWidth, m_windowHeight);
 
         // Force EGL surface to resize by doing a

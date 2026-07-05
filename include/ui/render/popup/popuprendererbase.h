@@ -25,11 +25,12 @@
 #include "ui/gl/glutil.h"
 #include "ui/gl/rounded.h"
 #include "ui/gl/svgrenderer.h"
-#include "ui/interface/ipopuprenderer.h"
+#include "ui/interface/irenderer.h"
 #include "ui/type.h"
 
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Ui::Render::Popup {
@@ -40,7 +41,7 @@ namespace Ui::Render::Popup {
  * Provides common GL setup, text rendering, SVG icon rendering,
  * corner pixel management, and boilerplate Ui::IRenderer overrides.
  */
-class PopupRendererBase : public Ui::IPopupRenderer, private Common::NonCopyable {
+class PopupRendererBase : public Ui::IRenderer, private Common::NonCopyable {
 public:
     // The window layer makes its context current before constructing/driving the
     // renderer; the renderer only needs an abstract "make current" capability
@@ -64,16 +65,16 @@ public:
         }
     }
 
-    // -- Ui::IPopupRenderer --
+    // -- Software-rounded corner support (popup/dialog corners over parent pixels) --
 
-    void setAlpha(bool hasAlpha) override { m_rounded.setAlpha(hasAlpha); }
+    void setAlpha(bool hasAlpha) { m_rounded.setAlpha(hasAlpha); }
 
-    void setCornerPixels(std::array<std::vector<uint8_t>, 4> pixels, const Ui::Res::Type::border_t & radii) override
+    void setCornerPixels(std::array<std::vector<uint8_t>, 4> pixels, const Ui::Res::Type::border_t & radii)
     {
         m_rounded.setCornerPixels(std::move(pixels), radii);
     }
 
-    [[nodiscard]] bool hasCornerPixels() const override { return m_rounded.hasCornerPixels(); }
+    [[nodiscard]] bool hasCornerPixels() const { return m_rounded.hasCornerPixels(); }
 
     // -- Ui::IRenderer boilerplate --
 
@@ -84,11 +85,6 @@ public:
             m_height = height;
         }
     }
-
-    void move() override { }
-
-    [[nodiscard]] fpx_t width() const override { return m_width; }
-    [[nodiscard]] fpx_t height() const override { return m_height; }
 
     void apply(Ui::Res::Type::Changed changed) override
     {

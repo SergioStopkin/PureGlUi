@@ -19,9 +19,7 @@
 
 #include "common/bytes.h"
 #include "ui/config.h"
-#include "ui/interface/ipopuprenderer.h"
-#include "ui/render/popup/dialogrenderer.h"
-#include "ui/render/popup/popuprenderer.h"
+#include "ui/res/type/border.h"
 #include "ui/window/eglcontext.h"
 #include "ui/window/nativewindow.h"
 
@@ -55,6 +53,8 @@ using Ui::Window::NativeWindowHandle;
  *
  * On Wayland, uses xdg_popup for proper popup semantics.
  * On X11, uses override-redirect or transient windows.
+ *
+ * Pure surface: the renderer pairing lives in the coordinator's Connector.
  */
 class PopupWindow : public NativeWindow {
 public:
@@ -62,48 +62,16 @@ public:
         : NativeWindow(subscribe, subscribeId)
     {
     }
-    ~PopupWindow() override
-    {
-        // Destroy the renderer (its dtor makes our context current for its own GL
-        // teardown) before the window's GL resources are released.
-        m_menuRenderer.reset();
 #ifdef HAVE_WAYLAND
-        cleanupWayland();
+    ~PopupWindow() override { cleanupWayland(); }
+#else
+    ~PopupWindow() override = default;
 #endif
-    }
-
-    // The popup owns its renderer as the concrete type; the base drives it through
-    // these overrides, so nothing downcasts. DialogWindow overrides them for its
-    // DialogRenderer.
-    [[nodiscard]] bool                         hasRenderer() const override { return m_menuRenderer != nullptr; }
-    [[nodiscard]] Ui::IRenderer &              activeRenderer() override { return *m_menuRenderer; }
-    [[nodiscard]] virtual Ui::IPopupRenderer & popupRenderer() { return *m_menuRenderer; }
-
-    // Concrete menu renderer (menu/submenu popups only).
-    [[nodiscard]] Ui::Render::Popup::PopupRenderer & menuRenderer() { return *m_menuRenderer; }
-
-    void move(fpx_t x, fpx_t y) override
-    {
-        NativeWindow::move(x, y);
-        if (hasRenderer()) {
-            activeRenderer().move();
-        }
-    }
 
     // True when the popup is an X11 child of the main window: the server moves
     // and re-anchors it with the parent, so the shell must NOT manually track
     // window move/resize (doing so double-moves it).
     [[nodiscard]] bool followsParent() const { return m_followsParent; }
-
-    void initRenderer(const Ui::Res::ResManager & resManager, const Ui::Res::Type::menu_t & menu)
-    {
-        makeCurrent();
-        m_menuRenderer = std::make_unique<Ui::Render::Popup::PopupRenderer>([this] { makeCurrent(); },
-                                                                            resManager,
-                                                                            menu);
-        m_menuRenderer->resize(m_bound.w, m_bound.h);
-        m_menuRenderer->setAlpha(m_hasAlpha);
-    }
 
 #if !defined(_WIN32) && !defined(__APPLE__)
 
@@ -162,7 +130,6 @@ private:
             if (cache.hasCompositor) {
                 argbVid = findArgbVisualId(screen);
             }
-            cache.argbVisualId = argbVid;
 
             if (argbVid != 0) {
                 std::cout << "[PopupWindow] Found 32-bit ARGB visual (id=" << argbVid << ")" << std::endl;
@@ -186,12 +153,10 @@ private:
                             vi = nullptr;
                         }
                         m_context.reset();
-                        cache.argbVisualId = 0;
                     }
                 } else {
                     std::cout << "[PopupWindow] Falling back to opaque with corner blending" << std::endl;
                     m_context.reset();
-                    cache.argbVisualId = 0;
                 }
             }
 
@@ -928,16 +893,11 @@ private:
     bool m_isWayland     = false;
     bool m_followsParent = false; // parented to the main window (X11 child) -> auto-tracks parent move/resize
 
-    // The popup owns its renderer as the concrete type (null for a DialogWindow,
-    // which owns a DialogRenderer instead).
-    std::unique_ptr<Ui::Render::Popup::PopupRenderer> m_menuRenderer;
-
     // Static cache for EGL config discovery results (survives popup destroy/recreate)
 #if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
-    struct alignas(16) EglCache final {
-        VisualID argbVisualId  = 0;     // Cached ARGB visual (0 = not found)
-        bool     searched      = false; // Has the ARGB visual search been done?
-        bool     hasCompositor = false; // Cached compositor check result
+    struct alignas(2) EglCache final {
+        bool searched      = false; // Has the ARGB visual search been done?
+        bool hasCompositor = false; // Cached compositor check result
     };
     static EglCache & eglCache()
     {

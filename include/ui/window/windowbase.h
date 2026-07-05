@@ -20,8 +20,6 @@
 #include "common/noncopyable.h"
 #include "ui/color.h"
 #include "ui/gl/localglew.h"
-#include "ui/interface/icontext.h"
-#include "ui/interface/irenderer.h"
 #include "ui/interface/iwindow.h"
 #include "ui/pubsub/subscribe.h"
 #include "ui/type.h"
@@ -30,6 +28,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace Ui::Window {
 
@@ -105,58 +104,6 @@ public:
         }
     }
 
-    // -------- Renderer ownership --------
-
-    void setRenderer(std::unique_ptr<Ui::IRenderer> renderer) { m_renderer = std::move(renderer); }
-
-    // Renderer access for the base's event/render forwarding. Virtual so a derived
-    // window that owns its renderer as a concrete type (popups/dialogs) supplies it
-    // without the base storing the derived type or anyone downcasting.
-    [[nodiscard]] virtual bool            hasRenderer() const { return m_renderer != nullptr; }
-    [[nodiscard]] virtual Ui::IRenderer & activeRenderer() { return *m_renderer; }
-
-    // -------- Ui::IEventApp Interface (forward to renderer, request render on change) --------
-
-    bool onMouseMove(int x, int y) override
-    {
-        return forwardEvent([&] { return activeRenderer().onMouseMove(x, y); });
-    }
-    bool onMousePress(int x, int y, int clickCount) override
-    {
-        return forwardEvent([&] { return activeRenderer().onMousePress(x, y, clickCount); });
-    }
-    bool onMouseLeave() override
-    {
-        return forwardEvent([&] { return activeRenderer().onMouseLeave(); });
-    }
-    bool onScroll(int x, int y, fpx_t deltaY) override
-    {
-        return forwardEvent([&] { return activeRenderer().onScroll(x, y, deltaY); });
-    }
-
-    Ui::Render::click_result_t onMouseRelease(int x, int y) override
-    {
-        if (!hasRenderer()) {
-            return {};
-        }
-        Ui::Render::click_result_t result = activeRenderer().onMouseRelease(x, y);
-        if (result.changed) {
-            requestRender();
-        }
-        return result;
-    }
-
-    /**
-     * @brief Re-present last frame without full re-render (calls renderer->refresh())
-     */
-    void refresh() override
-    {
-        if (hasRenderer()) {
-            derived().makeCurrent();
-            activeRenderer().refresh();
-        }
-    }
-
     // -------- Subscribe ownership (RAII: destructor unsubscribes) --------
 
     void setSubscribeId(id_t subscribeId) { m_subscribeId = subscribeId; }
@@ -175,23 +122,6 @@ public:
         }
     }
 
-    /**
-     * @brief Render the current frame
-     *
-     * Makes this window's GL context current and calls renderer->render().
-     * Called by the render queue -- no dirty check.
-     * @return true if frame was rendered
-     */
-    bool render() override
-    {
-        if (!hasRenderer()) {
-            return false;
-        }
-
-        derived().makeCurrent();
-        return activeRenderer().render();
-    }
-
     // -------- Dimension sync (for OS resize events) --------
 
     /**
@@ -207,21 +137,6 @@ public:
         requestRender();
     }
 
-private:
-    // Forward a bool-returning event to renderer and request render on change
-    template <typename Fn>
-    bool forwardEvent(Fn && fn)
-    {
-        if (!hasRenderer()) {
-            return false;
-        }
-        bool changed = fn();
-        if (changed) {
-            requestRender();
-        }
-        return changed;
-    }
-
 protected:
     // CRTP helper to access derived class
     Derived &       derived() { return static_cast<Derived &>(*this); }
@@ -232,9 +147,6 @@ protected:
     // Subscribe ownership (RAII: destructor calls remove)
     Ui::PubSub::Subscribe & m_subscribe;
     id_t                    m_subscribeId = Ui::INVALID_ID;
-
-    // Renderer ownership
-    std::unique_ptr<Ui::IRenderer> m_renderer;
 
     // Render request callback (set by WindowManager, calls Ui::Window::RenderQueue::request)
     Ui::task_fn_t m_renderRequest;
