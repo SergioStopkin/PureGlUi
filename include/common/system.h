@@ -128,6 +128,22 @@ public:
                 }
             }
         }
+#elif defined(WINDOWS)
+        // The registry carries core 0's rated clock in MHz - the same base value
+        // the brand string advertises; no WMI dependency needed.
+        DWORD mhz  = 0;
+        DWORD size = sizeof(mhz);
+        if (RegGetValueA(HKEY_LOCAL_MACHINE,
+                         "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                         "~MHz",
+                         RRF_RT_REG_DWORD,
+                         nullptr,
+                         &mhz,
+                         &size)
+            == ERROR_SUCCESS
+            && mhz > 0) {
+            return formatGHz(mhz / 1000.0);
+        }
 #endif
         return "N/A";
     }
@@ -151,6 +167,17 @@ public:
         size_t   len   = sizeof(bytes);
         if (sysctlbyname("hw.memsize", &bytes, &len, nullptr, 0) == 0 && bytes > 0) {
             return std::to_string(bytes / (1024 * 1024 * 1024)) + " GB";
+        }
+#elif defined(WINDOWS)
+        MEMORYSTATUSEX status {};
+        status.dwLength = sizeof(status);
+        if (GlobalMemoryStatusEx(&status) != 0 && status.ullTotalPhys > 0) {
+            // ullTotalPhys sits slightly below the installed size (firmware and
+            // driver reservations), so round to the nearest GB, not truncate -
+            // otherwise an 8 GB machine reports 7 GB.
+            constexpr uint64_t HALF_GB = 512ULL * 1024 * 1024;
+            constexpr uint64_t ONE_GB  = 1024ULL * 1024 * 1024;
+            return std::to_string((status.ullTotalPhys + HALF_GB) / ONE_GB) + " GB";
         }
 #endif
         return "N/A";

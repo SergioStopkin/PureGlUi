@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <linux/input-event-codes.h>
 #include <poll.h>
 #include <queue>
 #include <sys/mman.h>
@@ -466,12 +467,12 @@ private:
         std::cout << "[WaylandEvent] Button " << button << " state=" << state << " at (" << event.mouse.x << ","
                   << event.mouse.y << ")" << std::endl;
 
-        // Convert Linux button codes to MouseButton enum
-        // BTN_LEFT=272, BTN_RIGHT=273, BTN_MIDDLE=274
+        // Convert Linux evdev button codes (BTN_LEFT=0x110, BTN_RIGHT=0x111,
+        // BTN_MIDDLE=0x112, from <linux/input-event-codes.h>) to MouseButton.
         switch (button) {
-        case 272: event.mouse.button = MouseButton::Left; break;
-        case 273: event.mouse.button = MouseButton::Right; break;
-        case 274: event.mouse.button = MouseButton::Middle; break;
+        case BTN_LEFT: event.mouse.button = MouseButton::Left; break;
+        case BTN_RIGHT: event.mouse.button = MouseButton::Right; break;
+        case BTN_MIDDLE: event.mouse.button = MouseButton::Middle; break;
         default: event.mouse.button = MouseButton::Left; break;
         }
 

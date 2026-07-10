@@ -25,11 +25,18 @@
  * Verifies the full 600x300 composite matches the expected image.
  */
 
+// This suite drives a real X11 window + EGL/GL context (XOpenDisplay/XSync), so
+// it only builds on the X11 backend. On other platforms component-tests still
+// builds its remaining (windowless) suites; this translation unit compiles to
+// nothing.
+#if defined(HAVE_X11)
+
 #include <gtest/gtest.h>
 
 // GLEW must be included before any GL headers
 #include "ui/color.h"
 #include "ui/config.h"
+#include "ui/gl/glutil.h"
 #include "ui/gl/rounded.h"
 #include "ui/render/popup/popuprenderer.h"
 #include "ui/render/uilayout.h"
@@ -50,6 +57,7 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #ifndef TEST_RES_DIR
@@ -336,10 +344,7 @@ TEST_F(PopupCornerCaptureTest, MenuSwitchSequence)
     ASSERT_TRUE(m_mainWindow.create(kMainW, kMainH, nullptr, 0, "CornerCaptureTest"));
 
     m_mainWindow.makeCurrent();
-    glewExperimental = GL_TRUE;
-    GLenum glewErr   = glewInit();
-    ASSERT_TRUE(glewErr == GLEW_OK || glewErr == 4) << "GLEW init failed: " << glewGetErrorString(glewErr);
-    while (glGetError() != GL_NO_ERROR) { }
+    ASSERT_TRUE(Ui::Gl::Util::initGlLoader()) << "GL loader init failed";
 
     // ---- 2. Load resources ----
     m_resManager.loadAll();
@@ -388,10 +393,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
     Ui::g_config.scale = Ui::g_config.dpi / 96.0F;
 
     m_mainWindow.makeCurrent();
-    glewExperimental = GL_TRUE;
-    GLenum glewErr   = glewInit();
-    ASSERT_TRUE(glewErr == GLEW_OK || glewErr == 4) << "GLEW init failed: " << glewGetErrorString(glewErr);
-    while (glGetError() != GL_NO_ERROR) { }
+    ASSERT_TRUE(Ui::Gl::Util::initGlLoader()) << "GL loader init failed";
 
     // ---- 2. Load real resources ----
     m_resManager.loadAll();
@@ -846,3 +848,5 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
 }
 
 } // namespace PureGlUi
+
+#endif // HAVE_X11

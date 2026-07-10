@@ -51,6 +51,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 // Thread-local flag: when true, SVG bitmaps will be uploaded to OpenGL

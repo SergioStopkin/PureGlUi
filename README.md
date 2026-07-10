@@ -68,6 +68,14 @@ Windows*
 Installs all required packages for the current platform (Linux/macOS/Windows).
 Package lists are in `.github/dependencies/`.
 
+On **Windows**, the single manual step is installing Git
+(`winget install -e --id Git.Git`), which provides **Git Bash** - run all project
+scripts there (they are bash scripts, not PowerShell/cmd). `dependency.sh` then
+automates the rest via `dependency-windows.sh`: VS 2022 Build Tools (MSVC),
+CMake, vcpkg into `C:\vcpkg`, the C++ packages, and Mesa (software OpenGL,
+auto-deployed by `run.sh` only on machines without a GPU driver - VMs, CI).
+Expect UAC prompts and a long first run (vcpkg builds the packages from source).
+
 ### Build
 
 ```bash

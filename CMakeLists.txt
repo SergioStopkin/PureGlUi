@@ -49,6 +49,13 @@ if(MSVC)
     add_compile_definitions(NOMINMAX _CRT_SECURE_NO_WARNINGS)
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
+    # macOS deprecated the entire OpenGL API (10.14+, in favor of Metal), so every
+    # gl* call warns. That is a systemic platform deprecation, not a per-call issue,
+    # and we intentionally stay on GL - suppress it project-wide here (per CLAUDE.md,
+    # rather than per-site pragmas).
+    if(APPLE)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
+    endif()
 endif()
 
 # Dependencies

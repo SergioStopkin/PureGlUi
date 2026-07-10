@@ -8,6 +8,7 @@ elif [[ $1 == "dev" ]]; then
     export LSAN_OPTIONS=suppressions=.asan.supp
     shift  # Remove first argument (dev)
     if [[ "$OS" == "Windows_NT" ]]; then
+        ./mesa-windows.sh $BUILD_DIR_DEV/src/Release
         $BUILD_DIR_DEV/src/Release/$TARGET_SRC.exe "$@"
     else
         $BUILD_DIR_DEV/src/$TARGET_SRC "$@"
@@ -15,6 +16,7 @@ elif [[ $1 == "dev" ]]; then
 elif [[ $1 == "rel" ]]; then
     shift  # Remove first argument (rel)
     if [[ "$OS" == "Windows_NT" ]]; then
+        ./mesa-windows.sh $BUILD_DIR_REL/src/Release
         $BUILD_DIR_REL/src/Release/$TARGET_SRC.exe "$@"
     else
         $BUILD_DIR_REL/src/$TARGET_SRC "$@"
@@ -23,6 +25,7 @@ elif [[ $1 == "test" ]]; then
     shift  # Remove first argument (test)
     echo "_________________________________________    Unit Tests   _________________________________________"
     if [[ "$OS" == "Windows_NT" ]]; then
+        ./mesa-windows.sh $BUILD_DIR_REL/test/unit/Release $BUILD_DIR_REL/test/component/Release
         $BUILD_DIR_REL/test/unit/Release/unit-tests.exe "$@"
     else
         $BUILD_DIR_REL/test/unit/unit-tests "$@"

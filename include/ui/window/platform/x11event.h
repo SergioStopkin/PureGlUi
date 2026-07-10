@@ -30,17 +30,20 @@
 #include <cstring>
 #include <vector>
 
-// X11 event type constants (numeric values to avoid macro conflicts with event.h)
-// These match the X11 protocol event types from X.h
+// X11 protocol event types (values from X.h). SCREAMING_CASE constexpr so the
+// names don't collide with X.h's ButtonPress/SelectionNotify/... macros - no _
+// suffix and no #undef needed, and switch(xev.type) stays cast-free.
 namespace Ui::Window::Platform::X11EventTypes {
-constexpr int KeyPress_        = 2;
-constexpr int KeyRelease_      = 3;
-constexpr int ButtonPress_     = 4;
-constexpr int ButtonRelease_   = 5;
-constexpr int MotionNotify_    = 6;
-constexpr int LeaveNotify_     = 8;
-constexpr int ConfigureNotify_ = 22;
-constexpr int ClientMessage_   = 33;
+constexpr int KEY_PRESS         = 2;
+constexpr int KEY_RELEASE       = 3;
+constexpr int BUTTON_PRESS      = 4;
+constexpr int BUTTON_RELEASE    = 5;
+constexpr int MOTION_NOTIFY     = 6;
+constexpr int LEAVE_NOTIFY      = 8;
+constexpr int CONFIGURE_NOTIFY  = 22;
+constexpr int SELECTION_REQUEST = 30;
+constexpr int SELECTION_NOTIFY  = 31;
+constexpr int CLIENT_MESSAGE    = 33;
 } // namespace Ui::Window::Platform::X11EventTypes
 
 namespace Ui::Window::Platform {
@@ -176,13 +179,13 @@ private:
         // Determine which window the event is for
         ::Window eventWindow = 0;
         switch (xev.type) {
-        case X11EventTypes::ButtonPress_:
-        case X11EventTypes::ButtonRelease_: eventWindow = xev.xbutton.window; break;
-        case X11EventTypes::MotionNotify_: eventWindow = xev.xmotion.window; break;
-        case X11EventTypes::LeaveNotify_: eventWindow = xev.xcrossing.window; break;
-        case X11EventTypes::ConfigureNotify_: eventWindow = xev.xconfigure.window; break;
-        case X11EventTypes::KeyPress_:
-        case X11EventTypes::KeyRelease_: eventWindow = xev.xkey.window; break;
+        case X11EventTypes::BUTTON_PRESS:
+        case X11EventTypes::BUTTON_RELEASE: eventWindow = xev.xbutton.window; break;
+        case X11EventTypes::MOTION_NOTIFY: eventWindow = xev.xmotion.window; break;
+        case X11EventTypes::LEAVE_NOTIFY: eventWindow = xev.xcrossing.window; break;
+        case X11EventTypes::CONFIGURE_NOTIFY: eventWindow = xev.xconfigure.window; break;
+        case X11EventTypes::KEY_PRESS:
+        case X11EventTypes::KEY_RELEASE: eventWindow = xev.xkey.window; break;
         default: eventWindow = mainWin; break;
         }
 
@@ -191,7 +194,7 @@ private:
 
         // Convert event type and data
         switch (xev.type) {
-        case X11EventTypes::ClientMessage_: {
+        case X11EventTypes::CLIENT_MESSAGE: {
             const XClientMessageEvent & clientMsg = xev.xclient;
             // Direct union member access required by X11 API
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
@@ -201,7 +204,7 @@ private:
             }
         } break;
 
-        case X11EventTypes::ConfigureNotify_:
+        case X11EventTypes::CONFIGURE_NOTIFY:
             if (xev.xconfigure.window == mainWin) {
                 event.type          = EventType::Resize;
                 event.resize.width  = xev.xconfigure.width;
@@ -209,13 +212,13 @@ private:
             }
             break;
 
-        case X11EventTypes::ButtonPress_:
-            if (xev.xbutton.button == 4 || xev.xbutton.button == 5) {
-                // X11 scroll: button 4 = up, button 5 = down
+        case X11EventTypes::BUTTON_PRESS:
+            if (xev.xbutton.button == Button4 || xev.xbutton.button == Button5) {
+                // X11 scroll: Button4 = up, Button5 = down
                 event.type          = EventType::Scroll;
                 event.mouse.x       = xev.xbutton.x;
                 event.mouse.y       = xev.xbutton.y;
-                event.scroll.deltaY = (xev.xbutton.button == 5) ? 1.0F : -1.0F;
+                event.scroll.deltaY = (xev.xbutton.button == Button5) ? 1.0F : -1.0F;
             } else {
                 event.type             = EventType::MouseButtonPress;
                 event.mouse.x          = xev.xbutton.x;
@@ -228,9 +231,9 @@ private:
             }
             break;
 
-        case X11EventTypes::ButtonRelease_:
-            // X11 sends ButtonRelease for scroll buttons 4/5 - ignore them
-            if (xev.xbutton.button == 4 || xev.xbutton.button == 5) {
+        case X11EventTypes::BUTTON_RELEASE:
+            // X11 sends ButtonRelease for scroll buttons Button4/Button5 - ignore them
+            if (xev.xbutton.button == Button4 || xev.xbutton.button == Button5) {
                 break;
             }
             event.type         = EventType::MouseButtonRelease;
@@ -239,15 +242,15 @@ private:
             event.mouse.button = toMouseButton(xev.xbutton.button);
             break;
 
-        case X11EventTypes::MotionNotify_:
+        case X11EventTypes::MOTION_NOTIFY:
             event.type    = EventType::MouseMove;
             event.mouse.x = xev.xmotion.x;
             event.mouse.y = xev.xmotion.y;
             break;
 
-        case X11EventTypes::LeaveNotify_: event.type = EventType::MouseLeave; break;
+        case X11EventTypes::LEAVE_NOTIFY: event.type = EventType::MouseLeave; break;
 
-        case X11EventTypes::KeyPress_: {
+        case X11EventTypes::KEY_PRESS: {
             event.type       = EventType::KeyPress;
             event.key.keysym = XLookupKeysym(
             const_cast<XKeyEvent *>(&xev.xkey), // NOLINT(cppcoreguidelines-pro-type-const-cast)
@@ -270,7 +273,7 @@ private:
             event.key.text = buffer;
         } break;
 
-        case X11EventTypes::KeyRelease_: {
+        case X11EventTypes::KEY_RELEASE: {
             event.type       = EventType::KeyRelease;
             event.key.keysym = XLookupKeysym(
             const_cast<XKeyEvent *>(&xev.xkey), // NOLINT(cppcoreguidelines-pro-type-const-cast)
@@ -278,12 +281,12 @@ private:
             event.key.modifiers = convertX11Modifiers(xev.xkey.state);
         } break;
 
-        case 30 /* SelectionRequest */: {
+        case X11EventTypes::SELECTION_REQUEST: {
             const XSelectionRequestEvent & req = xev.xselectionrequest;
             // Build the reply inside the XEvent union so XSendEvent needs no cast.
             XEvent            respEvent {};
             XSelectionEvent & resp = respEvent.xselection;
-            resp.type              = 31 /* SelectionNotify */;
+            resp.type              = X11EventTypes::SELECTION_NOTIFY;
             resp.requestor         = req.requestor;
             resp.selection         = req.selection;
             resp.target            = req.target;

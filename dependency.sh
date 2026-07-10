@@ -3,7 +3,7 @@
 DEPS_DIR=".github/dependencies"
 
 if [[ "$OS" == "Windows_NT" ]]; then
-    vcpkg install $(grep -v '^#' $DEPS_DIR/windows) --triplet x64-windows-release
+    ./dependency-windows.sh
 elif [[ "$(uname)" == "Darwin" ]]; then
     brew install $(grep -v '^#' $DEPS_DIR/macos)
 elif command -v dnf >/dev/null 2>&1; then

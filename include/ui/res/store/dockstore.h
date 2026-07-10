@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace Ui::Res::Store {
 

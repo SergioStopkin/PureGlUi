@@ -19,6 +19,7 @@
 
 #include "common/noncopyable.h"
 #include "ui/color.h"
+#include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/interface/iwindow.h"
 #include "ui/pubsub/subscribe.h"
@@ -76,6 +77,13 @@ public:
     // request falls back to the software renderer. Platforms that always run on real
     // GL (X11/Wayland/Win32 paths today) keep the default.
     [[nodiscard]] bool isHardwareGl() const override { return m_isHardwareGl; }
+
+    // Fold the runtime GL_RENDERER check into the flag once a context is
+    // current: software rasterizers (Mesa llvmpipe, SwiftShader, GDI Generic,
+    // ...) name themselves there, which platform create() cannot know ahead of
+    // time. Called by the coordinator after context creation so isHardwareGl()
+    // is authoritative for every consumer.
+    void refreshHardwareGl() { m_isHardwareGl = m_isHardwareGl && !Ui::Gl::Util::isSoftwareRenderer(); }
 
     // -------- Appearance --------
 

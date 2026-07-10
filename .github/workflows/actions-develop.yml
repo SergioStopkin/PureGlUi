@@ -15,16 +15,17 @@ jobs:
       - name: Cache apt archives
         uses: actions/cache@v5
         with:
-          path: /tmp/apt-archives
+          # Cache only the completed .debs (runner-readable, 0644). NOT the whole
+          # dir: apt hardens partial/ to _apt:root 0700 during download, which the
+          # runner-owned post-job tar can't read (Permission denied on save).
+          path: /tmp/apt-archives/*.deb
           key:  apt-${{hashFiles('.github/dependencies/linux')}}
 
       - name: Route apt downloads to the cache dir
         run: |
-          # Pre-create lock + partial/ as the runner (no sudo) so sudo apt-get
-          # reuses them instead of creating root-owned ones; that keeps the whole
-          # cache dir readable by the post-job tar (the .debs are already 0644).
+          # apt requires archives/ + archives/partial to exist before it will
+          # download into a custom cache dir; create them, then point apt here.
           mkdir -p /tmp/apt-archives/partial
-          touch /tmp/apt-archives/lock
           echo 'Dir::Cache::archives "/tmp/apt-archives";' | sudo tee /etc/apt/apt.conf.d/01cache
 
       - name: Setup Dependencies
@@ -54,7 +55,7 @@ jobs:
       # - name: Unit Tests Coverage
       #   run:  ./unit-tests-coverage.sh
 
-  macos-build-only:
+  macos-build-test:
     if:       github.ref != 'refs/heads/release'
     runs-on:  macos-latest
 
@@ -80,7 +81,15 @@ jobs:
       - name: Build Release
         run:  ./build.sh rel
 
-  windows-build-only:
+      - name: Build Tests
+        run:  ./build.sh test
+
+      # No xvfb/Mesa: the X11 GL suite is HAVE_X11-gated out here, so every
+      # remaining test (unit + the windowless component suites) is CPU-only.
+      - name: Run Tests
+        run:  ./run.sh test
+
+  windows-build-test:
     if:       github.ref != 'refs/heads/release'
     runs-on:  windows-latest
     defaults:
@@ -116,3 +125,33 @@ jobs:
           CMAKE_TOOLCHAIN_FILE: C:/vcpkg/scripts/buildsystems/vcpkg.cmake
           MSYS_NO_PATHCONV: 1
         run:  ./build.sh rel
+
+      - name: Build Tests
+        env:
+          VCPKG_TARGET_TRIPLET: x64-windows-release
+          CMAKE_TOOLCHAIN_FILE: C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          MSYS_NO_PATHCONV: 1
+        run:  ./build.sh test
+
+      # Mesa (software GL) is cached and fetched independently of the vcpkg
+      # cache gate so GL test coverage is deterministic on every run - the
+      # runner has no hardware GL driver, so run.sh deploys Mesa and TestGlSmoke
+      # exercises the full GL render path instead of the GL 1.1 early-return.
+      - name: Cache Mesa
+        id:   mesa-cache
+        uses: actions/cache@v5
+        with:
+          path: 3rd/mesa
+          key:  mesa-dist-win-release-msvc
+
+      - name: Fetch Mesa
+        if:   steps.mesa-cache.outputs.cache-hit != 'true'
+        run:  ./mesa-windows.sh fetch
+
+      # The X11 corner-capture suite is compiled out here (HAVE_X11); TestGlSmoke
+      # runs on Mesa. Prepend the vcpkg bin dir so the runtime DLLs
+      # (cairo/rsvg/freetype/glew/...) resolve if applocal deploy misses any.
+      - name: Run Tests
+        run: |
+          export PATH="/c/vcpkg/installed/x64-windows-release/bin:$PATH"
+          ./run.sh test

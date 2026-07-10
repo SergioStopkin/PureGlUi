@@ -17,18 +17,67 @@
 
 #pragma once
 
+#include "common/cstr.h"
 #include "ui/gl/localglew.h"
 #include "ui/type.h"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <iostream>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace Ui::Gl::Util {
 
 // Number of floats per vertex in pos(x,y) + uv(u,v) layout
 constexpr int POS_UV_FLOATS = 4;
+
+// Load GL entry points once a context is current. macOS resolves GL directly
+// through the framework (no loader). Elsewhere GLEW: glewInit probes GLX and
+// returns GLEW_ERROR_NO_GLX_DISPLAY under EGL - benign, the entry points are
+// loaded regardless. Drains the stray GL error glewInit leaves on core
+// profiles. Returns false only on a real loader failure.
+inline bool initGlLoader()
+{
+#ifndef __APPLE__
+    glewExperimental     = GL_TRUE;
+    const GLenum glewErr = glewInit();
+    if (glewErr != GLEW_OK && glewErr != GLEW_ERROR_NO_GLX_DISPLAY) {
+        std::cerr << "[GlUtil] GLEW init failed: " << glewGetErrorString(glewErr) << std::endl;
+        return false;
+    }
+    if (glewErr == GLEW_ERROR_NO_GLX_DISPLAY) {
+        std::cout << "[GlUtil] GLEW returned NO_GLX_DISPLAY (expected with EGL)" << std::endl;
+    }
+    while (glGetError() != GL_NO_ERROR) { }
+#endif
+    return true;
+}
+
+// True when the current GL context runs on a software rasterizer. They name
+// themselves in GL_RENDERER: Mesa llvmpipe/softpipe, SwiftShader, Microsoft
+// "GDI Generic", ANGLE-on-WARP "Basic Render Driver", Apple "Software
+// Renderer". Substring containment against the (long) renderer string, so a
+// contiguous constexpr array beats any hashed container here. Requires a
+// current context; false when no context is bound.
+inline bool isSoftwareRenderer()
+{
+    const GLubyte * renderer = glGetString(GL_RENDERER);
+    if (renderer == nullptr) {
+        return false;
+    }
+    std::string name = Common::fromCString(renderer);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::tolower(c); });
+    constexpr std::array<std::string_view, 6> MARKERS = {
+        "llvmpipe", "softpipe", "swiftshader", "software", "gdi generic", "basic render driver",
+    };
+    return std::any_of(MARKERS.begin(), MARKERS.end(), [&name](std::string_view marker) {
+        return name.find(marker) != std::string::npos;
+    });
+}
 
 // GL vertex attrib pointer offset: the API smuggles a byte offset through a
 // void* parameter, so this is int->ptr - static_cast cannot express it.

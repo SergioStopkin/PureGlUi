@@ -45,6 +45,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace Ui {
@@ -620,6 +621,8 @@ public:
         const GLubyte *   gl     = glGetString(GL_VERSION);
         const std::string gpuStr = gpu != nullptr ? Common::fromCString(gpu) : "N/A";
         std::string       glStr  = gl != nullptr ? Common::fromCString(gl) : "N/A";
+        // isHardwareGl() is authoritative: WindowManager folds the GL_RENDERER
+        // software-rasterizer check into it right after context creation.
         glStr += mainWindow.isHardwareGl() ? " (hardware)" : " (software)";
         replace(L"%GPU%", Common::Unicode::fromUtf8(gpuStr));
         replace(L"%GL%", Common::Unicode::fromUtf8(glStr));

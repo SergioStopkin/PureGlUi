@@ -27,4 +27,12 @@ target_include_directories(${TARGET} PRIVATE ${CMAKE_HOME_DIRECTORY}/include)
 # run directory.
 target_compile_definitions(${TARGET} PRIVATE TEST_DATA_DIR="${CMAKE_HOME_DIRECTORY}/test/data")
 
-target_link_libraries(${TARGET} GTest::gtest GTest::gtest_main pthread)
+# GTest::gtest_main pulls GTest::gtest transitively; listing gtest too puts libgtest.a on the link line twice (macOS ld
+# warns on duplicate libraries).
+target_link_libraries(${TARGET} GTest::gtest_main)
+
+# pthread: gtest + std::thread need POSIX threads on Linux (libpthread); macOS resolves them via libSystem. MSVC has no
+# pthread.lib and needs none (Windows threading is in the CRT), so link it only off Windows.
+if(NOT WIN32)
+    target_link_libraries(${TARGET} pthread)
+endif()

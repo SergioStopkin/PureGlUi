@@ -17,16 +17,19 @@ jobs:
       - name: Cache apt archives
         uses: actions/cache@v5
         with:
-          path: /tmp/apt-archives
+          # Cache only the completed .debs (runner-readable, 0644). NOT the whole
+          # dir: apt hardens partial/ to _apt:root 0700 during download, which the
+          # runner-owned post-job tar can't read (Permission denied on save).
+          # Keep path semantics identical to actions-develop.yml - both share the
+          # apt-<hash> cache key.
+          path: /tmp/apt-archives/*.deb
           key:  apt-${{hashFiles('.github/dependencies/linux')}}
 
       - name: Route apt downloads to the cache dir
         run: |
-          # Pre-create lock + partial/ as the runner (no sudo) so sudo apt-get
-          # reuses them instead of creating root-owned ones; that keeps the whole
-          # cache dir readable by the post-job tar (the .debs are already 0644).
+          # apt requires archives/ + archives/partial to exist before it will
+          # download into a custom cache dir; create them, then point apt here.
           mkdir -p /tmp/apt-archives/partial
-          touch /tmp/apt-archives/lock
           echo 'Dir::Cache::archives "/tmp/apt-archives";' | sudo tee /etc/apt/apt.conf.d/01cache
 
       - name: Setup Dependencies

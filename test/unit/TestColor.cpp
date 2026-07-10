@@ -24,6 +24,7 @@
  */
 
 #include "ui/color.h"
+#include "ui/type.h"
 
 #include <gtest/gtest.h>
 #include <string>
@@ -78,7 +79,7 @@ static void testHslTable(const Ui::Color & base, int baseLightness, const std::u
         const uint8_t expG = (hex >> 8) & 0xff;
         const uint8_t expB = hex & 0xff;
 
-        const int       delta  = lightness - baseLightness;
+        const auto      delta  = static_cast<Ui::fpx_t>(lightness - baseLightness);
         const Ui::Color result = (delta >= 0) ? base.Lighter(delta) : base.Darker(-delta);
 
         const std::string label = "L" + std::to_string(lightness) + "%";
