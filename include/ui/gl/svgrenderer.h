@@ -209,6 +209,53 @@ private:
         Ui::Gl::Util::drawTriangles(Ui::Gl::Util::quadVertices(x, y, width, height), 6);
     }
 
+    // Shared body of the public drawScaled/drawTintedScaled (they differ only
+    // in the tint uniforms). color is ignored when isTinted is false.
+    //
+    // Quality: the scaled icon gets its own raster at the scaled size (its own
+    // texture-cache entry, kept warm by the render loop) instead of a
+    // GPU-downscale of the full-size texture, and the quad is drawn at EXACTLY
+    // the raster's physical size, centered on the physical-pixel grid. The
+    // naive quad (bound.w * scale CSS) covers a fractional pixel count (e.g.
+    // 30.96 px over a 30 px raster), so the texture gets resampled and the
+    // pressed (iconActiveScale) icon blurs.
+    void drawScaled(const std::string &            svgId,
+                    const Ui::Res::Type::bound_t & bound,
+                    float                          scale,
+                    bool                           isTinted,
+                    const Ui::Color &              color)
+    {
+        if (m_program == 0) {
+            return;
+        }
+        auto tex = texture(svgId, bound.w * scale, bound.h * scale);
+        if (!tex.valid) {
+            return;
+        }
+
+        const fpx_t drawW = bound.w;
+        const fpx_t drawH = bound.h > 0 ? bound.h : (bound.w * tex.height / tex.width);
+
+        // tex.width/height are the integral physical raster dims; convert back
+        // to CSS so the quad covers them 1:1, and snap the centered origin to
+        // whole physical pixels.
+        const fpx_t scaledW = toCss(static_cast<fpx_t>(tex.width));
+        const fpx_t scaledH = toCss(static_cast<fpx_t>(tex.height));
+        const fpx_t quadX   = toCss(std::round(toPhys(bound.x + (drawW - scaledW) / 2.0F)));
+        const fpx_t quadY   = toCss(std::round(toPhys(bound.y + (drawH - scaledH) / 2.0F)));
+
+        glBindTexture(GL_TEXTURE_2D, tex.textureId);
+        if (isTinted) {
+            glUniform1i(m_uTint, 1);
+            auto c = color.toGLRGBA();
+            glUniform4f(m_uColor, c[0], c[1], c[2], c[3]);
+        } else {
+            glUniform4f(m_uColor, 1.0F, 1.0F, 1.0F, 1.0F);
+            glUniform1i(m_uTint, 0);
+        }
+        drawQuad(quadX, quadY, scaledW, scaledH);
+    }
+
     void drawShadowLayers(const std::string &            svgId,
                           const Ui::Res::Type::bound_t & bound,
                           fpx_t                          drawW,
@@ -1137,26 +1184,7 @@ public:
                           const Ui::Color &              color,
                           float                          scale = 0.9F)
     {
-        if (m_program == 0) {
-            return;
-        }
-        auto tex = texture(svgId, bound.w, bound.h);
-        if (!tex.valid) {
-            return;
-        }
-
-        const fpx_t drawW   = bound.w;
-        const fpx_t drawH   = bound.h > 0 ? bound.h : (bound.w * tex.height / tex.width);
-        const fpx_t scaledW = drawW * scale;
-        const fpx_t scaledH = drawH * scale;
-        const fpx_t offsetX = (drawW - scaledW) / 2.0F;
-        const fpx_t offsetY = (drawH - scaledH) / 2.0F;
-
-        glBindTexture(GL_TEXTURE_2D, tex.textureId);
-        glUniform1i(m_uTint, 1);
-        auto c = color.toGLRGBA();
-        glUniform4f(m_uColor, c[0], c[1], c[2], c[3]);
-        drawQuad(bound.x + offsetX, bound.y + offsetY, scaledW, scaledH);
+        drawScaled(svgId, bound, scale, true, color);
     }
 
     /**
@@ -1203,25 +1231,7 @@ public:
      */
     void drawScaled(const std::string & svgId, const Ui::Res::Type::bound_t & bound, float scale = 0.9F)
     {
-        if (m_program == 0) {
-            return;
-        }
-        auto tex = texture(svgId, bound.w, bound.h);
-        if (!tex.valid) {
-            return;
-        }
-
-        const fpx_t drawW   = bound.w;
-        const fpx_t drawH   = bound.h > 0 ? bound.h : (bound.w * tex.height / tex.width);
-        const fpx_t scaledW = drawW * scale;
-        const fpx_t scaledH = drawH * scale;
-        const fpx_t offsetX = (drawW - scaledW) / 2.0F;
-        const fpx_t offsetY = (drawH - scaledH) / 2.0F;
-
-        glBindTexture(GL_TEXTURE_2D, tex.textureId);
-        glUniform4f(m_uColor, 1.0F, 1.0F, 1.0F, 1.0F);
-        glUniform1i(m_uTint, 0);
-        drawQuad(bound.x + offsetX, bound.y + offsetY, scaledW, scaledH);
+        drawScaled(svgId, bound, scale, false, {});
     }
 
     /**

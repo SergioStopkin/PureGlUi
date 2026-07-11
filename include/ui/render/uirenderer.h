@@ -769,6 +769,14 @@ private:
             // Ui::Color{} defaults to opaque, which would force the tinted path.
             const Ui::Color tint = op.tinted ? op.tint : Ui::Color::TransparentBlack();
             m_render.drawImage(op.src, op.pos, op.radius, tint, scale, shadow);
+            // Keep the pressed-size variant warm: the press effect draws the
+            // icon at iconActiveScale (res JSON --button-icon-active-scale),
+            // which is its own size-keyed texture-cache entry - warming here
+            // means the first click never rasterizes mid-frame. A map hit once
+            // cached.
+            if (!op.active) {
+                m_render.warmImage(op.src, op.pos, tint, m_resManager.layout().iconActiveScale);
+            }
         }
 
         for (const auto & op : m_textOps) {

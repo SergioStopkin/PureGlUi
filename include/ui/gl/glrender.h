@@ -138,29 +138,24 @@ public:
                    Ui::fpx_t                    scale,
                    const Ui::Render::shadow_t & shadow) override
     {
-        if (!isSvgFile(src)) {
-            return; // only SVG sources are drawn today
-        }
-
-        const std::string path   = std::string(src);
-        const bool        tinted = tint.a() > 0;
-
-        // Tinted icons load a colour-filled variant; plain icons load as-is.
-        const std::string key = tinted ? Ui::Gl::SvgRenderer::loadFilledFromFile(path)
-                                       : Ui::Gl::SvgRenderer::ensureLoaded(path);
-        if (key.empty() || !Ui::Gl::SvgRenderer::isLoaded(key)) {
+        const bool        isTinted = tint.a() > 0;
+        const std::string key      = resolveImageKey(src, isTinted);
+        if (key.empty()) {
             return;
         }
 
         ensureMode(Mode::Image);
 
-        const bool scaled   = scale > 1.0F;
-        const bool shadowed = shadow.isVisible();
+        // Any non-identity scale takes the scaled path - the press effect
+        // (iconActiveScale) SHRINKS the icon (e.g. 0.86), so `scale > 1.0F`
+        // would silently drop it.
+        const bool isScaled  = scale != 1.0F;
+        const bool hasShadow = shadow.isVisible();
 
-        if (tinted) {
-            if (scaled) {
+        if (isTinted) {
+            if (isScaled) {
                 m_svgRenderer.drawTintedScaled(key, bound, tint, scale);
-            } else if (shadowed) {
+            } else if (hasShadow) {
                 m_svgRenderer.drawTintedWithShadow(key,
                                                    bound,
                                                    tint,
@@ -172,14 +167,27 @@ public:
             } else {
                 m_svgRenderer.drawTinted(key, bound, tint);
             }
-        } else if (scaled) {
+        } else if (isScaled) {
             m_svgRenderer.drawScaled(key, bound, scale);
-        } else if (shadowed) {
+        } else if (hasShadow) {
             m_svgRenderer
             .drawWithShadow(key, bound, shadow.offsetX, shadow.offsetY, shadow.blur, shadow.color, shadow.opacity);
         } else {
             m_svgRenderer.draw(key, bound);
         }
+    }
+
+    // Pre-rasterize the scaled variant of an image so a later scaled draw (the
+    // button press effect, iconActiveScale) hits the texture cache instead of
+    // rasterizing mid-frame. Cheap once cached - a map hit. Requires a current
+    // GL context (called from the render loop).
+    void warmImage(std::string_view src, const Ui::Res::Type::bound_t & bound, const Ui::Color & tint, Ui::fpx_t scale)
+    {
+        const std::string key = resolveImageKey(src, tint.a() > 0);
+        if (key.empty()) {
+            return;
+        }
+        m_svgRenderer.texture(key, bound.w * scale, bound.h * scale);
     }
 
     void drawTriangle(Ui::fpx_t         x0,
@@ -250,6 +258,23 @@ private:
     };
 
     static bool isSvgFile(std::string_view src) { return src.size() >= 4 && src.substr(src.size() - 4) == ".svg"; }
+
+    // Resolve the SvgRenderer document key for an image source (shared by
+    // drawImage/warmImage): tinted icons load a colour-filled variant keyed
+    // separately from the plain load. Empty when the source is not drawable.
+    static std::string resolveImageKey(std::string_view src, bool isTinted)
+    {
+        if (!isSvgFile(src)) {
+            return {}; // only SVG sources are drawn today
+        }
+        const std::string path = std::string(src);
+        const std::string key  = isTinted ? Ui::Gl::SvgRenderer::loadFilledFromFile(path)
+                                          : Ui::Gl::SvgRenderer::ensureLoaded(path);
+        if (key.empty() || !Ui::Gl::SvgRenderer::isLoaded(key)) {
+            return {};
+        }
+        return key;
+    }
 
     void ensureMode(Mode mode)
     {
