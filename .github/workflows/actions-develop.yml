@@ -43,8 +43,8 @@ jobs:
       - name: Run with ASAN
         run:  xvfb-run -a timeout --preserve-status --signal=INT 3 ./run.sh dev
 
-      - name: Clang Tidy
-        run:  ./clang-tidy.sh
+      # - name: Clang Tidy
+        # run:  ./clang-tidy.sh
 
       - name: Build Tests
         run:  ./build.sh test

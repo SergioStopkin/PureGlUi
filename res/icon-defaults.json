@@ -1,9 +1,9 @@
 {
   "_comment": "Default icons + placement for UI roles. Two kinds of entries: aliases (icon ends in .svg) and roles (icon names an alias). Resolution is a SINGLE hop - a role must point directly at an alias; role-to-role chains resolve to empty. 'place' is each entry's own value (default: left), never inherited across the hop.",
-  "window-icon": {
+  "windowIcon": {
     "icon": "logo-2.svg"
   },
-  "window-icon-symbolic": {
+  "windowIconSymbolic": {
     "icon": "logo-symbolic.svg"
   },
   "info": {

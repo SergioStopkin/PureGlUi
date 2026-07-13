@@ -3,12 +3,12 @@
   "order": 2,
   "cubemap": {
     "kind": "uniform",
-    "face-size": 2,
+    "faceSize": 2,
     "grey": 0.5
   },
   "lights": {
     "ambient": 1,
     "directional": 1
   },
-  "hide-cubemap": true
+  "hideCubemap": true
 }

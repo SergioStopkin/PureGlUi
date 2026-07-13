@@ -57,6 +57,17 @@ inline bool initGlLoader()
     return true;
 }
 
+// True when the current context provides modern (>= 3.x) GL - required by the
+// framework's core-profile pipeline (#version 330 shaders, VAOs). False on
+// legacy contexts like Microsoft's software GL 1.1 (no GPU driver installed),
+// where the modern entry points are NULL and calling them segfaults. Desktop
+// GL version strings are spec-required to start with the major number.
+inline bool hasModernGl()
+{
+    const GLubyte * version = glGetString(GL_VERSION);
+    return version != nullptr && *version >= '3';
+}
+
 // True when the current GL context runs on a software rasterizer. They name
 // themselves in GL_RENDERER: Mesa llvmpipe/softpipe, SwiftShader, Microsoft
 // "GDI Generic", ANGLE-on-WARP "Basic Render Driver", Apple "Software

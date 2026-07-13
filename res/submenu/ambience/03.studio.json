@@ -3,15 +3,15 @@
   "order": 3,
   "cubemap": {
     "kind": "gradient",
-    "face-size": 64,
-    "top-grey": 0.95,
-    "bottom-grey": 0.06,
-    "horizon-grey": 1,
-    "horizon-strength": 0.5
+    "faceSize": 64,
+    "topGrey": 0.95,
+    "bottomGrey": 0.06,
+    "horizonGrey": 1,
+    "horizonStrength": 0.5
   },
   "lights": {
     "ambient": 1,
     "directional": 2.5
   },
-  "hide-cubemap": true
+  "hideCubemap": true
 }

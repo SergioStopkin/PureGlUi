@@ -39,7 +39,7 @@
 
 namespace Ui::Res::Store {
 
-// Loads and holds the active theme (res/css/theme/<name>-<mode>.json -> theme_t)
+// Loads and holds the active theme (res/submenu/theme/<name>-<mode>.json -> theme_t)
 // plus the per-theme preview color cache used by the theme menu. The current
 // theme name/mode are owned here too. One of the logical sub-stores ResManager
 // composes. loadTheme returns Changed::Theme when the theme actually changed.

@@ -23,7 +23,7 @@ The code lives in two include roots (see "Architecture: two roles" below): `incl
 1. **common/ + ui/ vocabulary** (`include/common/`, `include/ui/`): `common/bit.h`, `common/json.h`, `common/sanitize.h`, `common/unicode.h`, `common/fs.h`, `common/system.h`, `common/backgroundworker.h`; `ui/type.h`, `ui/color.h`, `ui/config.h`, `ui/const.h`, `ui/convert.h`, `ui/codepoint.h`, `ui/registry.h`, `ui/elementid.h`, `ui/tabbar.h`, `ui/action/registry.h`, `ui/action/actionmap.h`, `ui/intent.h`, `ui/intentkind.h`, `ui/result.h`, `ui/tab.h`, `ui/render/shadow.h`
 2. **ui/ interfaces + render layer + GL backend** (`include/ui/`): `interface/irender.h`, `interface/ieventapp.h`, `interface/irenderer.h`, `render/uilayout.h`, `render/uirenderer.h`, `render/context.h`, `render/dockcolumn.h`, `render/uielement.h`, `render/uielementstate.h`, `render/clickresult.h`, `render/popup/popuprendererbase.h`, `render/popup/popuprenderer.h`, `render/popup/dialogrenderer.h`, `gl/localglew.h`, `gl/glutil.h`, `gl/glrender.h`, `gl/rounded.h`, `gl/svgrenderer.h`, `gl/fontrenderer.h`, `gl/fonttypes.h`, `gl/textalign.h`
 2b. **ui/ windowing (backend + coordinator) + pubsub** (`include/ui/`): `pubsub/subscribe.h`, `pubsub/subscribeid.h`, `interface/iwindow.h`, `interface/ieventos.h`, `interface/icontext.h`, `window/windowbase.h`, `window/nativewindow.h`, `window/nativewindowhandle.h`, `window/nativedisplayhandle.h`, `window/event.h`, `window/eventfactory.h`, `window/clickcounter.h`, `window/eglcontext.h`, `window/platform/x11window.h`, `window/platform/x11event.h`, `window/platform/x11include.h` (+ wayland/macos/win32 window+event peers); the coordinator layer `window/windowmanager.h`, `window/renderqueue.h`, `window/compositetexture.h`, `window/contentsurface.h`, `window/contenthit.h`, `window/popup/popupwindow.h`, `window/popup/dialogwindow.h`
-3. **ui/res framework** (`include/ui/res/`): `resmanager.h`, `respath.h`, `util.h`, `localemanager.h`, `store/*.h` (the 7 sub-stores: icon/dialog/shortcut/layout/theme/menu/dock), `type/*.h` (all UI value-type `*_t` structs + pure enums), `dock/*.h`
+3. **ui/res framework** (`include/ui/res/`): `resmanager.h`, `respath.h`, `util.h`, `localemanager.h`, `store/*.h` (the 7 sub-stores: icon/dialog/shortcut/layout/theme/menu/dock), `type/*.h` (all UI value-type `*_t` structs + pure enums), `key/*.h` (res-key enums), `dock/*.h`
 4. **ui/ runnable shell + actions + io** (`include/ui/`): `shell.h`, `action/exitapp.h`, `action/reload.h`, `action/switchtheme.h`, `action/switchthememode.h`, `action/openfile.h`, `io/filedialog.h`, `io/filefilter.h`; and the demo app `include/sig.h`, `src/main.cpp`, `src/sig.cpp`
 
 ## Architecture: two roles (common / ui) + a thin demo
@@ -119,7 +119,7 @@ The windowing coordinator lives in `ui/window/` (namespace `Ui::Window`): `Windo
 
 ## UI/CSS Architecture
 
-- `res/css/layout.json` - Layout properties (dimensions, positioning, structure)
+- `res/layout.json` - Layout properties (dimensions, positioning, structure)
 - `res/submenu/theme/<key>-dark.json` / `<key>-light.json` - Theme colors and fonts (backgrounds, text colors, `:root` CSS vars like `--cl-main`/`--cl-info`/`--cl-warn`)
 - Layout defines structure (height, margin, position), theme defines appearance (colors, fonts)
 - JSON keeps CSS property names (`border-radius`); the matching C++ field is element-prefixed (`gripRadius`, not `borderRadius`)
@@ -185,12 +185,13 @@ Two include roots (see "Architecture: two roles"). Paths below are relative to e
 
 ### ui/res - resource framework (`Ui::Res::`)
 
-- `resmanager.h` - `ResManager`: domain-blind resource facade composing the 7 sub-stores below + locale/resPath/tabBar/status/activeMenu + the persisted-setting registry (window geometry, last-open dir, open-files list, theme); exposes state + an `onPersistChange` hook for a host. Public accessors delegate to the stores. `findMenuItem(id)` / `findMenuItemByKey(key)` resolve a menu node; `disableUnhandledMenuItems(isHandled)` greys leaf action items with no handler.
+- `resmanager.h` - `ResManager`: domain-blind resource facade composing the 7 sub-stores below + locale/resPath/tabBar/status/activeMenu + session persistence: `serializeSession()`/`deserializeSession()` own the session.json format v2 (sectioned: `mainWindow` geometry, `view` theme/themeMode, `paths` lastOpenDir, `files` active/open, `docks` array, plus root `version`/`lastUpdate`; section/key spellings single-sourced in `type/sessionsection.h` + `type/sessionkey.h`), with a string persisted-setting registry (`registerPersisted(section, key, get, set)`) hosts extend with their own keys; exposes state + an `onPersistChange` hook for a host. Public accessors delegate to the stores. `findMenuItem(id)` / `findMenuItemByKey(key)` resolve a menu node; `disableUnhandledMenuItems(isHandled)` greys leaf action items with no handler.
 - `respath.h` - `ResPath`: resolves bundled `res/` paths (icons, fonts, themes, layouts, locales), forward-slash output.
 - `util.h` - `Util`: `strKey` etc. (shortcut-key normalization).
 - `localemanager.h` - `Ui::Res::LocaleManager`: locale load + string lookup by JSON key.
 - `store/iconstore.h` / `dialogstore.h` / `shortcutstore.h` / `layoutstore.h` / `themestore.h` / `menustore.h` / `dockstore.h` - `Ui::Res::Store::*`: the logical sub-loaders ResManager composes (icon defaults; dialog config; shortcuts; layout+popup; theme+name/mode+preview+scanThemeNames; menus/buttons/action-map/auto-submenu; session per-dock state). Loaders that diff return a `Changed` bit the facade ORs.
 - `type/*.h` - `Ui::Res::Type` UI value types: `bound`, `border`, `region`, `font`, `colorpair`, `changed`, `popup`, `theme`, `themepreview`, `layout`, `menu`, `button`, `dialog`, `icondefault`, `iconplace`, `input` (UI scroll/key-anim half).
+- `key/*.h` - `Ui::Res::Key`: one enum class per res-key domain, `<Domain>Key` in `<domain>.h` with a `<domain>KeyName()` mapper - the single source of every JSON key spelling the fw code references (`section` + `session` for session.json v2, `app`, `dock`, `icon` entry fields, `iconrole` for the fw-referenced icon roles). Keys only other res JSON references (menu icon roles, host-added keys) stay free-form strings - that set is open and data-driven. CSS-convention spellings stay kebab; the enums centralize, never re-spell.
 - `dock/*.h` - `Ui::Res::Dock`: `anchor`, `config`, `layout`, `state`, `theme`.
 
 ### ui/ - runnable shell + actions + io (`Ui::`, `Ui::Action`, `Ui::Io`)

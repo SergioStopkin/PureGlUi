@@ -268,7 +268,7 @@ private:
             return {}; // only SVG sources are drawn today
         }
         const std::string path = std::string(src);
-        const std::string key  = isTinted ? Ui::Gl::SvgRenderer::loadFilledFromFile(path)
+        std::string       key  = isTinted ? Ui::Gl::SvgRenderer::loadFilledFromFile(path)
                                           : Ui::Gl::SvgRenderer::ensureLoaded(path);
         if (key.empty() || !Ui::Gl::SvgRenderer::isLoaded(key)) {
             return {};

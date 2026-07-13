@@ -38,7 +38,7 @@
 
 namespace Ui::Res::Store {
 
-// Loads and holds res/css/layout.json: the layout_t geometry block plus the
+// Loads and holds res/layout.json: the layout_t geometry block plus the
 // derived popup_t metrics. One of the logical sub-stores ResManager composes.
 // load() parses the file once and returns the combined Changed::Layout |
 // Changed::Popup bits for whatever actually changed, so the facade can aggregate.
@@ -129,7 +129,7 @@ public:
         }
     }
 
-    // Load res/css/layout.json once, deriving BOTH layout_t and popup_t from the
+    // Load res/layout.json once, deriving BOTH layout_t and popup_t from the
     // single parse. Returns the combined Changed bits. On file-load failure the
     // popup falls back to CSS defaults (layout is left untouched).
     Ui::Res::Type::Changed load(const std::string & file)

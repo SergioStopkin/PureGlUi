@@ -46,7 +46,7 @@ public:
     {
         return submenuDir("theme") + "/" + std::string(name) + "-" + std::string(mode) + ".json";
     }
-    [[nodiscard]] std::string layoutFile() const { return join("css/layout.json"); }
+    [[nodiscard]] std::string layoutFile() const { return join("layout.json"); }
     [[nodiscard]] std::string appFile() const { return join("app.json"); }
     [[nodiscard]] std::string renderFile() const { return join("render.json"); }
     [[nodiscard]] std::string inputFile() const { return join("input.json"); }

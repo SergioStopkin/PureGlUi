@@ -18,7 +18,9 @@
 #pragma once
 
 #include "common/json.h"
+#include "common/sanitize.h"
 #include "nlohmann/json.hpp"
+#include "ui/res/key/dialog.h"
 #include "ui/res/type/dialog.h"
 
 #include <iostream>
@@ -44,34 +46,42 @@ public:
 
     void load(const std::string & file)
     {
+        using Ui::Res::Key::DialogKey;
         nlohmann::json j;
         if (!Common::loadJson(file, j)) {
             return;
         }
 
+        const std::string buttonsKey = dialogKeyName(DialogKey::Buttons);
+        const std::string labelKey   = dialogKeyName(DialogKey::Label);
+
         // Parse button definitions: name -> locale label
         std::unordered_map<std::string, std::string> buttonLabels;
-        if (j.contains("buttons") && j["buttons"].is_object()) {
-            for (auto it = j["buttons"].begin(); it != j["buttons"].end(); ++it) {
-                if (it.value().is_object() && it.value().contains("label")) {
-                    buttonLabels[it.key()] = it.value()["label"].get<std::string>();
+        if (j.contains(buttonsKey) && j[buttonsKey].is_object()) {
+            for (auto it = j[buttonsKey].begin(); it != j[buttonsKey].end(); ++it) {
+                if (it.value().is_object() && it.value().contains(labelKey)) {
+                    buttonLabels[it.key()] = Common::Sanitize::string(it.value()[labelKey].get<std::string>(),
+                                                                      "dialog.button.label");
                 }
             }
         }
 
         // Parse type definitions: type name -> button list + primary
-        if (j.contains("types") && j["types"].is_object()) {
-            for (auto it = j["types"].begin(); it != j["types"].end(); ++it) {
+        const std::string typesKey = dialogKeyName(DialogKey::Types);
+        if (j.contains(typesKey) && j[typesKey].is_object()) {
+            for (auto it = j[typesKey].begin(); it != j[typesKey].end(); ++it) {
                 const Type::DialogType type    = Type::dialogTypeFromName(it.key());
                 const auto &           typeDef = it.value();
-                if (!typeDef.is_object() || !typeDef.contains("buttons") || !typeDef["buttons"].is_array()) {
+                if (!typeDef.is_object() || !typeDef.contains(buttonsKey) || !typeDef[buttonsKey].is_array()) {
                     continue;
                 }
 
-                const std::string          primaryName = typeDef.value("primary", "");
+                const std::string primaryName = Common::Sanitize::string(
+                typeDef.value(dialogKeyName(DialogKey::Primary), ""),
+                "dialog.primary");
                 Type::dialog_type_config_t config;
 
-                for (const auto & btnName : typeDef["buttons"]) {
+                for (const auto & btnName : typeDef[buttonsKey]) {
                     if (!btnName.is_string()) {
                         continue;
                     }

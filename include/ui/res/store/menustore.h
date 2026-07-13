@@ -24,6 +24,7 @@
 #include "nlohmann/json.hpp"
 #include "ui/convert.h"
 #include "ui/elementid.h"
+#include "ui/res/key/menu.h"
 #include "ui/res/localemanager.h"
 #include "ui/res/respath.h"
 #include "ui/res/store/iconstore.h"
@@ -185,15 +186,16 @@ public:
     // NOLINTNEXTLINE(misc-no-recursion)
     Ui::Res::Type::menu_t parseMenuItem(const nlohmann::json & itemJson, int depth) const
     {
+        using Ui::Res::Key::MenuKey;
         Ui::Res::Type::menu_t item;
-        item.label             = Common::Sanitize::string(itemJson.value("label", ""), "menu.label");
-        item.actionKey         = Common::Sanitize::string(itemJson.value("action", ""), "menu.action");
+        item.label     = Common::Sanitize::string(itemJson.value(menuKeyName(MenuKey::Label), ""), "menu.label");
+        item.actionKey = Common::Sanitize::string(itemJson.value(menuKeyName(MenuKey::Action), ""), "menu.action");
         item.showsThemePreview = (item.actionKey == "SwitchTheme");
-        item.shortcut          = Common::Sanitize::string(itemJson.value("shortcut", ""), "menu.shortcut");
-        item.icon              = Common::Sanitize::filePath(itemJson.value("icon", ""), "menu.icon");
-        item.separator         = itemJson.value("separator", false);
-        item.enabled           = itemJson.value("enabled", true);
-        item.visible           = itemJson.value("visible", true);
+        item.shortcut  = Common::Sanitize::string(itemJson.value(menuKeyName(MenuKey::Shortcut), ""), "menu.shortcut");
+        item.icon      = Common::Sanitize::filePath(itemJson.value(menuKeyName(MenuKey::Icon), ""), "menu.icon");
+        item.separator = itemJson.value(menuKeyName(MenuKey::Separator), false);
+        item.enabled   = itemJson.value(menuKeyName(MenuKey::Enabled), true);
+        item.visible   = itemJson.value(menuKeyName(MenuKey::Visible), true);
 
         // "submenus" is polymorphic by design:
         //   array  -> explicit list of submenu items (parsed recursively)
@@ -202,8 +204,8 @@ public:
         //             one child per file there, each carrying the given
         //             actionKey. Unknown subdir or missing action leaves the
         //             submenu empty - intentional signal for misconfig.
-        if (itemJson.contains("submenus")) {
-            const auto & subs = itemJson["submenus"];
+        if (itemJson.contains(menuKeyName(MenuKey::Submenus))) {
+            const auto & subs = itemJson[menuKeyName(MenuKey::Submenus)];
             if (subs.is_array()) {
                 // Depth cap from layout.json (--menu-max-depth = N allows N levels):
                 // bounds the parser recursion - and thereby every downstream
@@ -217,28 +219,33 @@ public:
                         item.items.emplace_back(parseMenuItem(subJson, depth + 1));
                     }
                 }
-            } else if (subs.is_object() && subs.contains("auto") && subs["auto"].is_string()) {
-                item.submenu = Common::Sanitize::string(subs["auto"].get<std::string>(), "menu.submenu");
+            } else if (subs.is_object() && subs.contains(menuKeyName(MenuKey::Auto))
+                       && subs[menuKeyName(MenuKey::Auto)].is_string()) {
+                item.submenu = Common::Sanitize::string(subs[menuKeyName(MenuKey::Auto)].get<std::string>(),
+                                                        "menu.submenu");
                 // actionKey fired by each auto-generated child (opaque string from
                 // JSON). An unknown key simply dispatches to nothing - inert.
-                if (subs.contains("action") && subs["action"].is_string()) {
-                    item.submenuActionKey = Common::Sanitize::string(subs["action"].get<std::string>(),
-                                                                     "menu.submenuAction");
+                if (subs.contains(menuKeyName(MenuKey::Action)) && subs[menuKeyName(MenuKey::Action)].is_string()) {
+                    item.submenuActionKey = Common::Sanitize::string(
+                    subs[menuKeyName(MenuKey::Action)].get<std::string>(),
+                    "menu.submenuAction");
                 }
             }
         }
 
-        const bool hasDialog = itemJson.contains("dialog") && itemJson["dialog"].is_object();
+        const bool hasDialog = itemJson.contains(menuKeyName(MenuKey::Dialog))
+                            && itemJson[menuKeyName(MenuKey::Dialog)].is_object();
         if (hasDialog) {
-            const auto & dlg    = itemJson["dialog"];
-            item.dialog.type    = Ui::Res::Type::dialogTypeFromName(dlg.value("type", "Info"));
-            item.dialog.title   = Common::Sanitize::string(dlg.value("title", ""), "dialog.title");
-            item.dialog.content = Common::Sanitize::string(dlg.value("content", ""), "dialog.content");
-            item.dialog.link    = Common::Sanitize::string(dlg.value("link", ""), "dialog.link");
-            item.dialog.icon    = Common::Sanitize::filePath(dlg.value("icon", ""), "dialog.icon");
-            item.dialog.file    = Common::Sanitize::filePath(dlg.value("file", ""), "dialog.file");
-            item.dialog.width   = Ui::Convert::parseCssNumber(dlg.value("width", ""));
-            item.dialog.height  = Ui::Convert::parseCssNumber(dlg.value("height", ""));
+            const auto & dlg    = itemJson[menuKeyName(MenuKey::Dialog)];
+            item.dialog.type    = Ui::Res::Type::dialogTypeFromName(dlg.value(menuKeyName(MenuKey::Type), "Info"));
+            item.dialog.title   = Common::Sanitize::string(dlg.value(menuKeyName(MenuKey::Title), ""), "dialog.title");
+            item.dialog.content = Common::Sanitize::string(dlg.value(menuKeyName(MenuKey::Content), ""),
+                                                           "dialog.content");
+            item.dialog.link    = Common::Sanitize::string(dlg.value(menuKeyName(MenuKey::Link), ""), "dialog.link");
+            item.dialog.icon    = Common::Sanitize::filePath(dlg.value(menuKeyName(MenuKey::Icon), ""), "dialog.icon");
+            item.dialog.file    = Common::Sanitize::filePath(dlg.value(menuKeyName(MenuKey::File), ""), "dialog.file");
+            item.dialog.width   = Ui::Convert::parseCssNumber(dlg.value(menuKeyName(MenuKey::Width), ""));
+            item.dialog.height  = Ui::Convert::parseCssNumber(dlg.value(menuKeyName(MenuKey::Height), ""));
         }
 
         // No explicit icon? Fall back to a role default from icon-defaults.json.
@@ -264,6 +271,7 @@ public:
 
     Ui::Res::Type::Changed loadMenus(const std::string & dir)
     {
+        using Ui::Res::Key::MenuKey;
         if (!Common::dirExists(dir)) {
             return Ui::Res::Type::Changed::None;
         }
@@ -278,14 +286,14 @@ public:
                 }
 
                 Ui::Res::Type::menu_t menu;
-                menu.label     = Common::Sanitize::string(j.value("label", ""), "menu.label");
-                menu.order     = j.value("order", int16_t {});
-                menu.visible   = j.value("visible", true);
-                menu.icon      = Common::Sanitize::filePath(j.value("icon", ""), "menu.icon");
-                menu.actionKey = Common::Sanitize::string(j.value("action", ""), "menu.action");
+                menu.label     = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Label), ""), "menu.label");
+                menu.order     = j.value(menuKeyName(MenuKey::Order), int16_t {});
+                menu.visible   = j.value(menuKeyName(MenuKey::Visible), true);
+                menu.icon      = Common::Sanitize::filePath(j.value(menuKeyName(MenuKey::Icon), ""), "menu.icon");
+                menu.actionKey = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Action), ""), "menu.action");
 
-                if (j.contains("items") && j["items"].is_array()) {
-                    for (const auto & itemJson : j["items"]) {
+                if (j.contains(menuKeyName(MenuKey::Items)) && j[menuKeyName(MenuKey::Items)].is_array()) {
+                    for (const auto & itemJson : j[menuKeyName(MenuKey::Items)]) {
                         menu.items.emplace_back(parseMenuItem(itemJson, 1));
                     }
                 }
@@ -393,6 +401,7 @@ public:
 
     Ui::Res::Type::Changed loadButtons(const std::string & dir)
     {
+        using Ui::Res::Key::MenuKey;
         if (!Common::dirExists(dir)) {
             return Ui::Res::Type::Changed::None;
         }
@@ -407,15 +416,15 @@ public:
                 }
 
                 Ui::Res::Type::button_t btn;
-                btn.label     = Common::Sanitize::string(j.value("label", ""), "button.label");
-                btn.actionKey = Common::Sanitize::string(j.value("action", ""), "button.action");
-                btn.icon      = Common::Sanitize::filePath(j.value("icon", ""), "button.icon");
-                btn.tooltip   = j.value("tooltip", "");
-                btn.width     = j.value("width", fpx_t {});
-                btn.height    = j.value("height", fpx_t {});
-                btn.order     = j.value("order", int16_t {});
-                btn.enabled   = j.value("enabled", true);
-                btn.visible   = j.value("visible", true);
+                btn.label     = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Label), ""), "button.label");
+                btn.actionKey = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Action), ""), "button.action");
+                btn.icon      = Common::Sanitize::filePath(j.value(menuKeyName(MenuKey::Icon), ""), "button.icon");
+                btn.tooltip   = j.value(menuKeyName(MenuKey::Tooltip), "");
+                btn.width     = j.value(menuKeyName(MenuKey::Width), fpx_t {});
+                btn.height    = j.value(menuKeyName(MenuKey::Height), fpx_t {});
+                btn.order     = j.value(menuKeyName(MenuKey::Order), int16_t {});
+                btn.enabled   = j.value(menuKeyName(MenuKey::Enabled), true);
+                btn.visible   = j.value(menuKeyName(MenuKey::Visible), true);
                 m_buttons.emplace_back(btn);
             }
         }
@@ -467,7 +476,9 @@ public:
             } catch (const std::exception &) {
                 continue;
             }
-            const std::string display = Common::Sanitize::string(j.value("name", std::string {}), "submenu.name");
+            using Ui::Res::Key::MenuKey;
+            const std::string display = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Name), std::string {}),
+                                                                 "submenu.name");
             if (display.empty()) {
                 continue;
             }
@@ -475,7 +486,7 @@ public:
             std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
                 return static_cast<char>(std::tolower(ch));
             });
-            entries.push_back({ j.value("order", 0), std::move(key), display });
+            entries.push_back({ j.value(menuKeyName(MenuKey::Order), 0), std::move(key), display });
         }
 
         std::sort(entries.begin(), entries.end(), [](const entry_t & a, const entry_t & b) {

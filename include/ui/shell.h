@@ -139,6 +139,15 @@ public:
             reloadResources();
         }
 
+        // Re-query display DPI: the environment may have changed since init
+        // (system zoom, monitor move) and every CSS->physical conversion below
+        // (popup geometry, dock margins, fonts) reads g_config.scale. On a
+        // scale change, run the same-size resize cascade so the renderer and
+        // content surfaces pick up the new pixel math before anything reopens.
+        if (m_windowManager.refreshDisplayMetrics()) {
+            m_windowManager.onMainWindowResize(m_windowManager.windowWidth(), m_windowManager.windowHeight());
+        }
+
         // Reopen what was open
         if (hadDialog) {
             m_windowManager.openDialog(savedDialog);

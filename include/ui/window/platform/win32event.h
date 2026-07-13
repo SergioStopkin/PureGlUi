@@ -85,10 +85,10 @@ public:
         if (PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE) != 0) {
             return true;
         }
-        // WndProc updates window bound directly during the modal resize loop.
-        // Detect the change here so the event loop keeps spinning.
+        // WndProc updates window bound directly during the modal resize/move
+        // loop. Detect the change here so the event loop keeps spinning.
         const auto & bound = window.bound();
-        return (bound.w != m_lastWidth || bound.h != m_lastHeight);
+        return (bound.w != m_lastWidth || bound.h != m_lastHeight || bound.x != m_lastX || bound.y != m_lastY);
     }
 
     bool pollEvent(Event & event, Ui::IWindow & window) override
@@ -101,10 +101,17 @@ public:
         // continuous stream of messages (WM_PAINT, WM_MOUSEMOVE from a content-surface
         // child drag, etc.) starves the synth path and the Resize event
         // never fires - leaving content surface sized for the old client rect.
+        // Position changes ride the same event: a move-only drag emits Resize
+        // with the UNCHANGED size - the shell handler persists the new frame
+        // position and its same-size early-out skips the resize cascade. This
+        // matches how X11's ConfigureNotify behaves on a move. (Wayland has no
+        // window position at all, so only this backend tracks x/y.)
         const auto & bound = window.bound();
-        if (bound.w != m_lastWidth || bound.h != m_lastHeight) {
+        if (bound.w != m_lastWidth || bound.h != m_lastHeight || bound.x != m_lastX || bound.y != m_lastY) {
             m_lastWidth         = bound.w;
             m_lastHeight        = bound.h;
+            m_lastX             = bound.x;
+            m_lastY             = bound.y;
             event.type          = EventType::Resize;
             event.resize.width  = bound.w;
             event.resize.height = bound.h;
@@ -386,9 +393,11 @@ private:
         }
     }
 
-    // Last known window size for detecting WndProc-driven resize
+    // Last known window bound for detecting WndProc-driven resize/move
     fpx_t m_lastWidth  = 0;
     fpx_t m_lastHeight = 0;
+    fpx_t m_lastX      = 0;
+    fpx_t m_lastY      = 0;
 
     // Multi-click burst counter. We don't enable CS_DBLCLKS on the window
     // class, so WM_*BUTTONDOWN arrives even for the second press; the

@@ -143,6 +143,16 @@ public:
                                      hInstance,
                                      this);
             SetWindowLongPtrW(m_hwnd, GWLP_USERDATA, asUserData(this));
+            // Launched from a terminal (Git Bash etc.) the foreground rights
+            // stay with the console, so the freshly created window appears
+            // BEHIND it. Bring the main window to the front explicitly; when
+            // the OS denies foreground stealing this degrades to a taskbar
+            // flash. Popups are unaffected (own creation path, and show() uses
+            // SW_SHOWNOACTIVATE so menus never steal focus).
+            if (m_hwnd != nullptr) {
+                SetForegroundWindow(m_hwnd);
+                SetFocus(m_hwnd);
+            }
         }
 
         // Child windows (content surface) - the content surface manages its own GL context on the HWND.
@@ -270,12 +280,22 @@ public:
         m_bound = bound;
         this->requestRender();
         if (m_hwnd) {
+            // bound carries the frame origin (x, y - what screenFramePosition
+            // reports) and the CLIENT size (w, h - what WM_SIZE/session store),
+            // but SetWindowPos takes the OUTER size. Convert via the window's
+            // actual style - the same adjustment create() applies. For
+            // undecorated popups (WS_POPUP) and child windows the adjustment
+            // is a no-op, so this stays correct for every window kind.
+            RECT       rect    = { 0, 0, static_cast<LONG>(bound.w), static_cast<LONG>(bound.h) };
+            const auto style   = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_STYLE));
+            const auto exStyle = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_EXSTYLE));
+            AdjustWindowRectEx(&rect, style, FALSE, exStyle);
             SetWindowPos(m_hwnd,
                          NULL,
                          static_cast<int>(bound.x),
                          static_cast<int>(bound.y),
-                         static_cast<int>(bound.w),
-                         static_cast<int>(bound.h),
+                         rect.right - rect.left,
+                         rect.bottom - rect.top,
                          SWP_NOZORDER);
             applyRoundedCorners();
         }
@@ -295,6 +315,22 @@ public:
             ClientToScreen(m_hwnd, &pt);
             screenX = pt.x;
             screenY = pt.y;
+        } else {
+            screenX = static_cast<int>(m_bound.x);
+            screenY = static_cast<int>(m_bound.y);
+        }
+    }
+
+    // Frame (outer) top-left for session persistence. moveResize positions the
+    // FRAME, so persisting the client origin (screenPosition, above) would walk
+    // the window right/down by the border + title-bar on every restart.
+    void screenFramePosition(int & screenX, int & screenY) const override
+    {
+        if (m_hwnd) {
+            RECT rect {};
+            GetWindowRect(m_hwnd, &rect);
+            screenX = rect.left;
+            screenY = rect.top;
         } else {
             screenX = static_cast<int>(m_bound.x);
             screenY = static_cast<int>(m_bound.y);
@@ -444,6 +480,16 @@ public:
                 GetClientRect(hwnd, &rect);
                 self->syncDimensions(static_cast<fpx_t>(rect.right - rect.left),
                                      static_cast<fpx_t>(rect.bottom - rect.top));
+            }
+            break;
+        case WM_MOVE:
+            // Track the client origin (like WM_SIZE tracks the size - both are
+            // SENT inside modal loops, so pollEvent's change detector picks the
+            // update up). A move-only drag then fires an event and the session
+            // persists the new position independently of any resize.
+            if (self != nullptr) {
+                self->m_bound.x = static_cast<fpx_t>(static_cast<short>(LOWORD(lParam)));
+                self->m_bound.y = static_cast<fpx_t>(static_cast<short>(HIWORD(lParam)));
             }
             break;
         case WM_CLOSE:

@@ -21,6 +21,7 @@
 #include "common/sanitize.h"
 #include "nlohmann/json.hpp"
 #include "ui/res/dock/state.h"
+#include "ui/res/key/session.h"
 #include "ui/res/store/layoutstore.h"
 #include "ui/type.h"
 
@@ -84,46 +85,48 @@ public:
     // Serialize per-dock state into the host's session JSON. Only docks that both
     // exist in the current layout and carry a stored state are written; orphans
     // for removed docks are dropped here, by design.
-    void writeDockJson(nlohmann::json & j) const
+    // Fill the passed array with one entry per dock that has committed state.
+    // The caller (serializeSession) owns where the array lands in the session.
+    void writeDockJson(nlohmann::json & dockArray) const
     {
-        nlohmann::json dockArray = nlohmann::json::array();
+        using Ui::Res::Key::SessionKey;
         for (const auto & cfg : m_layoutStore.layout().docks) {
             auto it = m_dockStates.find(cfg.name);
             if (it == m_dockStates.end()) {
                 continue;
             }
             nlohmann::json entry;
-            entry["name"]    = cfg.name;
-            entry["width"]   = it->second.width;
-            entry["memoryX"] = it->second.memoryX;
+            entry[sessionKeyName(SessionKey::Name)]    = cfg.name;
+            entry[sessionKeyName(SessionKey::Width)]   = it->second.width;
+            entry[sessionKeyName(SessionKey::MemoryX)] = it->second.memoryX;
             dockArray.emplace_back(std::move(entry));
-        }
-        if (!dockArray.empty()) {
-            j["dock"] = std::move(dockArray);
         }
     }
 
-    // Restore per-dock state from the host's session JSON. DockColumn instances
-    // look themselves up by name when WindowManager builds them in loadAll().
-    void readDockJson(const nlohmann::json & j)
+    // Restore per-dock state from the session's docks array (format v2 - reads
+    // exactly what writeDockJson writes). DockColumn instances look themselves
+    // up by name when WindowManager builds them in loadAll().
+    void readDockJson(const nlohmann::json & dockArray)
     {
+        using Ui::Res::Key::SessionKey;
         m_dockStates.clear();
-        if (!j.contains("dock") || !j["dock"].is_array()) {
+        if (!dockArray.is_array()) {
             return;
         }
-        for (const auto & entry : j["dock"]) {
+        for (const auto & entry : dockArray) {
             if (!entry.is_object()) {
                 continue;
             }
-            const std::string name = Common::Sanitize::string(entry.value("name", std::string {}),
-                                                              "dock.name",
-                                                              MAX_DOCK_NAME_LENGTH);
+            const std::string name = Common::Sanitize::string(
+            entry.value(sessionKeyName(SessionKey::Name), std::string {}),
+            "dock.name",
+            MAX_DOCK_NAME_LENGTH);
             if (name.empty()) {
                 continue;
             }
             Ui::Res::Dock::dock_state_t state;
-            state.width   = sanitizeDockWidth(entry.value("width", 0.0));
-            state.memoryX = sanitizeDockWidth(entry.value("memoryX", 0.0));
+            state.width   = sanitizeDockWidth(entry.value(sessionKeyName(SessionKey::Width), 0.0));
+            state.memoryX = sanitizeDockWidth(entry.value(sessionKeyName(SessionKey::MemoryX), 0.0));
             m_dockStates.emplace(name, state);
         }
     }

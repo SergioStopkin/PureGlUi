@@ -19,6 +19,7 @@
 
 #include "common/unicode.h"
 #include "ui/io/filedialog.h"
+#include "ui/res/key/iconrole.h"
 #include "ui/res/type/dialog.h"
 
 #include <algorithm>
@@ -43,13 +44,13 @@ inline std::string fileExtension(const std::string & file)
 
 // Warn that no handler is registered for a file type, e.g. "No handler for
 // *.svg". The prefix is localized; the glob is appended at runtime. Tinted with
-// --cl-warn via the Warning dialog type; icon is the data-driven "warning" role.
+// --cl-warn via the Warning dialog type; icon is the Warning icon role.
 template <class Host>
 void openNoHandlerDialog(Host & host, const std::string & extension)
 {
     Ui::Res::Type::dialog_t dialog;
     dialog.type  = Ui::Res::Type::DialogType::Warning;
-    dialog.icon  = host.resManager().iconDefault("warning").icon;
+    dialog.icon  = host.resManager().iconDefault(Ui::Res::Key::IconRoleKey::Warning).icon;
     dialog.title = "DialogNoHandlerTitle";
 
     const std::string & prefix = host.resManager().localeManager().get("DialogNoHandlerContent");

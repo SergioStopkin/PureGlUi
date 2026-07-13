@@ -1,6 +1,6 @@
 {
-  "name": "feature-tree",
+  "name": "featureTree",
   "anchor": "left",
   "order": 1,
-  "default-width": "280px"
+  "defaultWidth": "280px"
 }

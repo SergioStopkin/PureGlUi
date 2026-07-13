@@ -61,18 +61,6 @@ namespace PureGlUi {
 using Ui::Window::NativeWindow;
 using MainConnector = Ui::Window::Connector<NativeWindow, Ui::Render::UiRenderer>;
 
-namespace {
-
-    // Core-profile 3.x+ is needed for FBOs + the shader pipeline UiRenderer uses. A
-    // GPU-less Windows runner only exposes Microsoft's software GL 1.1, which fails.
-    bool hasModernGl()
-    {
-        const GLubyte * version = glGetString(GL_VERSION);
-        return version != nullptr && *version >= '3';
-    }
-
-} // namespace
-
 // Drives the real framework path on one window/context:
 //   1. context is live
 //   2. clear + readback of a known color via an offscreen FBO (deterministic)
@@ -91,7 +79,7 @@ TEST(GlSmoke, WindowContextAndUiRender)
     ASSERT_TRUE(Ui::Gl::Util::initGlLoader()) << "GL loader init failed";
     ASSERT_NE(glGetString(GL_VERSION), nullptr) << "no live GL context";
 
-    if (!hasModernGl()) {
+    if (!Ui::Gl::Util::hasModernGl()) {
         GTEST_SKIP() << "GL context live; modern GL (>= 3.x) unavailable - render + readback not exercised";
     }
 

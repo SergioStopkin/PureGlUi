@@ -25,6 +25,11 @@
 #include "ui/convert.h"
 #include "ui/io/filefilter.h"
 #include "ui/res/dock/state.h"
+#include "ui/res/key/app.h"
+#include "ui/res/key/dock.h"
+#include "ui/res/key/iconrole.h"
+#include "ui/res/key/section.h"
+#include "ui/res/key/session.h"
 #include "ui/res/localemanager.h"
 #include "ui/res/respath.h"
 #include "ui/res/store/dialogstore.h"
@@ -45,6 +50,7 @@
 #include "ui/tabbar.h"
 #include "ui/type.h"
 
+#include <chrono>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -64,14 +70,15 @@ class ResManager final {
     // field. Both menu-driven settings (themeName, displayMode, ambience) and
     // programmatic ones (themeMode, lastOpenDir) flow through the same path.
     struct alignas(128) persisted_setting_t final {
-        std::string       sessionKey;          // camelCase key in session.json
-        Ui::provider_fn_t get;                 // current value -> string
-        Ui::action_fn_t   set;                 // string -> apply to typed field
-        bool              skipIfEmpty = false; // omit from save when value is empty
+        Ui::Res::Key::SectionKey section;             // session.json section it lives in
+        std::string              sessionKey;          // camelCase key inside the section
+        Ui::provider_fn_t        get;                 // current value -> string
+        Ui::action_fn_t          set;                 // string -> apply to typed field
+        bool                     skipIfEmpty = false; // omit from save when value is empty
     };
 
-    Store::LayoutStore     m_layoutStore; // res/css/layout.json: layout_t + popup_t (logical sub-store)
-    Store::ThemeStore      m_themeStore;  // res/css/theme/*: theme_t + name/mode + preview (sub-store)
+    Store::LayoutStore     m_layoutStore; // res/layout.json: layout_t + popup_t (logical sub-store)
+    Store::ThemeStore      m_themeStore;  // res/submenu/theme/*: theme_t + name/mode + preview (sub-store)
     Ui::Res::Type::input_t m_input;
     Ui::Res::LocaleManager m_localeManager;
     id_t                   m_activeMenuId = Ui::INVALID_ID;
@@ -127,22 +134,23 @@ public:
         // session location is exposed to the host (sessionDir/sessionFile); the
         // host owns the actual session.json read/write.
         try {
+            using Ui::Res::Key::AppKey;
             std::ifstream appJson(m_resPath.appFile());
             if (appJson.is_open()) {
                 nlohmann::json app;
                 appJson >> app;
-                m_title       = app.value("title", m_title);
-                m_sessionDir  = app.value("sessionDir", m_sessionDir);
-                m_sessionFile = app.value("sessionFile", m_sessionFile);
+                m_title       = app.value(appKeyName(AppKey::Title), m_title);
+                m_sessionDir  = app.value(appKeyName(AppKey::SessionDir), m_sessionDir);
+                m_sessionFile = app.value(appKeyName(AppKey::SessionFile), m_sessionFile);
 
                 // Native open-dialog config (optional). Absent/empty filters =>
                 // the dialog offers any file.
-                if (app.contains("openFile")) {
-                    const auto & openFile = app["openFile"];
-                    m_openFileTitle       = openFile.value("title", m_openFileTitle);
-                    for (const auto & filter : openFile.value("filters", nlohmann::json::array())) {
-                        m_openFileFilters.push_back(
-                        { filter.value("name", std::string {}), filter.value("spec", std::string {}) });
+                if (app.contains(appKeyName(AppKey::OpenFile))) {
+                    const auto & openFile = app[appKeyName(AppKey::OpenFile)];
+                    m_openFileTitle       = openFile.value(appKeyName(AppKey::Title), m_openFileTitle);
+                    for (const auto & filter : openFile.value(appKeyName(AppKey::Filters), nlohmann::json::array())) {
+                        m_openFileFilters.push_back({ filter.value(appKeyName(AppKey::Name), std::string {}),
+                                                      filter.value(appKeyName(AppKey::Spec), std::string {}) });
                     }
                 }
 
@@ -193,9 +201,16 @@ public:
 
     // Resolved icon default for a role from icon-defaults.json. Returns an empty
     // icon when the role is unknown - call sites should treat that as "no marker".
+    // The string overload serves data-driven roles (menu JSON etc.); fw code uses
+    // the IconRoleKey overload so its role spellings stay single-sourced.
     [[nodiscard]] Ui::Res::Type::icon_default_t iconDefault(const std::string & role) const
     {
         return m_iconStore.iconDefault(role);
+    }
+
+    [[nodiscard]] Ui::Res::Type::icon_default_t iconDefault(Ui::Res::Key::IconRoleKey role) const
+    {
+        return m_iconStore.iconDefault(Ui::Res::Key::iconRoleKeyName(role));
     }
 
     // True when this item is the active choice of its stateful action - i.e.
@@ -360,78 +375,40 @@ public:
         m_onPersistChange();
     }
 
-    void registerPersisted(std::string key, Ui::provider_fn_t getter, Ui::action_fn_t setter, bool skipIfEmpty = false)
+    // Section first, then key: arguments read outer -> inner, like the JSON
+    // they produce (j[sectionKey][key]).
+    void registerPersisted(Ui::Res::Key::SectionKey section,
+                           std::string              key,
+                           Ui::provider_fn_t        getter,
+                           Ui::action_fn_t          setter,
+                           bool                     skipIfEmpty = false)
     {
-        m_persistedSettings.push_back({ std::move(key), std::move(getter), std::move(setter), skipIfEmpty });
+        m_persistedSettings.push_back({ section, std::move(key), std::move(getter), std::move(setter), skipIfEmpty });
     }
 
     void registerPersistedSettings()
     {
         registerPersisted(
-        "theme",
+        Ui::Res::Key::SectionKey::View,
+        Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::Theme),
         [this] { return m_themeStore.themeName(); },
         [this](const std::string & v) { m_themeStore.setThemeNameValue(v); });
         registerPersisted(
-        "themeMode",
+        Ui::Res::Key::SectionKey::View,
+        Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::ThemeMode),
         [this] { return m_themeStore.themeMode(); },
         [this](const std::string & v) { m_themeStore.setThemeModeValue(v); });
         // Host domain settings live outside this fw registry; a host persists its
-        // own state directly through its session.
+        // own state directly through its session (free-form string keys).
         registerPersisted(
-        "lastOpenDir",
+        Ui::Res::Key::SectionKey::Paths,
+        Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::LastOpenDir),
         [this] { return m_lastOpenDir; },
         [this](const std::string & v) { m_lastOpenDir = Common::Sanitize::path(v, "lastOpenDir"); },
         /*skipIfEmpty=*/true);
-        // Window geometry. Stored as int-via-string so it reuses the existing
-        // string-only persisted-setting registry. skipIfEmpty drops the keys
-        // from a fresh session.json until something actually committed them
-        // (otherwise width/height of 0 would mask the layout default). The
-        // getter/setter pairs reference the member directly through `this`
-        // so the captured reference outlives the lambda.
-        registerPersisted(
-        "windowX",
-        [this] { return m_sessionWindowWidth > 0 ? std::to_string(m_sessionWindowX) : std::string {}; },
-        [this](const std::string & v) {
-            try {
-                m_sessionWindowX = std::stoi(v);
-            } catch (...) {
-                m_sessionWindowX = 0;
-            }
-        },
-        /*skipIfEmpty=*/true);
-        registerPersisted(
-        "windowY",
-        [this] { return m_sessionWindowHeight > 0 ? std::to_string(m_sessionWindowY) : std::string {}; },
-        [this](const std::string & v) {
-            try {
-                m_sessionWindowY = std::stoi(v);
-            } catch (...) {
-                m_sessionWindowY = 0;
-            }
-        },
-        /*skipIfEmpty=*/true);
-        registerPersisted(
-        "windowWidth",
-        [this] { return m_sessionWindowWidth > 0 ? std::to_string(m_sessionWindowWidth) : std::string {}; },
-        [this](const std::string & v) {
-            try {
-                m_sessionWindowWidth = std::stoi(v);
-            } catch (...) {
-                m_sessionWindowWidth = 0;
-            }
-        },
-        /*skipIfEmpty=*/true);
-        registerPersisted(
-        "windowHeight",
-        [this] { return m_sessionWindowHeight > 0 ? std::to_string(m_sessionWindowHeight) : std::string {}; },
-        [this](const std::string & v) {
-            try {
-                m_sessionWindowHeight = std::stoi(v);
-            } catch (...) {
-                m_sessionWindowHeight = 0;
-            }
-        },
-        /*skipIfEmpty=*/true);
+        // Window geometry is NOT in this string registry: it lives in the typed
+        // "mainWindow" block serializeSession writes directly - keeping it in
+        // both places duplicated the same four values in every session.json.
 
         // Stateful (radio) actions: current value drives the highlight - a menu
         // item is active when item.label == this value. SwitchTheme's value is
@@ -454,51 +431,109 @@ public:
     // + dock state) to an opaque session blob the host stores verbatim.
     [[nodiscard]] std::string serializeSession() const
     {
+        using Ui::Res::Key::SectionKey;
+        using Ui::Res::Key::SessionKey;
+
         nlohmann::json j;
-        j["window"] = { { "x", m_sessionWindowX },
-                        { "y", m_sessionWindowY },
-                        { "width", m_sessionWindowWidth },
-                        { "height", m_sessionWindowHeight } };
+        // Session format v2 (sectioned; see SectionKey/SessionKey). version
+        // is the app version from the build (CMake PROJECT_VERSION); lastUpdate
+        // is epoch milliseconds of this save.
+        j[sessionKeyName(SessionKey::Version)]    = APP_VERSION;
+        j[sessionKeyName(SessionKey::LastUpdate)] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                    std::chrono::system_clock::now().time_since_epoch())
+                                                    .count();
 
-        nlohmann::json settings;
-        for (const auto & setting : m_persistedSettings) {
-            settings[setting.sessionKey] = setting.get();
+        // Geometry only once committed - zeros would mask the layout defaults.
+        if (m_sessionWindowWidth > 0 && m_sessionWindowHeight > 0) {
+            j[sectionKeyName(SectionKey::MainWindow)] = {
+                { sessionKeyName(SessionKey::X), m_sessionWindowX },
+                { sessionKeyName(SessionKey::Y), m_sessionWindowY },
+                { sessionKeyName(SessionKey::Width), m_sessionWindowWidth },
+                { sessionKeyName(SessionKey::Height), m_sessionWindowHeight },
+            };
         }
-        j["settings"] = std::move(settings);
 
-        nlohmann::json docks;
+        for (const auto & setting : m_persistedSettings) {
+            const std::string value = setting.get();
+            if (setting.skipIfEmpty && value.empty()) {
+                continue;
+            }
+            j[sectionKeyName(setting.section)][setting.sessionKey] = value;
+        }
+
+        if (!m_sessionOpenFiles.empty() || !m_sessionActiveFile.empty()) {
+            j[sectionKeyName(SectionKey::Files)] = {
+                { sessionKeyName(SessionKey::Active), m_sessionActiveFile },
+                { sessionKeyName(SessionKey::Open), m_sessionOpenFiles },
+            };
+        }
+
+        nlohmann::json docks = nlohmann::json::array();
         m_dockStore.writeDockJson(docks);
-        j["docks"] = std::move(docks);
+        if (!docks.empty()) {
+            j[sectionKeyName(SectionKey::Docks)] = std::move(docks);
+        }
 
         return j.dump(2);
     }
 
-    // Restore persisted state from a blob produced by serializeSession. Tolerant
-    // of missing/garbage data. Geometry lands in the session fields (the window
-    // picks it up at creation); theme name/mode are restored and the file reloaded.
+    // Restore persisted state from a blob produced by serializeSession (format
+    // v2 only - reads exactly what serializeSession writes). Tolerant of
+    // missing/garbage data. Geometry lands in the session fields (the window
+    // picks it up at creation); theme name/mode are restored and the file
+    // reloaded. session.json is user-editable, so ingested paths pass Sanitize.
     void deserializeSession(const std::string & data)
     {
+        using Ui::Res::Key::SectionKey;
+        using Ui::Res::Key::SessionKey;
+
         const nlohmann::json j = nlohmann::json::parse(data, nullptr, /*allow_exceptions=*/false);
         if (!j.is_object()) {
             return;
         }
-        if (j.contains("window") && j["window"].is_object()) {
-            const auto & w = j["window"];
-            setSessionWindowGeometry(w.value("x", 0), w.value("y", 0), w.value("width", 0), w.value("height", 0));
+
+        const std::string mainWindowKey = sectionKeyName(SectionKey::MainWindow);
+        if (j.contains(mainWindowKey) && j[mainWindowKey].is_object()) {
+            const auto & w = j[mainWindowKey];
+            setSessionWindowGeometry(w.value(sessionKeyName(SessionKey::X), 0),
+                                     w.value(sessionKeyName(SessionKey::Y), 0),
+                                     w.value(sessionKeyName(SessionKey::Width), 0),
+                                     w.value(sessionKeyName(SessionKey::Height), 0));
         }
-        if (j.contains("settings") && j["settings"].is_object()) {
-            const auto & settings = j["settings"];
-            for (const auto & setting : m_persistedSettings) {
-                if (auto it = settings.find(setting.sessionKey); it != settings.end() && it->is_string()) {
-                    setting.set(it->get<std::string>());
+
+        for (const auto & setting : m_persistedSettings) {
+            const std::string sectionKey = sectionKeyName(setting.section);
+            if (!j.contains(sectionKey) || !j[sectionKey].is_object()) {
+                continue;
+            }
+            if (auto it = j[sectionKey].find(setting.sessionKey); it != j[sectionKey].end() && it->is_string()) {
+                setting.set(it->get<std::string>());
+            }
+        }
+        // The persisted setters store the raw theme name/mode; reload the
+        // theme file now for the restored pair.
+        markChanged(m_themeStore.loadCurrent(m_resPath));
+
+        m_sessionActiveFile.clear();
+        m_sessionOpenFiles.clear();
+        const std::string filesKey = sectionKeyName(SectionKey::Files);
+        if (j.contains(filesKey) && j[filesKey].is_object()) {
+            const auto & files  = j[filesKey];
+            m_sessionActiveFile = Common::Sanitize::path(
+            files.value(sessionKeyName(SessionKey::Active), std::string {}),
+            "files.active");
+            if (auto it = files.find(sessionKeyName(SessionKey::Open)); it != files.end() && it->is_array()) {
+                for (const auto & file : *it) {
+                    if (file.is_string()) {
+                        m_sessionOpenFiles.emplace_back(Common::Sanitize::path(file.get<std::string>(), "files.open"));
+                    }
                 }
             }
-            // The persisted setters store the raw theme name/mode; reload the
-            // theme file now for the restored pair.
-            markChanged(m_themeStore.loadCurrent(m_resPath));
         }
-        if (j.contains("docks")) {
-            m_dockStore.readDockJson(j["docks"]);
+
+        const std::string docksKey = sectionKeyName(SectionKey::Docks);
+        if (j.contains(docksKey)) {
+            m_dockStore.readDockJson(j[docksKey]);
         }
     }
 
@@ -543,13 +578,15 @@ public:
             if (!Common::loadJson(entry.path().string(), j)) {
                 continue;
             }
+            using Ui::Res::Key::DockKey;
             Ui::Res::Dock::dock_config_t cfg;
-            cfg.name         = Common::Sanitize::string(j.value("name", std::string {}),
+            cfg.name   = Common::Sanitize::string(j.value(dockKeyName(DockKey::Name), std::string {}),
                                                 "dock.name",
                                                 Store::DockStore::MAX_DOCK_NAME_LENGTH);
-            cfg.anchor       = Ui::Res::Dock::dockAnchorFromName(j.value("anchor", std::string { "left" }));
-            cfg.order        = j.value("order", 1);
-            cfg.defaultWidth = Ui::Convert::str2fpx(j.value("default-width", std::string {}));
+            cfg.anchor = Ui::Res::Dock::dockAnchorFromName(
+            j.value(dockKeyName(DockKey::Anchor), std::string { "left" }));
+            cfg.order        = j.value(dockKeyName(DockKey::Order), 1);
+            cfg.defaultWidth = Ui::Convert::str2fpx(j.value(dockKeyName(DockKey::DefaultWidth), std::string {}));
             if (cfg.name.empty()) {
                 std::cerr << "[ResManager] dock file missing name, skipping: " << entry.path() << std::endl;
                 continue;

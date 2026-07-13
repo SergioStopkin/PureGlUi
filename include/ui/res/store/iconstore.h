@@ -20,6 +20,7 @@
 #include "common/json.h"
 #include "common/sanitize.h"
 #include "nlohmann/json.hpp"
+#include "ui/res/key/icon.h"
 #include "ui/res/type/changed.h"
 #include "ui/res/type/icondefault.h"
 #include "ui/res/type/iconplace.h"
@@ -63,14 +64,16 @@ public:
         // Pass 1: parse every entry into m_iconDefaults (skip the optional
         // _comment). `icon` is either a real .svg (alias) or the name of another
         // entry (role); `place` defaults to Left when absent.
+        const std::string iconKey  = Key::iconKeyName(Key::IconKey::Icon);
+        const std::string placeKey = Key::iconKeyName(Key::IconKey::Place);
         for (auto it = j.begin(); it != j.end(); ++it) {
             if (it.key().rfind('_', 0) == 0 || !it.value().is_object()) {
                 continue;
             }
             Type::icon_default_t entry;
-            entry.icon = Common::Sanitize::filePath(it.value().value("icon", ""), "iconDefault.icon");
-            if (it.value().contains("place") && it.value()["place"].is_string()) {
-                entry.place = Type::iconPlaceFromName(it.value()["place"].get<std::string>());
+            entry.icon = Common::Sanitize::filePath(it.value().value(iconKey, ""), "iconDefault.icon");
+            if (it.value().contains(placeKey) && it.value()[placeKey].is_string()) {
+                entry.place = Type::iconPlaceFromName(it.value()[placeKey].get<std::string>());
             }
             m_iconDefaults.emplace(it.key(), std::move(entry));
         }
