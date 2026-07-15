@@ -395,12 +395,6 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
     m_mainWindow.makeCurrent();
     ASSERT_TRUE(Ui::Gl::Util::initGlLoader()) << "GL loader init failed";
 
-    // TEMPORARY(diagnostic): skip disabled so the test runs on software GL and
-    // prints its real failure detail. Restore before committing.
-    // if (Ui::Gl::Util::isSoftwareRenderer()) {
-    //     GTEST_SKIP() << "Corner-composite MSAA pixel comparison is unreliable on software rasterizers";
-    // }
-
     // ---- 2. Load real resources ----
     m_resManager.loadAll();
 

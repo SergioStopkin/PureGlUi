@@ -1,7 +1,14 @@
 set(TARGET component-tests)
 
 add_executable(
-    ${TARGET} TestPopupCornerCapture.cpp TestSvgIntrinsic.cpp TestFontBaseline.cpp TestDockColumn.cpp TestGlSmoke.cpp
+    ${TARGET}
+    TestPopupCornerCapture.cpp
+    TestSvgIntrinsic.cpp
+    TestFontBaseline.cpp
+    TestDockColumn.cpp
+    TestGlSmoke.cpp
+    TestUiDriver.cpp
+    TestChromeLifecycle.cpp
 )
 
 # macOS: TestGlSmoke creates a real window via NativeWindow -> Cocoa (macoswindow.h), so it must compile as

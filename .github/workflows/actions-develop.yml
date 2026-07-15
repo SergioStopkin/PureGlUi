@@ -55,7 +55,7 @@ jobs:
       # - name: Unit Tests Coverage
       #   run:  ./unit-tests-coverage.sh
 
-  macos-build-test:
+  macos:
     if:       github.ref != 'refs/heads/release'
     runs-on:  macos-latest
 
@@ -89,7 +89,7 @@ jobs:
       - name: Run Tests
         run:  ./run.sh test
 
-  windows-build-test:
+  windows:
     if:       github.ref != 'refs/heads/release'
     runs-on:  windows-latest
     defaults:
