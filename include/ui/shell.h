@@ -26,6 +26,7 @@
 #include "ui/gl/localglew.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/intent.h"
+#include "ui/interface/ichromecommands.h"
 #include "ui/pubsub/subscribeid.h"
 #include "ui/render/context.h"
 #include "ui/render/uielement.h"
@@ -60,7 +61,7 @@ namespace Ui {
  * temp status). A host composes a Shell, adds content +
  * domain actions, and wires the domain hooks (tab activate/close, key press).
  */
-class Shell final : private Common::NonCopyable {
+class Shell final : private Common::NonCopyable, private Ui::IChromeCommands {
 public:
     Shell() { std::cout << "Hello!" << std::endl; }
     ~Shell() { std::cout << "Bye!" << std::endl; }
@@ -1050,51 +1051,61 @@ private:
         }
     }
 
-    // Execute one intent emitted by the Context facade. Generic chrome intents
-    // are handled here; domain-coupled ones (tab activate/close) fire host hooks.
-    void execute(const Ui::intent_t & intent)
+    // Execute one intent emitted by the Context facade. The intent -> chrome
+    // command routing lives in Ui::routeIntent (shared with tests); the commands
+    // themselves are the private IChromeCommands overrides below.
+    void execute(const Ui::intent_t & intent) { Ui::routeIntent(intent, *this); }
+
+    // -- IChromeCommands: the window/chrome commands routeIntent() drives. Each
+    // mirrors the branch it replaced in the former execute() switch. Domain-coupled
+    // ones (tab activate/close) fire host hooks.
+    void emitAction(const std::string & actionKey, const std::string & arg) override
     {
-        switch (intent.kind) {
-        case Ui::IntentKind::EmitAction:
-            // arg is the item label (value) for parameterized actions, "" otherwise.
-            m_actions.dispatch(intent.actionKey, intent.arg);
-            break;
-        case Ui::IntentKind::OpenPopup: createMenuPopup(intent.id); break;
-        case Ui::IntentKind::ClosePopup:
-            // Deferred: the click may originate inside the popup window we are about
-            // to destroy, so close after the current event drains.
-            if (m_openMenuId != Ui::INVALID_ID) {
-                m_openMenuId = Ui::INVALID_ID;
-                m_resManager.clearActiveMenu();
-                m_windowManager.requestContentRefresh();
-                m_windowManager.subscribe().defer([this]() { destroyPopup(); });
-            }
-            break;
-        case Ui::IntentKind::OpenSubmenu:
-            // Submenus open on hover (handleMenuHover); no click path yet (step 7d).
-            break;
-        case Ui::IntentKind::OpenDialog: {
-            const Ui::Res::Type::menu_t item = m_resManager.findMenuItem(intent.id);
-            m_hoveredMenuId                  = Ui::INVALID_ID;
-            m_windowManager.onMouseLeave();
-            m_windowManager.subscribe().defer([this, dialog = item.dialog]() { m_windowManager.openDialog(dialog); });
-            break;
+        // arg is the item label (value) for parameterized actions, "" otherwise.
+        m_actions.dispatch(actionKey, arg);
+    }
+
+    [[nodiscard]] bool isPopupOpen() const override { return m_openMenuId != Ui::INVALID_ID; }
+
+    void openPopup(id_t menuId) override { createMenuPopup(menuId); }
+
+    void closePopup() override
+    {
+        // Deferred: the click may originate inside the popup window we are about to
+        // destroy, so close after the current event drains. routeIntent has already
+        // gated this on isPopupOpen().
+        m_openMenuId = Ui::INVALID_ID;
+        m_resManager.clearActiveMenu();
+        m_windowManager.requestContentRefresh();
+        m_windowManager.subscribe().defer([this]() { destroyPopup(); });
+    }
+
+    void openDialog(id_t itemId) override
+    {
+        const Ui::Res::Type::menu_t item = m_resManager.findMenuItem(itemId);
+        m_hoveredMenuId                  = Ui::INVALID_ID;
+        m_windowManager.onMouseLeave();
+        m_windowManager.subscribe().defer([this, dialog = item.dialog]() { m_windowManager.openDialog(dialog); });
+    }
+
+    void switchTab(id_t tabId) override
+    {
+        if (m_onTabActivated) {
+            m_onTabActivated(tabId);
         }
-        case Ui::IntentKind::SwitchTab:
-            if (m_onTabActivated) {
-                m_onTabActivated(intent.id);
-            }
-            break;
-        case Ui::IntentKind::CloseTab:
-            if (m_onTabClosed) {
-                m_onTabClosed(intent.id);
-            }
-            break;
-        case Ui::IntentKind::CopyText:
-            if (!intent.arg.empty() && m_windowManager.copyToClipboard(intent.arg)) {
-                showTempStatus("Copied to clipboard");
-            }
-            break;
+    }
+
+    void closeTab(id_t tabId) override
+    {
+        if (m_onTabClosed) {
+            m_onTabClosed(tabId);
+        }
+    }
+
+    void copyText(const std::string & text) override
+    {
+        if (m_windowManager.copyToClipboard(text)) {
+            showTempStatus("Copied to clipboard");
         }
     }
 
