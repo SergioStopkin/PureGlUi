@@ -17,100 +17,34 @@
 
 /**
  * @file TestUiDriver.cpp
- * @brief Headless UI-driver prototype (Tier 1): exercise the real UI logic
- *        pipeline with no GL context and no real window.
+ * @brief Headless UI-driver tests (Tier 1): exercise the real UI logic pipeline
+ *        with no GL context and no real window.
  *
  * The app's UI behaviour is a pure chain -
  *   event -> hit-test(geometry) -> element id -> intent -> actionKey -> action
- * - and every stage here is GL-free or takes an injectable IRender. This suite
- * drives the three addressing modes a UI test needs, all deterministic and
- * platform-neutral (no display, no GL, no OS input injection):
- *
- *   1. by element id      - Context::mapClick (activate/open/close an element)
- *   2. by keyboard         - Util::strKey + Context::mapKey (shortcut -> action)
- *   3. by coordinate       - UiLayout::hitTest (click at x,y -> element id)
- *
- * plus the action tier: Action::Registry with a spy, closing the intent -> action
- * loop. FakeRender supplies deterministic font metrics so layout/bounds compute
- * without FreeType/GL being exercised at runtime.
+ * - and every stage here is GL-free or takes an injectable IRender (FakeRender).
+ * Covers the addressing modes a UI test needs (by id / keyboard / coordinate),
+ * the action tier, radio-highlight state, and popup-item geometry.
  */
 
+#include "fakerender.h"
 #include "ui/action/registry.h"
 #include "ui/intent.h"
-#include "ui/interface/irender.h"
 #include "ui/render/context.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/util.h"
 #include "ui/type.h"
 
-#include <cstddef>
 #include <gtest/gtest.h>
 #include <string>
+#include <vector>
 
 #ifndef TEST_RES_DIR
 #define TEST_RES_DIR "res"
 #endif
 
 namespace PureGlUi {
-
-// Deterministic IRender: no drawing, fixed text metrics. Lets UiLayout compute
-// bounds headlessly - the absolute widths are irrelevant, only that the same
-// inputs always produce the same geometry, so hit-test mapping is verifiable.
-class FakeRender final : public Ui::IRender {
-public:
-    static constexpr Ui::fpx_t GLYPH_WIDTH = 8.0F;
-
-    void beginFrame(Ui::fpx_t /*width*/, Ui::fpx_t /*height*/) override { }
-    void endFrame() override { }
-    void fillRect(const Ui::Res::Type::bound_t & /*bound*/,
-                  const Ui::Res::Type::border_t & /*radii*/,
-                  const Ui::Res::Type::color_pair_t & /*colors*/,
-                  const Ui::Render::shadow_t & /*shadow*/) override
-    {
-    }
-    void drawText(Ui::font_handle_t /*font*/,
-                  std::string_view /*text*/,
-                  const Ui::Res::Type::bound_t & /*pos*/,
-                  const Ui::Color & /*color*/,
-                  bool /*centered*/,
-                  Ui::fpx_t /*minPadH*/) override
-    {
-    }
-    void drawImage(std::string_view /*src*/,
-                   const Ui::Res::Type::bound_t & /*bound*/,
-                   const Ui::Res::Type::border_t & /*radii*/,
-                   const Ui::Color & /*tint*/,
-                   Ui::fpx_t /*scale*/,
-                   const Ui::Render::shadow_t & /*shadow*/) override
-    {
-    }
-    void warmImage(std::string_view /*src*/,
-                   const Ui::Res::Type::bound_t & /*bound*/,
-                   const Ui::Color & /*tint*/,
-                   Ui::fpx_t /*scale*/) override
-    {
-    }
-    void drawTriangle(Ui::fpx_t /*x0*/,
-                      Ui::fpx_t /*y0*/,
-                      Ui::fpx_t /*x1*/,
-                      Ui::fpx_t /*y1*/,
-                      Ui::fpx_t /*x2*/,
-                      Ui::fpx_t /*y2*/,
-                      const Ui::Color & /*color*/) override
-    {
-    }
-
-    [[nodiscard]] Ui::fpx_t textWidth(Ui::font_handle_t /*font*/, std::wstring_view text) override
-    {
-        return static_cast<Ui::fpx_t>(text.size()) * GLYPH_WIDTH;
-    }
-
-    [[nodiscard]] Ui::font_handle_t createFont(const Ui::Res::Type::font_t & /*font*/) override { return ++m_nextFont; }
-
-private:
-    Ui::font_handle_t m_nextFont = 0;
-};
 
 // Loads the real resource set once per test (menus, shortcuts, layout, theme).
 // Pure C++: ResManager and Context never touch GL.
@@ -119,23 +53,43 @@ protected:
     Ui::Res::ResManager resManager { TEST_RES_DIR };
 
     void SetUp() override { resManager.loadAll(); }
+
+    // First top menu that opens a dropdown (no directly-bound action).
+    [[nodiscard]] const Ui::Res::Type::menu_t * popupMenu() const
+    {
+        for (const auto & menu : resManager.menus()) {
+            if (resManager.actionKeyFor(menu.id).empty() && !menu.items.empty()) {
+                return &menu;
+            }
+        }
+        return nullptr;
+    }
+
+    // All items (item + submenu levels) bound to actionKey, in menu order.
+    [[nodiscard]] std::vector<const Ui::Res::Type::menu_t *> collectByAction(const std::string & actionKey) const
+    {
+        std::vector<const Ui::Res::Type::menu_t *> out;
+        for (const auto & menu : resManager.menus()) {
+            for (const auto & item : menu.items) {
+                if (item.actionKey == actionKey && !item.separator && !item.label.empty()) {
+                    out.push_back(&item);
+                }
+                for (const auto & sub : item.items) {
+                    if (sub.actionKey == actionKey && !sub.separator && !sub.label.empty()) {
+                        out.push_back(&sub);
+                    }
+                }
+            }
+        }
+        return out;
+    }
 };
 
 // -- Mode 1: address by element id -----------------------------------------
 // Activating a top-menu button (no bound action) toggles its popup open/closed.
 TEST_F(UiDriverTest, ActivateMenuButtonById_TogglesPopup)
 {
-    const auto & menus = resManager.menus();
-    ASSERT_FALSE(menus.empty());
-
-    // A top menu that opens a dropdown is one with no directly-bound action.
-    const Ui::Res::Type::menu_t * opener = nullptr;
-    for (const auto & menu : menus) {
-        if (resManager.actionKeyFor(menu.id).empty()) {
-            opener = &menu;
-            break;
-        }
-    }
+    const Ui::Res::Type::menu_t * opener = popupMenu();
     ASSERT_NE(opener, nullptr) << "expected at least one popup-opening top menu";
 
     Ui::Render::Context        context(resManager);
@@ -178,9 +132,7 @@ TEST_F(UiDriverTest, ShortcutResolvesToAction)
 }
 
 // -- Mode 3: address by coordinate -----------------------------------------
-// A click at an element's centre resolves back to that element's id; a click in
-// empty space hits nothing. Verifies the hit-test/geometry mapping id-based
-// testing skips.
+// A click at a menu button's centre resolves back to its id; empty space misses.
 TEST_F(UiDriverTest, HitTestCoordinateResolvesToElementId)
 {
     FakeRender           render;
@@ -215,6 +167,74 @@ TEST_F(UiDriverTest, HitTestCoordinateResolvesToElementId)
 
     // A coordinate far outside every element hits nothing.
     EXPECT_EQ(layout.hitTest(100000.0F, 100000.0F), nullptr);
+}
+
+// -- Popup geometry: coordinate hit-test inside a built popup ---------------
+// Closes the gap the main-bar hit-test leaves: buildPopup lays out dropdown
+// items, and a click at an item's centre resolves to its id (a separator/gap
+// does not). This is how a popup renderer resolves a click.
+TEST_F(UiDriverTest, PopupItemHitTestResolvesToItemId)
+{
+    const Ui::Res::Type::menu_t * menu = popupMenu();
+    ASSERT_NE(menu, nullptr);
+
+    const std::vector<Ui::Render::UiElement> popup = Ui::Render::UiLayout::buildPopup(*menu, resManager);
+    ASSERT_FALSE(popup.empty());
+
+    const Ui::Render::UiElement * target = nullptr;
+    for (const auto & element : popup) {
+        if (element.type == Ui::Render::UiElementType::MenuItem) {
+            target = &element;
+            break;
+        }
+    }
+    ASSERT_NE(target, nullptr) << "expected a clickable item in the popup";
+
+    const Ui::fpx_t centerX = target->bound.x + target->bound.w / 2.0F;
+    const Ui::fpx_t centerY = target->bound.y + target->bound.h / 2.0F;
+
+    const Ui::Render::UiElement * hit = nullptr;
+    for (const auto & element : popup) {
+        if (element.type != Ui::Render::UiElementType::Separator && element.bound.contains(centerX, centerY)) {
+            hit = &element;
+            break;
+        }
+    }
+    ASSERT_NE(hit, nullptr);
+    EXPECT_EQ(hit->id, target->id);
+
+    // Below the last row, nothing is hit.
+    const Ui::fpx_t belowY = popup.back().bound.y + popup.back().bound.h + 50.0F;
+    bool            missed = true;
+    for (const auto & element : popup) {
+        if (element.bound.contains(centerX, belowY)) {
+            missed = false;
+        }
+    }
+    EXPECT_TRUE(missed);
+}
+
+// -- Radio highlight: isActiveItem follows the action's value provider ------
+// A stateful (radio) action highlights the item whose label equals the action's
+// current value; switching the value moves the highlight. Fully headless.
+TEST_F(UiDriverTest, RadioHighlightFollowsProvider)
+{
+    // Theme submenu items share actionKey "SwitchTheme"; each label is the value.
+    const std::vector<const Ui::Res::Type::menu_t *> themeItems = collectByAction("SwitchTheme");
+    if (themeItems.size() < 2) {
+        GTEST_SKIP() << "need >= 2 SwitchTheme items";
+    }
+
+    std::string current;
+    resManager.setActionValueProvider("SwitchTheme", [&current] { return current; });
+
+    current = themeItems[0]->label;
+    EXPECT_TRUE(resManager.isActiveItem(*themeItems[0]));
+    EXPECT_FALSE(resManager.isActiveItem(*themeItems[1]));
+
+    current = themeItems[1]->label; // switch: the highlight must follow the value
+    EXPECT_FALSE(resManager.isActiveItem(*themeItems[0]));
+    EXPECT_TRUE(resManager.isActiveItem(*themeItems[1]));
 }
 
 // -- Action tier: intent -> registered handler -----------------------------

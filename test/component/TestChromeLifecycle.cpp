@@ -23,15 +23,18 @@
  * Drives the SAME code as the app: the real Ui::Render::Context (click -> intent)
  * and the real Ui::routeIntent (intent -> IChromeCommands command) that
  * Shell::execute() delegates to. Only the command sink differs - a RecordingChrome
- * double stands in for Shell's IChromeCommands impl (which forwards to
- * WindowManager + the action registry + host tab hooks). So there is one copy of
- * the routing, shared by app and test - not a parallel reimplementation.
+ * double stands in for Shell's IChromeCommands impl. So there is one copy of the
+ * routing, shared by app and test. The combined flow additionally resolves clicks
+ * by coordinate via UiLayout (main bar) + buildPopup (dropdown), using FakeRender.
  */
 
+#include "fakerender.h"
+#include "recordingchrome.h"
 #include "ui/intent.h"
 #include "ui/interface/ichromecommands.h"
 #include "ui/render/clickresult.h"
 #include "ui/render/context.h"
+#include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
 #include "ui/type.h"
 
@@ -45,35 +48,6 @@
 #endif
 
 namespace PureGlUi {
-
-// Records the command sequence Ui::routeIntent issues, as readable strings for
-// order-sensitive asserts. Tracks the open-menu id so isPopupOpen() gates the
-// ClosePopup path exactly as Shell's m_openMenuId does.
-class RecordingChrome final : public Ui::IChromeCommands {
-public:
-    std::vector<std::string> log;
-    Ui::id_t                 openMenuId = Ui::INVALID_ID;
-
-    void emitAction(const std::string & actionKey, const std::string & arg) override
-    {
-        log.emplace_back("emitAction(" + actionKey + "," + arg + ")");
-    }
-    [[nodiscard]] bool isPopupOpen() const override { return openMenuId != Ui::INVALID_ID; }
-    void               openPopup(Ui::id_t menuId) override
-    {
-        openMenuId = menuId;
-        log.emplace_back("openPopup(" + std::to_string(menuId) + ")");
-    }
-    void closePopup() override
-    {
-        openMenuId = Ui::INVALID_ID;
-        log.emplace_back("closePopup");
-    }
-    void openDialog(Ui::id_t itemId) override { log.emplace_back("openDialog(" + std::to_string(itemId) + ")"); }
-    void switchTab(Ui::id_t tabId) override { log.emplace_back("switchTab(" + std::to_string(tabId) + ")"); }
-    void closeTab(Ui::id_t tabId) override { log.emplace_back("closeTab(" + std::to_string(tabId) + ")"); }
-    void copyText(const std::string & text) override { log.emplace_back("copyText(" + text + ")"); }
-};
 
 class ChromeLifecycleTest : public ::testing::Test {
 protected:
@@ -97,15 +71,16 @@ protected:
         }
     }
 
-    // First top menu that opens a dropdown (no directly-bound action).
-    [[nodiscard]] const Ui::Res::Type::menu_t * popupMenu() const
+    // Top menus that open a dropdown (no directly-bound action), in menu order.
+    [[nodiscard]] std::vector<const Ui::Res::Type::menu_t *> popupMenus() const
     {
+        std::vector<const Ui::Res::Type::menu_t *> out;
         for (const auto & menu : resManager.menus()) {
             if (resManager.actionKeyFor(menu.id).empty()) {
-                return &menu;
+                out.push_back(&menu);
             }
         }
-        return nullptr;
+        return out;
     }
 
     // First leaf item (under a popup-opening top menu) matching a predicate,
@@ -130,13 +105,34 @@ protected:
 // Top menu opens a popup, then a second click on it closes - the core lifecycle.
 TEST_F(ChromeLifecycleTest, TopMenuOpensThenCloses)
 {
-    const Ui::Res::Type::menu_t * menu = popupMenu();
-    ASSERT_NE(menu, nullptr);
+    const std::vector<const Ui::Res::Type::menu_t *> menus = popupMenus();
+    ASSERT_FALSE(menus.empty());
+    const Ui::id_t id = menus.front()->id;
 
-    click(Ui::Render::UiElementType::MenuButton, menu->id);
-    click(Ui::Render::UiElementType::MenuButton, menu->id);
+    click(Ui::Render::UiElementType::MenuButton, id);
+    click(Ui::Render::UiElementType::MenuButton, id);
 
-    EXPECT_EQ(chrome.log, (std::vector<std::string> { "openPopup(" + std::to_string(menu->id) + ")", "closePopup" }));
+    EXPECT_EQ(chrome.log, (std::vector<std::string> { "openPopup(" + std::to_string(id) + ")", "closePopup" }));
+    EXPECT_EQ(chrome.openMenuId, Ui::INVALID_ID);
+}
+
+// Clicking a different menu while one is open switches (opens the new one) rather
+// than closing - because click.id != openMenuId. A third click then toggles shut.
+TEST_F(ChromeLifecycleTest, SwitchingMenusOpensNextThenToggles)
+{
+    const std::vector<const Ui::Res::Type::menu_t *> menus = popupMenus();
+    if (menus.size() < 2) {
+        GTEST_SKIP() << "need >= 2 popup-opening top menus";
+    }
+
+    click(Ui::Render::UiElementType::MenuButton, menus[0]->id); // open A
+    click(Ui::Render::UiElementType::MenuButton, menus[1]->id); // click B while A open -> switch to B
+    click(Ui::Render::UiElementType::MenuButton, menus[1]->id); // click B again -> close
+
+    EXPECT_EQ(chrome.log,
+              (std::vector<std::string> { "openPopup(" + std::to_string(menus[0]->id) + ")",
+                                          "openPopup(" + std::to_string(menus[1]->id) + ")",
+                                          "closePopup" }));
     EXPECT_EQ(chrome.openMenuId, Ui::INVALID_ID);
 }
 
@@ -191,6 +187,76 @@ TEST_F(ChromeLifecycleTest, StatusTextCopies)
     resManager.setStatusText("hello world");
     click(Ui::Render::UiElementType::Text, Ui::INVALID_ID);
     EXPECT_EQ(chrome.log, (std::vector<std::string> { "copyText(hello world)" }));
+}
+
+// Full flow: resolve the menu button by coordinate (main layout), open its popup,
+// resolve a leaf item by coordinate (popup layout), click it - closing the popup
+// and dispatching. Chains hit-test + routing + state across both layouts.
+TEST_F(ChromeLifecycleTest, FullFlowMenuBarClickToItemAction)
+{
+    const auto [parent, item] = findLeaf(
+    [](const Ui::Res::Type::menu_t & i) { return !i.actionKey.empty() && i.dialog.title.empty(); });
+    if (item == nullptr) {
+        GTEST_SKIP() << "no leaf action item in res menus";
+    }
+
+    // (a) main layout: resolve the parent menu button by coordinate.
+    FakeRender           render;
+    Ui::Render::UiLayout layout;
+    layout.build(resManager.layout(),
+                 resManager.theme(),
+                 resManager.menus(),
+                 resManager.buttons(),
+                 resManager.tabBar(),
+                 resManager.localeManager(),
+                 1600.0F,
+                 1000.0F,
+                 &render);
+    const Ui::Render::UiElement * button = nullptr;
+    for (const auto & element : layout.elements()) {
+        if (element.type == Ui::Render::UiElementType::MenuButton && element.id == parent->id) {
+            button = &element;
+            break;
+        }
+    }
+    ASSERT_NE(button, nullptr);
+    const Ui::Render::UiElement * barHit = layout.hitTest(button->bound.x + button->bound.w / 2.0F,
+                                                          button->bound.y + button->bound.h / 2.0F);
+    ASSERT_NE(barHit, nullptr);
+    ASSERT_EQ(barHit->id, parent->id);
+
+    // (b) click it -> popup opens.
+    click(Ui::Render::UiElementType::MenuButton, barHit->id);
+
+    // (c) build the popup, resolve the leaf item by coordinate.
+    const std::vector<Ui::Render::UiElement> popup     = Ui::Render::UiLayout::buildPopup(*parent, resManager);
+    const Ui::Render::UiElement *            popupItem = nullptr;
+    for (const auto & element : popup) {
+        if (element.type == Ui::Render::UiElementType::MenuItem && element.id == item->id) {
+            popupItem = &element;
+            break;
+        }
+    }
+    ASSERT_NE(popupItem, nullptr);
+    const Ui::fpx_t               px       = popupItem->bound.x + popupItem->bound.w / 2.0F;
+    const Ui::fpx_t               py       = popupItem->bound.y + popupItem->bound.h / 2.0F;
+    const Ui::Render::UiElement * popupHit = nullptr;
+    for (const auto & element : popup) {
+        if (element.type != Ui::Render::UiElementType::Separator && element.bound.contains(px, py)) {
+            popupHit = &element;
+            break;
+        }
+    }
+    ASSERT_NE(popupHit, nullptr);
+    ASSERT_EQ(popupHit->id, item->id);
+
+    // (d) click the resolved item -> popup closes, action dispatches.
+    click(Ui::Render::UiElementType::MenuItem, popupHit->id);
+
+    EXPECT_EQ(chrome.log,
+              (std::vector<std::string> { "openPopup(" + std::to_string(parent->id) + ")",
+                                          "closePopup",
+                                          "emitAction(" + item->actionKey + "," + item->label + ")" }));
 }
 
 } // namespace PureGlUi
