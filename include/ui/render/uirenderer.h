@@ -23,11 +23,11 @@
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/fontrenderer.h"
-#include "ui/gl/glrender.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/gl/textalign.h"
+#include "ui/interface/irender.h"
 #include "ui/interface/irenderer.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
@@ -101,12 +101,12 @@ public:
         int                     progress     = 0;
     };
 
-    // makeCurrent: host callback that makes the target surface's GL context
-    // current (the fw never touches a native window). width/height: initial
-    // physical size; the host pushes later sizes via resize()/Render(w,h).
-    UiRenderer(Ui::task_fn_t makeCurrent, fpx_t width, fpx_t height, const Ui::Res::ResManager & resManager)
+    // render: the draw sink, injected so the fw renderer is decoupled from the GL
+    // backend - GlRender in the app, a fake sink in headless tests. width/height:
+    // initial physical size; the host pushes later sizes via resize()/Render(w,h).
+    UiRenderer(std::unique_ptr<Ui::IRender> render, fpx_t width, fpx_t height, const Ui::Res::ResManager & resManager)
         : m_resManager(resManager)
-        , m_render(std::move(makeCurrent), resManager.resPath().fontDir())
+        , m_render(std::move(render))
         , m_width(width)
         , m_height(height)
     {
@@ -131,7 +131,7 @@ public:
                        m_resManager.localeManager(),
                        clientWidth(),
                        clientHeight(),
-                       &m_render,
+                       m_render.get(),
                        m_resManager.statusText());
 
         // Re-apply hover/active state after layout rebuild (elements are recreated fresh)
@@ -202,9 +202,9 @@ public:
             m_extraOpsHook(*this);
         }
 
-        m_render.beginFrame(width, height);
+        m_render->beginFrame(width, height);
         flushOps();
-        m_render.endFrame();
+        m_render->endFrame();
     }
 
     // Caller can register a hook that runs between UiLayout-driven ops and
@@ -365,9 +365,6 @@ public:
 
     // Callbacks for hover
     void setOnElementHover(std::function<void(UiElementType, id_t)> cb) { m_onElementHover = std::move(cb); }
-
-    // Access to font renderer (for popup creation)
-    Ui::Gl::FontRenderer * fontRenderer() { return m_render.fontRenderer(); }
 
 private:
     bool updateHover(fpx_t cssX, fpx_t cssY)
@@ -666,7 +663,7 @@ private:
             }
             auto        tabFont  = tab->isActive ? m_layout.itemFontBold() : m_layout.itemFont();
             const fpx_t textMaxW = el.bound.w - layout.workspaceTab.padding * 2 - layout.workspaceTab.height;
-            return UiLayout::truncateFileName(tab->label, textMaxW, &m_render, tabFont);
+            return UiLayout::truncateFileName(tab->label, textMaxW, m_render.get(), tabFont);
         }
         case UiElementType::TabClose:
         case UiElementType::TabArrow: return {};
@@ -746,7 +743,7 @@ private:
     void flushOps()
     {
         for (const auto & op : m_bgOps) {
-            m_render.fillRect(op.bound, op.radius, op.colors, {});
+            m_render->fillRect(op.bound, op.radius, op.colors, {});
         }
 
         for (const auto & p : m_progressOps) {
@@ -768,19 +765,19 @@ private:
             // Transparent tint (a == 0) signals "not tinted" to the backend;
             // Ui::Color{} defaults to opaque, which would force the tinted path.
             const Ui::Color tint = op.tinted ? op.tint : Ui::Color::TransparentBlack();
-            m_render.drawImage(op.src, op.pos, op.radius, tint, scale, shadow);
+            m_render->drawImage(op.src, op.pos, op.radius, tint, scale, shadow);
             // Keep the pressed-size variant warm: the press effect draws the
             // icon at iconActiveScale (res JSON --button-icon-active-scale),
             // which is its own size-keyed texture-cache entry - warming here
             // means the first click never rasterizes mid-frame. A map hit once
             // cached.
             if (!op.active) {
-                m_render.warmImage(op.src, op.pos, tint, m_resManager.layout().iconActiveScale);
+                m_render->warmImage(op.src, op.pos, tint, m_resManager.layout().iconActiveScale);
             }
         }
 
         for (const auto & op : m_textOps) {
-            m_render.drawText(op.hFont, op.text, op.pos, op.color, op.centered, op.minPadH);
+            m_render->drawText(op.hFont, op.text, op.pos, op.color, op.centered, op.minPadH);
         }
     }
 
@@ -799,23 +796,23 @@ private:
                                                          m_resManager.theme().workspaceTabs.bg };
 
         if (p.progress >= totalSectors) {
-            m_render.fillRect({ p.tabRect.x, p.tabRect.y, p.sectorW * totalSectors, p.tabRect.h },
-                              p.tabRadius,
-                              loadColors,
-                              {});
+            m_render->fillRect({ p.tabRect.x, p.tabRect.y, p.sectorW * totalSectors, p.tabRect.h },
+                               p.tabRadius,
+                               loadColors,
+                               {});
             return;
         }
 
         fpx_t curX = p.tabRect.x;
 
         const Ui::Res::Type::border_t firstRadius = { p.tabRadius.topLeft, 0, 0, p.tabRadius.bottomLeft };
-        m_render.fillRect({ curX, p.tabRect.y, p.sectorW, p.tabRect.h }, firstRadius, loadColors, {});
+        m_render->fillRect({ curX, p.tabRect.y, p.sectorW, p.tabRect.h }, firstRadius, loadColors, {});
         curX += p.sectorW;
 
         const int midCount = p.progress - 1;
         if (midCount > 0) {
             const fpx_t midW = p.sectorW * midCount;
-            m_render.fillRect({ curX, p.tabRect.y, midW, p.tabRect.h }, {}, loadColors, {});
+            m_render->fillRect({ curX, p.tabRect.y, midW, p.tabRect.h }, {}, loadColors, {});
             curX += midW;
         }
 
@@ -823,7 +820,7 @@ private:
         // geometry does not leave the tip at an arbitrary sub-pixel position.
         const fpx_t tipX = std::round(curX + p.sectorW);
         const fpx_t tipY = std::round(p.tabRect.y + p.tabRect.h / 2.0F);
-        m_render.drawTriangle(curX, p.tabRect.y, tipX, tipY, curX, p.tabRect.y + p.tabRect.h, loadColors.fg);
+        m_render->drawTriangle(curX, p.tabRect.y, tipX, tipY, curX, p.tabRect.y + p.tabRect.h, loadColors.fg);
     }
 
     // Core members
@@ -833,7 +830,7 @@ private:
     // GL implementation of the draw sink (owns the font/svg/rounded backends).
     // mutable: text measurement (a logically-const query) populates the glyph
     // atlas cache, so const resolve* methods can measure through it.
-    mutable Ui::Gl::GlRender m_render;
+    std::unique_ptr<Ui::IRender> m_render;
 
     // Cached physical surface size (host pushes via ctor / resize() / Render()).
     fpx_t m_width  = 0;

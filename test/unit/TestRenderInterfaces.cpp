@@ -70,6 +70,7 @@ public:
     {
         ++images;
     }
+    void warmImage(std::string_view, const Ui::Res::Type::bound_t &, const Ui::Color &, Ui::fpx_t) override { }
     void drawTriangle(Ui::fpx_t, Ui::fpx_t, Ui::fpx_t, Ui::fpx_t, Ui::fpx_t, Ui::fpx_t, const Ui::Color &) override
     {
         ++tris;

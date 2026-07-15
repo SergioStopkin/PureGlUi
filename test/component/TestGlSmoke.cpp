@@ -39,6 +39,7 @@
  *   runner: no FBOs, no shaders) -> context liveness verified, render+readback skipped.
  */
 
+#include "ui/gl/glrender.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/pubsub/subscribe.h"
@@ -117,7 +118,11 @@ TEST(GlSmoke, WindowContextAndUiRender)
 
     // emplaceRenderer makes the window's context current, then constructs the
     // UiRenderer (makeCurrent callback + physical size + resources).
-    auto & renderer = connector->emplaceRenderer([&window] { window.makeCurrent(); }, 320.0F, 240.0F, resManager);
+    auto & renderer = connector->emplaceRenderer(
+    std::make_unique<Ui::Gl::GlRender>([&window] { window.makeCurrent(); }, resManager.resPath().fontDir()),
+    320.0F,
+    240.0F,
+    resManager);
     renderer.setContent();
 
     EXPECT_TRUE(connector->render()); // connector makes current, then UiRenderer draws

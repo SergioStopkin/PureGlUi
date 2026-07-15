@@ -36,6 +36,7 @@
 // GLEW must be included before any GL headers
 #include "ui/color.h"
 #include "ui/config.h"
+#include "ui/gl/glrender.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/rounded.h"
 #include "ui/render/popup/popuprenderer.h"
@@ -399,10 +400,11 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
     m_resManager.loadAll();
 
     // ---- 3. Create UiRenderer for main window (same as App::initialize) ----
-    auto uiRender = std::make_unique<Ui::Render::UiRenderer>([this] { m_mainWindow.makeCurrent(); },
-                                                             kWinW,
-                                                             kWinH,
-                                                             m_resManager);
+    auto uiRender = std::make_unique<Ui::Render::UiRenderer>(
+    std::make_unique<Ui::Gl::GlRender>([this] { m_mainWindow.makeCurrent(); }, m_resManager.resPath().fontDir()),
+    kWinW,
+    kWinH,
+    m_resManager);
     uiRender->setContent();
     uiRender->resize(kWinW, kWinH);
 

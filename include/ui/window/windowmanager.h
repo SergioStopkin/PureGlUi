@@ -23,6 +23,7 @@
 #include "common/sanitize.h"
 #include "common/unicode.h"
 #include "ui/config.h"
+#include "ui/gl/glrender.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/interface/ieventapp.h"
@@ -1628,10 +1629,12 @@ public:
     {
         // The fw renderer never holds a window; give it a makeCurrent callback
         // over the main window plus the current physical size.
-        m_main->emplaceRenderer([&window = m_main->window()] { window.makeCurrent(); },
-                                m_windowWidth,
-                                m_windowHeight,
-                                m_resManager);
+        m_main->emplaceRenderer(
+        std::make_unique<Ui::Gl::GlRender>([&window = m_main->window()] { window.makeCurrent(); },
+                                           m_resManager.resPath().fontDir()),
+        m_windowWidth,
+        m_windowHeight,
+        m_resManager);
         m_main->renderer().setContent();
         m_main->renderer().setExtraOpsHook([this](Ui::Render::UiRenderer & out) {
             for (const auto & [id, dock] : m_docks) {

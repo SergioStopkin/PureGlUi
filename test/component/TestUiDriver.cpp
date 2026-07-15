@@ -85,6 +85,12 @@ public:
                    const Ui::Render::shadow_t & /*shadow*/) override
     {
     }
+    void warmImage(std::string_view /*src*/,
+                   const Ui::Res::Type::bound_t & /*bound*/,
+                   const Ui::Color & /*tint*/,
+                   Ui::fpx_t /*scale*/) override
+    {
+    }
     void drawTriangle(Ui::fpx_t /*x0*/,
                       Ui::fpx_t /*y0*/,
                       Ui::fpx_t /*x1*/,

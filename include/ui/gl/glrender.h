@@ -181,7 +181,10 @@ public:
     // button press effect, iconActiveScale) hits the texture cache instead of
     // rasterizing mid-frame. Cheap once cached - a map hit. Requires a current
     // GL context (called from the render loop).
-    void warmImage(std::string_view src, const Ui::Res::Type::bound_t & bound, const Ui::Color & tint, Ui::fpx_t scale)
+    void warmImage(std::string_view               src,
+                   const Ui::Res::Type::bound_t & bound,
+                   const Ui::Color &              tint,
+                   Ui::fpx_t                      scale) override
     {
         const std::string key = resolveImageKey(src, tint.a() > 0);
         if (key.empty()) {

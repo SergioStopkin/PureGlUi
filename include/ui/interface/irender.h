@@ -75,6 +75,11 @@ public:
                            fpx_t                       scale,
                            const Render::shadow_t &    shadow) = 0;
 
+    // Pre-warm an image into the sink's cache at the given scale so a later
+    // drawImage at active scale is hitch-free (icon hover/active). Same args as
+    // the eventual drawImage minus the radii/shadow the warm pass does not need.
+    virtual void warmImage(std::string_view src, const Res::Type::bound_t & bound, const Color & tint, fpx_t scale) = 0;
+
     // Flat-color triangle, vertices in CSS px. Used for the tab loading-bar
     // arrow tip - the one shape that is not a rounded rect.
     virtual void drawTriangle(fpx_t x0, fpx_t y0, fpx_t x1, fpx_t y1, fpx_t x2, fpx_t y2, const Color & color) = 0;
