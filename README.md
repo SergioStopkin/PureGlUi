@@ -102,6 +102,12 @@ docks, status bar). Menus, dialogs, theme switching, and shortcuts all work;
 the central region stays the theme background since the demo registers no
 content surfaces.
 
+## Documentation
+
+Developer API reference: [`doc/api/`](doc/api/README.md) - per-subsystem docs
+covering the public types, signatures, and host seams, plus an architecture map
+and a minimal-host example.
+
 ## Special Thanks
 
 This project uses:

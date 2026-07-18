@@ -99,15 +99,10 @@ protected:
     // Background color for the popup
     Ui::Color m_popupBg { 255, 165, 0 }; // orange
 
-    void SetUp() override
-    {
-        Display * dpy = XOpenDisplay(nullptr);
-        if (!dpy) {
-            GTEST_SKIP() << "Cannot open X11 display";
-        }
-        XCloseDisplay(dpy);
-    }
-
+    // No SetUp display probe: opening then closing a throwaway X connection can
+    // terminate an Xvfb started with -terminate (its last client disconnects),
+    // which then fails the real create() below. Each test instead skips when
+    // create() cannot obtain a window/GL context - matching GlSmoke.
     void TearDown() override { m_mainWindow.destroy(); }
 
     // -- helpers ------------------------------------------------------------
@@ -342,7 +337,9 @@ TEST_F(PopupCornerCaptureTest, MenuSwitchSequence)
     static constexpr int kSequenceLen = 7;
 
     // ---- 1. Create main window ----
-    ASSERT_TRUE(m_mainWindow.create(kMainW, kMainH, nullptr, 0, "CornerCaptureTest"));
+    if (!m_mainWindow.create(kMainW, kMainH, nullptr, 0, "CornerCaptureTest")) {
+        GTEST_SKIP() << "No X11 display / GL context available";
+    }
 
     m_mainWindow.makeCurrent();
     ASSERT_TRUE(Ui::Gl::Util::initGlLoader()) << "GL loader init failed";
@@ -387,7 +384,9 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
     static constexpr int kWinW = 800;
     static constexpr int kWinH = 600;
 
-    ASSERT_TRUE(m_mainWindow.create(kWinW, kWinH, nullptr, 0, "RealHtmlMenuSwitchTest"));
+    if (!m_mainWindow.create(kWinW, kWinH, nullptr, 0, "RealHtmlMenuSwitchTest")) {
+        GTEST_SKIP() << "No X11 display / GL context available";
+    }
 
     // Set DPI/scale (same as App::initialize)
     Ui::g_config.dpi   = Ui::Window::NativeWindow::queryDpi(m_mainWindow.nativeDisplay());
