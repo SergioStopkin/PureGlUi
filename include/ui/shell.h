@@ -65,7 +65,7 @@ namespace Ui {
 class Shell final : private Common::NonCopyable, private Ui::IChromeCommands {
 public:
     Shell() { std::cout << "Hello!" << std::endl; }
-    ~Shell() { std::cout << "Bye!" << std::endl; }
+    ~Shell() override { std::cout << "Bye!" << std::endl; }
 
     [[nodiscard]] Ui::Res::ResManager &       resManager() { return m_resManager; }
     [[nodiscard]] const Ui::Res::ResManager & resManager() const { return m_resManager; }

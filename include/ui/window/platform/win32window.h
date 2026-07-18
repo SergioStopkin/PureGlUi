@@ -143,15 +143,27 @@ public:
                                      hInstance,
                                      this);
             SetWindowLongPtrW(m_hwnd, GWLP_USERDATA, asUserData(this));
-            // Launched from a terminal (Git Bash etc.) the foreground rights
-            // stay with the console, so the freshly created window appears
-            // BEHIND it. Bring the main window to the front explicitly; when
-            // the OS denies foreground stealing this degrades to a taskbar
-            // flash. Popups are unaffected (own creation path, and show() uses
-            // SW_SHOWNOACTIVATE so menus never steal focus).
+            // Launched from a terminal (Git Bash etc.) the foreground rights stay
+            // with the console, so a bare SetForegroundWindow is denied and the
+            // freshly created window appears BEHIND the terminal. Temporarily
+            // attach this thread's input queue to the current foreground thread's:
+            // that shares foreground rights long enough to actually raise and focus
+            // the main window. Popups are unaffected (own creation path, and show()
+            // uses SW_SHOWNOACTIVATE so menus never steal focus).
             if (m_hwnd != nullptr) {
+                const HWND  foreground = GetForegroundWindow();
+                const DWORD fgThread   = GetWindowThreadProcessId(foreground, nullptr);
+                const DWORD thisThread = GetCurrentThreadId();
+                const bool  attach     = (foreground != nullptr) && (fgThread != thisThread);
+                if (attach) {
+                    AttachThreadInput(thisThread, fgThread, TRUE);
+                }
                 SetForegroundWindow(m_hwnd);
+                BringWindowToTop(m_hwnd);
                 SetFocus(m_hwnd);
+                if (attach) {
+                    AttachThreadInput(thisThread, fgThread, FALSE);
+                }
             }
         }
 

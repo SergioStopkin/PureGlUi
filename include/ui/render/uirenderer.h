@@ -629,12 +629,12 @@ private:
     static fpx_t resolvePadV(const UiElement & /* el */, const Ui::Res::Type::layout_t & /* layout */) { return 0; }
 
     // Resolve display text for an element from managers
-    std::string resolveText(const UiElement &                            el,
-                            const std::vector<Ui::Res::Type::menu_t> &   menus,
-                            const std::vector<Ui::Res::Type::button_t> & buttons,
-                            const Ui::TabBar &                           tabBar,
-                            const Ui::Res::LocaleManager &               localeMgr,
-                            const Ui::Res::Type::layout_t &              layout) const
+    [[nodiscard]] std::string resolveText(const UiElement &                            el,
+                                          const std::vector<Ui::Res::Type::menu_t> &   menus,
+                                          const std::vector<Ui::Res::Type::button_t> & buttons,
+                                          const Ui::TabBar &                           tabBar,
+                                          const Ui::Res::LocaleManager &               localeMgr,
+                                          const Ui::Res::Type::layout_t &              layout) const
     {
         switch (el.type) {
         case UiElementType::MenuButton: {
@@ -673,9 +673,9 @@ private:
     }
 
     // Resolve image source for an element from managers
-    std::string resolveImageSrc(const UiElement &                            el,
-                                const std::vector<Ui::Res::Type::button_t> & buttons,
-                                const std::vector<Ui::Res::Type::menu_t> &   menus) const
+    [[nodiscard]] std::string resolveImageSrc(const UiElement &                            el,
+                                              const std::vector<Ui::Res::Type::button_t> & buttons,
+                                              const std::vector<Ui::Res::Type::menu_t> &   menus) const
     {
         if (el.type == UiElementType::MenuButton) {
             for (const auto & menu : menus) {

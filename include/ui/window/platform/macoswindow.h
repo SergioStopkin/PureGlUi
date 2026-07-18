@@ -224,17 +224,27 @@ public:
                                               usingBlock:^(NSNotification*) {
                                                   g_macCloseRequested.store(true);
                                               }];
+            // Snapshot the current geometry into the shared Resize slot. A move
+            // leaves the size unchanged, but the shell persists frame position on
+            // every synthesized Resize event (matching X11 ConfigureNotify, which
+            // fires for move and resize alike), so both notifications feed the same
+            // block - otherwise a move-only drag would never update session.json.
+            void (^snapshotGeometry)(NSNotification*) = ^(NSNotification* note) {
+                NSWindow* win = note.object;
+                const NSSize pts = [[win contentView] bounds].size;
+                const CGFloat bsf = macBackingScaleFactor();
+                g_macResizeWidth.store(static_cast<int>(pts.width * bsf));
+                g_macResizeHeight.store(static_cast<int>(pts.height * bsf));
+                g_macResizePending.store(true);
+            };
             m_resizeObserver = [nc addObserverForName:NSWindowDidResizeNotification
                                                object:m_nsWindow
                                                 queue:nil
-                                           usingBlock:^(NSNotification* note) {
-                                               NSWindow* win = note.object;
-                                               const NSSize pts = [[win contentView] bounds].size;
-                                               const CGFloat bsf = macBackingScaleFactor();
-                                               g_macResizeWidth.store(static_cast<int>(pts.width * bsf));
-                                               g_macResizeHeight.store(static_cast<int>(pts.height * bsf));
-                                               g_macResizePending.store(true);
-                                           }];
+                                           usingBlock:snapshotGeometry];
+            m_moveObserver = [nc addObserverForName:NSWindowDidMoveNotification
+                                             object:m_nsWindow
+                                              queue:nil
+                                         usingBlock:snapshotGeometry];
 
             [m_nsWindow makeKeyAndOrderFront:nil];
             [app activateIgnoringOtherApps:YES];
@@ -266,6 +276,10 @@ public:
             if (m_resizeObserver) {
                 [nc removeObserver:m_resizeObserver];
                 m_resizeObserver = nil;
+            }
+            if (m_moveObserver) {
+                [nc removeObserver:m_moveObserver];
+                m_moveObserver = nil;
             }
             if (m_nsWindow) {
                 // Popup NSWindows are retained by their parent via addChildWindow:; nilling our
@@ -446,8 +460,14 @@ public:
         this->requestRender();
         const CGFloat bsf = backingScaleFactor();
         if (m_nsWindow) {
-            NSRect frame = NSMakeRect(bound.x / bsf, bound.y / bsf, bound.w / bsf, bound.h / bsf);
-            [m_nsWindow setFrame:frame display:YES];
+            // bound is frame top-left in top-down physical px (what screenFramePosition
+            // persists). Size the content to match create()'s initWithContentRect, then
+            // position by the frame top-left corner: setFrameTopLeftPoint takes a
+            // bottom-left-origin screen point whose y is the TOP edge, so we only flip Y
+            // (no title-bar height needed) - the inverse of the screenFramePosition save.
+            const CGFloat screenHeightPts = [[NSScreen mainScreen] frame].size.height;
+            [m_nsWindow setContentSize:NSMakeSize(bound.w / bsf, bound.h / bsf)];
+            [m_nsWindow setFrameTopLeftPoint:NSMakePoint(bound.x / bsf, screenHeightPts - (bound.y / bsf))];
             applyRoundedCorners();
         } else if (m_glView) {
             [m_glView setFrame:flippedChildFrame(m_glView.superview, m_bound)];
@@ -669,6 +689,7 @@ private:
     id<NSObject> m_closeObserver = nullptr;
     id<NSObject> m_terminateObserver = nullptr;
     id<NSObject> m_resizeObserver = nullptr;
+    id<NSObject> m_moveObserver = nullptr;
     // Diagnostic: logs makeCurrent only when the resolved context changes, to detect
     // content-surface setView swaps and context detach issues without flooding logs per frame.
     mutable void* m_lastCtxLog = nullptr;
