@@ -28,6 +28,7 @@
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <utility>
 
 namespace Ui::Window::Platform {
 
@@ -52,27 +53,9 @@ public:
      */
     void init(Ui::IWindow & /*window*/) override { }
 
-    /**
-     * @brief Register a child window for event routing
-     * @param handle Native window handle
-     * @param id Child window ID
-     */
-    void registerChildWindow(id_t id, NativeWindowHandle handle) override
-    {
-        (void)id;
-        (void)handle;
-        // TODO(sergio): Implement child window registration
-    }
-
-    /**
-     * @brief Unregister a child window
-     * @param handle Native window handle
-     */
-    void unregisterChildWindow(NativeWindowHandle handle) override
-    {
-        (void)handle;
-        // TODO(sergio): Implement child window unregistration
-    }
+    // WindowManager-provided native-handle (HWND) -> child id lookup, called in
+    // pollEvent() to stamp event.childWindowId.
+    void setChildWindowLookup(Ui::Window::child_id_fn_t lookup) override { m_childWindowLookup = std::move(lookup); }
 
     void addPopupWindow(NativeWindowHandle /*handle*/) override { }
     void removePopupWindow(NativeWindowHandle /*handle*/) override { }
@@ -123,6 +106,12 @@ public:
             TranslateMessage(&msg);
             DispatchMessage(&msg);
             event = convertWin32Event(msg);
+            // Attribute the event to its child (content) surface so the dispatcher
+            // can route it; a message from the main window keeps childWindowId
+            // = INVALID_ID.
+            if (m_childWindowLookup) {
+                event.childWindowId = m_childWindowLookup(msg.hwnd);
+            }
             return true;
         }
 
@@ -405,6 +394,9 @@ private:
     ClickCounter m_clickCounter;
 
     unsigned m_pressedButtons = 0U; // L=0x1, R=0x2, M=0x4
+
+    // WindowManager-provided native-handle -> child id lookup (see setChildWindowLookup).
+    Ui::Window::child_id_fn_t m_childWindowLookup;
 };
 
 } // namespace Ui::Window::Platform

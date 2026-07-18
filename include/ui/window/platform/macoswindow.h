@@ -510,6 +510,24 @@ public:
         screenY = 0;
     }
 
+    void screenFramePosition(int& screenX, int& screenY) const override
+    {
+        // Frame origin (title bar included), top-left, physical px - what the host
+        // persists so a restore lands the whole window frame, not the content rect,
+        // at the saved spot. screenPosition() returns the content origin (offset
+        // down by the title bar), which drifts the window up on each restore.
+        const CGFloat bsf = backingScaleFactor();
+        const CGFloat screenHeightPts = [[NSScreen mainScreen] frame].size.height;
+        if (m_nsWindow) {
+            const NSRect frame = [m_nsWindow frame];
+            screenX = static_cast<int>(frame.origin.x * bsf);
+            screenY = static_cast<int>((screenHeightPts - frame.origin.y - frame.size.height) * bsf);
+            return;
+        }
+        // Embedded child view has no title-bar frame; content position is the frame.
+        screenPosition(screenX, screenY);
+    }
+
     // Always go through the view's current openGLContext: a content surface's renderer calls
     // -[NSOpenGLContext setView:] on its own context, detaching the one captured at view
     // creation time. Using the view-resolved context keeps makeCurrent / flushBuffer

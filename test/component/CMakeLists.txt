@@ -9,6 +9,7 @@ add_executable(
     TestGlSmoke.cpp
     TestUiDriver.cpp
     TestChromeLifecycle.cpp
+    TestContentSurface.cpp
 )
 
 # macOS: TestGlSmoke creates a real window via NativeWindow -> Cocoa (macoswindow.h), so it must compile as

@@ -32,6 +32,7 @@
 #include "ui/render/uielement.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/util.h"
 #include "ui/result.h"
 #include "ui/type.h"
 #include "ui/window/event.h"
@@ -173,7 +174,7 @@ public:
     // "View:Theme", "View:Theme:default") and re-highlight the leaf node.
     void restoreActiveMenu(const Ui::key_t & activeKey)
     {
-        const std::vector<Ui::key_t> segments = splitMenuKey(activeKey);
+        const std::vector<Ui::key_t> segments = Ui::Res::Util::splitMenuKey(activeKey);
         if (segments.empty()) {
             return;
         }
@@ -198,23 +199,6 @@ public:
         if (leaf.id != Ui::INVALID_ID) {
             m_windowManager.setActivePopupItem(leaf.id);
         }
-    }
-
-    // Split a hierarchical menu key on ':' into its path segments.
-    [[nodiscard]] static std::vector<Ui::key_t> splitMenuKey(const Ui::key_t & key)
-    {
-        std::vector<Ui::key_t> segments;
-        size_t                 start = 0;
-        while (start <= key.size()) {
-            const size_t pos = key.find(':', start);
-            if (pos == Ui::key_t::npos) {
-                segments.emplace_back(key.substr(start));
-                break;
-            }
-            segments.emplace_back(key.substr(start, pos - start));
-            start = pos + 1;
-        }
-        return segments;
     }
 
     // Recreate the open popup (+ submenu + active-item highlight) at its anchored

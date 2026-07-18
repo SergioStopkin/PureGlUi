@@ -59,6 +59,14 @@ public:
     virtual bool chooseConfigForVisual(uint64_t visualId, bool wantMsaa) = 0;
 
     /**
+     * @brief Mark whether this context owns the display connection and is thus
+     * responsible for terminating the shared display on teardown. Only the main
+     * window (which opened the connection) owns it; popups reuse the parent's
+     * connection and must not terminate it.
+     */
+    virtual void setOwnsDisplay(bool ownsDisplay) = 0;
+
+    /**
      * @brief Cache the current display+config so a sibling context can reuse them.
      */
     virtual void cacheConfig() = 0;

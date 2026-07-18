@@ -17,6 +17,8 @@ add_executable(
     TestMenuDepthCap.cpp
     TestMenuSanitize.cpp
     TestNonCopyable.cpp
+    TestSession.cpp
+    TestUtil.cpp
 )
 
 # Resolve the ui/ prefix from the include/ root. UI framework tests stay light - pure C++, no GL/X11 - matching the fw's
@@ -26,6 +28,9 @@ target_include_directories(${TARGET} PRIVATE ${CMAKE_HOME_DIRECTORY}/include)
 # Fixture directory (TestIconStore loads test/data/iconstore.json), as an absolute path so it resolves regardless of the
 # run directory.
 target_compile_definitions(${TARGET} PRIVATE TEST_DATA_DIR="${CMAKE_HOME_DIRECTORY}/test/data")
+
+# TestSession bootstraps a real ResManager (pure C++, no GL) to round-trip session.json.
+target_compile_definitions(${TARGET} PRIVATE TEST_RES_DIR="${CMAKE_HOME_DIRECTORY}/res")
 
 # GTest::gtest_main pulls GTest::gtest transitively; listing gtest too puts libgtest.a on the link line twice (macOS ld
 # warns on duplicate libraries).

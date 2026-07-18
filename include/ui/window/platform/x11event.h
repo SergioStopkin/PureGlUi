@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 // X11 protocol event types (values from X.h). SCREAMING_CASE constexpr so the
@@ -73,24 +74,9 @@ public:
         m_utf8Atom      = XInternAtom(display, "UTF8_STRING", X11::False);
     }
 
-    /**
-     * @brief Register a child window for event routing
-     * @param handle Native window handle
-     * @param id Child window ID
-     */
-    void registerChildWindow(id_t id, NativeWindowHandle handle) override { m_childWindows.push_back({ id, handle }); }
-
-    /**
-     * @brief Unregister a child window
-     * @param handle Native window handle
-     */
-    void unregisterChildWindow(NativeWindowHandle handle) override
-    {
-        m_childWindows.erase(std::remove_if(m_childWindows.begin(),
-                                            m_childWindows.end(),
-                                            [handle](const ChildWindowEntry & e) { return e.window == handle; }),
-                             m_childWindows.end());
-    }
+    // WindowManager-provided native-handle -> child id lookup, called in
+    // convertX11Event() to stamp event.childWindowId.
+    void setChildWindowLookup(Ui::Window::child_id_fn_t lookup) override { m_childWindowLookup = std::move(lookup); }
 
     /**
      * @brief Register the popup window for event routing
@@ -163,11 +149,7 @@ private:
     // Double-click reconstruction (X11 has no native double-click signal).
     ClickCounter m_clickCounter;
 
-    struct alignas(16) ChildWindowEntry final {
-        id_t     id     = Ui::INVALID_ID;
-        ::Window window = 0;
-    };
-    std::vector<ChildWindowEntry> m_childWindows;
+    Ui::Window::child_id_fn_t m_childWindowLookup;
 
     /**
      * @brief Convert X11 event to platform-agnostic event
@@ -191,6 +173,13 @@ private:
 
         // Store source window for WindowManager to classify
         event.sourceWindow = eventWindow;
+
+        // Attribute the event to its child (content) surface so the dispatcher can
+        // route it; a main-window event resolves to nothing and keeps childWindowId
+        // = INVALID_ID. (default-case events already fall back to mainWin above.)
+        if (m_childWindowLookup) {
+            event.childWindowId = m_childWindowLookup(eventWindow);
+        }
 
         // Convert event type and data
         switch (xev.type) {

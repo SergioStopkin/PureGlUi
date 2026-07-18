@@ -485,6 +485,9 @@ private:
             if (!m_context->init(m_display)) {
                 return false;
             }
+            // Main window owns the X connection, so it terminates the shared
+            // EGLDisplay on teardown (popups reuse this connection).
+            m_context->setOwnsDisplay(m_ownsDisplay);
 
             if (!m_context->chooseConfig(true, true)) { // want alpha + MSAA
                 return false;

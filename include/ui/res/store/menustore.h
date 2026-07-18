@@ -419,7 +419,7 @@ public:
                 btn.label     = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Label), ""), "button.label");
                 btn.actionKey = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Action), ""), "button.action");
                 btn.icon      = Common::Sanitize::filePath(j.value(menuKeyName(MenuKey::Icon), ""), "button.icon");
-                btn.tooltip   = j.value(menuKeyName(MenuKey::Tooltip), "");
+                btn.tooltip   = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Tooltip), ""), "button.tooltip");
                 btn.width     = j.value(menuKeyName(MenuKey::Width), fpx_t {});
                 btn.height    = j.value(menuKeyName(MenuKey::Height), fpx_t {});
                 btn.order     = j.value(menuKeyName(MenuKey::Order), int16_t {});

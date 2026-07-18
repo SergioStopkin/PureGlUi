@@ -31,8 +31,10 @@
 #include <linux/input-event-codes.h>
 #include <poll.h>
 #include <queue>
+#include <string>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 #include <wayland-client.h>
 #include <wayland-cursor.h>
@@ -109,21 +111,10 @@ public:
                   << " keyboard=" << (m_keyboard != nullptr) << " cursor=" << (m_defaultCursor != nullptr) << std::endl;
     }
 
-    /**
-     * @brief Register a child window (subsurface) for event routing
-     */
-    void registerChildWindow(id_t id, NativeWindowHandle handle) override { m_childWindows.push_back({ id, handle }); }
-
-    /**
-     * @brief Unregister a child window
-     */
-    void unregisterChildWindow(NativeWindowHandle handle) override
-    {
-        m_childWindows.erase(std::remove_if(m_childWindows.begin(),
-                                            m_childWindows.end(),
-                                            [handle](const ChildWindowEntry & e) { return e.surface == handle; }),
-                             m_childWindows.end());
-    }
+    // WindowManager-provided native-handle (wl_surface) -> child id lookup, used by
+    // findChildWindowId(). WM only wires it for non-Wayland backends today, so on
+    // Wayland it stays unset (findChildWindowId returns INVALID_ID), as before.
+    void setChildWindowLookup(Ui::Window::child_id_fn_t lookup) override { m_childWindowLookup = std::move(lookup); }
 
     /**
      * @brief Register the popup window for event routing
@@ -279,10 +270,39 @@ public:
 
     bool copyToClipboard(Ui::IWindow & window, const std::string & text) override
     {
-        (void)window;
-        (void)text;
-        // TODO(sergio): wl_data_source implementation
-        return false;
+        auto * wlWin = dynamic_cast<WaylandWindow *>(&window);
+        if (wlWin == nullptr || wlWin->wlDataDeviceManager() == nullptr || m_seat == nullptr) {
+            return false;
+        }
+        wl_data_device_manager * manager = wlWin->wlDataDeviceManager();
+
+        // The source's `send` callback fires later (when another client pastes), so
+        // the text must outlive this call - keep it on the handler.
+        m_clipboardText = text;
+
+        // One data-device per seat; create it lazily and reuse it.
+        if (m_dataDevice == nullptr) {
+            m_dataDevice = wl_data_device_manager_get_data_device(manager, m_seat);
+            if (m_dataDevice == nullptr) {
+                return false;
+            }
+        }
+
+        // Replace any previous selection source.
+        if (m_dataSource != nullptr) {
+            wl_data_source_destroy(m_dataSource);
+            m_dataSource = nullptr;
+        }
+        m_dataSource = wl_data_device_manager_create_data_source(manager);
+        if (m_dataSource == nullptr) {
+            return false;
+        }
+        wl_data_source_offer(m_dataSource, "text/plain;charset=utf-8");
+        wl_data_source_offer(m_dataSource, "text/plain");
+        wl_data_source_add_listener(m_dataSource, &s_dataSourceListener, this);
+        wl_data_device_set_selection(m_dataDevice, m_dataSource, m_pointerSerial);
+        wl_display_flush(wlWin->wlDisplay());
+        return true;
     }
 
 private:
@@ -295,6 +315,12 @@ private:
     uint32_t          m_pointerSerial = 0;
     wl_surface *      m_focusSurface  = nullptr;
     wl_surface *      m_mainSurface   = nullptr;
+
+    // Clipboard selection (wl_data_source). m_clipboardText outlives copyToClipboard
+    // because the source's send callback fires asynchronously when a client pastes.
+    wl_data_device * m_dataDevice = nullptr;
+    wl_data_source * m_dataSource = nullptr;
+    std::string      m_clipboardText;
 
     // XKB keyboard state
     xkb_context * m_xkbContext = nullptr;
@@ -316,11 +342,7 @@ private:
     int  m_lastHeight   = 0;
     bool m_closeEmitted = false;
 
-    struct alignas(16) ChildWindowEntry final {
-        id_t         id      = Ui::INVALID_ID;
-        wl_surface * surface = nullptr;
-    };
-    std::vector<ChildWindowEntry> m_childWindows;
+    Ui::Window::child_id_fn_t m_childWindowLookup;
 
     void cleanup()
     {
@@ -359,15 +381,10 @@ private:
 
     [[nodiscard]] id_t findChildWindowId(wl_surface * surface) const
     {
-        if (!surface) {
+        if (surface == nullptr || !m_childWindowLookup) {
             return Ui::INVALID_ID;
         }
-        for (const auto & child : m_childWindows) {
-            if (child.surface == surface) {
-                return child.id;
-            }
-        }
-        return Ui::INVALID_ID;
+        return m_childWindowLookup(surface);
     }
 
     // -------- Seat listeners --------
@@ -399,6 +416,40 @@ private:
     static void seatName(void * /*data*/, wl_seat * /*seat*/, const char * /*name*/) { }
 
     static constexpr wl_seat_listener s_seatListener = { seatCapabilities, seatName };
+
+    // -------- Clipboard (wl_data_source) listeners --------
+    // Only send + cancelled matter for a copy selection; the DnD callbacks are
+    // required struct members but unused here.
+    static void dataSourceSend(void * data, wl_data_source * /*source*/, const char * /*mimeType*/, int32_t fd)
+    {
+        auto *              self   = static_cast<WaylandEvent *>(data);
+        const std::string & text   = self->m_clipboardText;
+        size_t              offset = 0;
+        while (offset < text.size()) {
+            const ssize_t written = ::write(fd, text.data() + offset, text.size() - offset);
+            if (written <= 0) {
+                break;
+            }
+            offset += static_cast<size_t>(written);
+        }
+        ::close(fd);
+    }
+    static void dataSourceCancelled(void * data, wl_data_source * source)
+    {
+        auto * self = static_cast<WaylandEvent *>(data);
+        wl_data_source_destroy(source);
+        if (self->m_dataSource == source) {
+            self->m_dataSource = nullptr;
+        }
+    }
+    static void dataSourceTarget(void * /*data*/, wl_data_source * /*source*/, const char * /*mimeType*/) { }
+    static void dataSourceDndDropPerformed(void * /*data*/, wl_data_source * /*source*/) { }
+    static void dataSourceDndFinished(void * /*data*/, wl_data_source * /*source*/) { }
+    static void dataSourceAction(void * /*data*/, wl_data_source * /*source*/, uint32_t /*dndAction*/) { }
+    static constexpr wl_data_source_listener s_dataSourceListener = {
+        dataSourceTarget,           dataSourceSend,        dataSourceCancelled,
+        dataSourceDndDropPerformed, dataSourceDndFinished, dataSourceAction,
+    };
 
     // -------- Pointer listeners --------
 

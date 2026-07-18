@@ -232,7 +232,9 @@ public:
             m_layout.tabCloseIconSize     = Ui::Convert::str2fpx(resolveVariable(close.value("height", "")));
             m_layout.tabCloseBorderRadius = Ui::Convert::parseCssBorderRadius(
             resolveVariable(close.value("border-radius", "")));
-            m_layout.tabCloseIcon = resolveVariable(close.value("icon", "var(--close-icon)"));
+            m_layout.tabCloseIcon = Common::Sanitize::filePath(
+            resolveVariable(close.value("icon", "var(--close-icon)")),
+            "layout.tabCloseIcon");
         }
 
         // Parse workspace-tab-arrow layout (icon filenames + dimensions)
@@ -240,8 +242,11 @@ public:
             const auto & arrow         = j["workspace-tab-arrow"];
             m_layout.tabArrowWidth     = Ui::Convert::str2fpx(resolveVariable(arrow.value("width", "")));
             m_layout.tabArrowHeight    = Ui::Convert::str2fpx(resolveVariable(arrow.value("height", "")));
-            m_layout.tabArrowIconLeft  = arrow.value("icon-left", m_layout.tabArrowIconLeft);
-            m_layout.tabArrowIconRight = arrow.value("icon-right", m_layout.tabArrowIconRight);
+            m_layout.tabArrowIconLeft  = Common::Sanitize::filePath(arrow.value("icon-left", m_layout.tabArrowIconLeft),
+                                                                   "layout.tabArrowIconLeft");
+            m_layout.tabArrowIconRight = Common::Sanitize::filePath(
+            arrow.value("icon-right", m_layout.tabArrowIconRight),
+            "layout.tabArrowIconRight");
         }
 
         // Parse top-menu-dropdown region used for popup styling (border-radius etc.)
@@ -380,7 +385,9 @@ public:
             resolveVariable(dialogClose.value("margin", "2px")));
             m_layout.dialogCloseTop   = Ui::Convert::parseCssNumber(resolveVariable(dialogClose.value("top", "8px")));
             m_layout.dialogCloseRight = Ui::Convert::parseCssNumber(resolveVariable(dialogClose.value("right", "8px")));
-            m_layout.dialogCloseIcon  = resolveVariable(dialogClose.value("icon", "var(--close-icon)"));
+            m_layout.dialogCloseIcon  = Common::Sanitize::filePath(
+            resolveVariable(dialogClose.value("icon", "var(--close-icon)")),
+            "layout.dialogCloseIcon");
         }
 
         if (j.contains("dialog-button") && j["dialog-button"].is_object()) {

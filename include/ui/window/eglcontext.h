@@ -89,6 +89,19 @@ public:
     bool init(Ui::Window::NativeDisplayHandle display) override { return init(display, EglPlatform::X11); }
 
     /**
+     * @brief Mark this context as the owner of the display connection. Only the
+     * owner terminates the shared EGLDisplay on teardown (see cleanup()).
+     */
+    void setOwnsDisplay(bool ownsDisplay) override
+    {
+#ifdef __linux__
+        m_ownsDisplay = ownsDisplay;
+#else
+        (void)ownsDisplay;
+#endif
+    }
+
+    /**
      * @brief Cache the current display+config so a sibling context (e.g. the next
      * popup) can skip the slow eglInitialize + config search.
      */
@@ -139,7 +152,6 @@ public:
         m_platform      = EglPlatform::X11;
         m_nativeDisplay = display;
         m_initialized   = true;
-        m_ownDisplay    = false;
         return true;
     }
 #endif
@@ -213,7 +225,6 @@ public:
         }
 
         m_initialized = true;
-        m_ownDisplay  = true;
         return true;
 #else
         (void)display;
@@ -596,8 +607,21 @@ public:
                 m_wlEglWindow = nullptr;
             }
 #endif
-            // Always clear our reference. We never call eglTerminate()
-            // because the display is shared with other contexts.
+            // The EGLDisplay is shared by every context on the same X connection
+            // (a popup reuses the main window's Display*, so eglGetPlatformDisplay
+            // hands back the same handle). Terminating it from a per-window teardown
+            // would invalidate all the other live contexts, so only the connection
+            // owner (the main window; m_ownsDisplay) terminates it - once, here in
+            // its own teardown, after its popups (children) are already gone and
+            // before it closes the X connection. This prevents a dangling EGL
+            // display from faulting a later eglCreateWindowSurface in the same
+            // process (real-GPU drivers crash instead of erroring).
+            if (m_ownsDisplay) {
+                s_cachedValid   = false;
+                s_cachedDisplay = EGL_NO_DISPLAY;
+                s_cachedConfig  = nullptr;
+                eglTerminate(m_eglDisplay);
+            }
             m_eglDisplay = EGL_NO_DISPLAY;
         }
         m_initialized = false;
@@ -647,7 +671,10 @@ private:
     bool m_hasMsaa     = false;
 
 #ifdef __linux__
-    bool                            m_ownDisplay    = true;
+    // Set by the connection owner (main window) via setOwnsDisplay(); only that
+    // context terminates the shared EGLDisplay on teardown. Popups reuse the
+    // parent's connection and leave this false.
+    bool                            m_ownsDisplay   = false;
     EglPlatform                     m_platform      = EglPlatform::X11;
     Ui::Window::NativeDisplayHandle m_nativeDisplay = nullptr;
     EGLDisplay                      m_eglDisplay    = EGL_NO_DISPLAY;

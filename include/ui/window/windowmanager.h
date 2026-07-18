@@ -273,14 +273,6 @@ public:
         const id_t renderId = WS_GROUP_ID + id;
         window.setRenderRequest([this, renderId]() { m_renderQueue.request(renderId); });
 
-        // Under Wayland the content window is a separate X11 window driven via
-        // X11, not the main event loop, so it isn't registered here.
-#ifndef HAVE_WAYLAND
-        if (m_eventHandler) {
-            m_eventHandler->registerChildWindow(id, window.nativeHandle());
-        }
-#endif
-
         positionContentSurface(window);
     }
 
@@ -290,11 +282,6 @@ public:
         if (it == m_contentSurfaces.end()) {
             return;
         }
-#ifndef HAVE_WAYLAND
-        if (m_eventHandler && it->second.window != nullptr) {
-            m_eventHandler->unregisterChildWindow(it->second.window->nativeHandle());
-        }
-#endif
         // Composite texture lives in the main GL context; delete it there.
         if (it->second.composite.texture != 0 && m_main) {
             m_main->window().makeCurrent();
@@ -338,6 +325,27 @@ public:
         if (it != m_contentSurfaces.end()) {
             it->second.isReady = isReady;
         }
+    }
+
+    // Whether a content surface is ready to render (false while a host is mid
+    // async-load). Unknown id -> false.
+    [[nodiscard]] bool isContentReady(id_t id) const
+    {
+        auto it = m_contentSurfaces.find(id);
+        return it != m_contentSurfaces.end() && it->second.isReady;
+    }
+
+    // Resolve a native window handle to its content-surface id, or INVALID_ID for
+    // the main window / an unregistered handle. The single source the event peers'
+    // child-window lookup is wired to (see initialize()).
+    [[nodiscard]] id_t childIdForHandle(Ui::Window::NativeWindowHandle handle) const
+    {
+        for (const auto & [surfaceId, surface] : m_contentSurfaces) {
+            if (surface.window != nullptr && surface.window->nativeHandle() == handle) {
+                return surfaceId;
+            }
+        }
+        return Ui::INVALID_ID;
     }
 
     // ---- Content-surface internal helpers (framework-side) ----
@@ -664,6 +672,16 @@ public:
         // come from the host via setDoubleClickConfig() after initialize().
         m_eventHandler = EventFactory::create();
         m_eventHandler->init(m_main->window());
+
+        // Child (content-surface) event routing: resolve a native handle to its
+        // child id against the content-surface registry (the single owner). The
+        // event peer calls this at poll time to stamp event.childWindowId. Wayland
+        // content surfaces are driven via a separate X11 path, so leave it unwired
+        // there (matches the prior per-surface registration's HAVE_WAYLAND guard).
+#ifndef HAVE_WAYLAND
+        m_eventHandler->setChildWindowLookup(
+        [this](Ui::Window::NativeWindowHandle handle) { return childIdForHandle(handle); });
+#endif
 
         std::cout << "[WindowManager] Main window initialized: " << m_main->window().nativeHandle() << " "
                   << m_windowWidth << "x" << m_windowHeight << std::endl;

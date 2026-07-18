@@ -45,14 +45,12 @@ public:
     virtual void init(IWindow & window) = 0;
 
     /**
-     * @brief Register a child window for event routing
+     * @brief Set the child-window (content-surface) lookup: native handle -> child
+     * id. WindowManager owns the content-surface registry and supplies this; the
+     * event peer calls it at poll time to stamp event.childWindowId. Unset (or a
+     * lookup returning INVALID_ID) means the event belongs to the main window.
      */
-    virtual void registerChildWindow(id_t id, Ui::Window::NativeWindowHandle handle) = 0;
-
-    /**
-     * @brief Unregister a child window
-     */
-    virtual void unregisterChildWindow(Ui::Window::NativeWindowHandle handle) = 0;
+    virtual void setChildWindowLookup(Ui::Window::child_id_fn_t lookup) = 0;
 
     /**
      * @brief Register a popup-type window for event routing (menu, submenu, dialog)

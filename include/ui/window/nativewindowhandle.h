@@ -35,6 +35,10 @@ using NSView = void;
 #include "ui/window/platform/x11include.h"
 #endif
 
+#include "ui/type.h"
+
+#include <functional>
+
 namespace Ui::Window {
 
 #if defined(_WIN32)
@@ -50,5 +54,11 @@ using NativeWindowHandle = ::Window;
 #else
 #error "No supported window system found"
 #endif
+
+// Content-surface event routing: resolve a native window handle to its child
+// window id (Ui::INVALID_ID = the main window). WindowManager owns the mapping
+// (its content-surface registry) and supplies this; event peers call it at poll
+// time to stamp event.childWindowId.
+using child_id_fn_t = std::function<id_t(NativeWindowHandle)>;
 
 } // namespace Ui::Window

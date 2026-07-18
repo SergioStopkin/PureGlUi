@@ -18,6 +18,7 @@
 #pragma once
 
 #include "common/json.h"
+#include "common/sanitize.h"
 #include "nlohmann/json.hpp"
 #include "ui/color.h"
 #include "ui/convert.h"
@@ -154,7 +155,7 @@ public:
                 nlohmann::json j;
                 if (Common::loadJson(files.dark, j)) {
                     if (j.contains("name") && j["name"].is_string()) {
-                        localeManager.set(name, j["name"].get<std::string>());
+                        localeManager.set(name, Common::Sanitize::string(j["name"].get<std::string>(), "theme.name"));
                         registeredLocale = true;
                     }
                     dark.fg = extractRootHex(j, "--cl-main");
@@ -165,7 +166,7 @@ public:
                 nlohmann::json j;
                 if (Common::loadJson(files.light, j)) {
                     if (!registeredLocale && j.contains("name") && j["name"].is_string()) {
-                        localeManager.set(name, j["name"].get<std::string>());
+                        localeManager.set(name, Common::Sanitize::string(j["name"].get<std::string>(), "theme.name"));
                     }
                     light.fg = extractRootHex(j, "--cl-main");
                     light.bg = extractRootHex(j, "--bg-main");
@@ -391,7 +392,8 @@ public:
             if (j.contains(block) && j[block].is_object()) {
                 const auto & obj = j[block];
                 if (obj.contains("font-family") && obj["font-family"].is_string()) {
-                    f.family = resolveVar(obj["font-family"].get<std::string>());
+                    f.family = resolveVar(
+                    Common::Sanitize::string(obj["font-family"].get<std::string>(), "theme.font-family"));
                 }
                 if (obj.contains("font-size") && obj["font-size"].is_string()) {
                     f.size = Ui::Convert::parseCssInt(obj["font-size"].get<std::string>());

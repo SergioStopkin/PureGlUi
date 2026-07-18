@@ -74,24 +74,9 @@ public:
      */
     void init(Ui::IWindow & /*window*/) override { }
 
-    /**
-     * @brief Register a child window for event routing
-     * @param handle Native window handle
-     * @param id Child window ID
-     */
-    void registerChildWindow(id_t id, NativeWindowHandle handle) override { m_childWindows.emplace_back(handle, id); }
-
-    /**
-     * @brief Unregister a child window
-     * @param handle Native window handle
-     */
-    void unregisterChildWindow(NativeWindowHandle handle) override
-    {
-        m_childWindows.erase(std::remove_if(m_childWindows.begin(),
-                                            m_childWindows.end(),
-                                            [handle](const auto & entry) { return entry.first == handle; }),
-                             m_childWindows.end());
-    }
+    // WindowManager-provided native-handle -> child id lookup, called in
+    // convertNSEvent() to stamp event.childWindowId.
+    void setChildWindowLookup(Ui::Window::child_id_fn_t lookup) override { m_childWindowLookup = std::move(lookup); }
 
     void addPopupWindow(NativeWindowHandle /*handle*/) override { }
     void removePopupWindow(NativeWindowHandle /*handle*/) override { }
@@ -204,11 +189,8 @@ private:
         NSWindow * srcWin  = [nsEvent window];
         NSView *   srcView = [srcWin contentView];
         event.sourceWindow = srcView;
-        for (const auto & entry : m_childWindows) {
-            if (entry.first == srcView) {
-                event.childWindowId = entry.second;
-                break;
-            }
+        if (m_childWindowLookup) {
+            event.childWindowId = m_childWindowLookup(srcView);
         }
 
         switch ([nsEvent type]) {
@@ -403,10 +385,10 @@ private:
     }
 #endif
 
-    // Child-window registry populated via registerChildWindow()/unregisterChildWindow().
-    // Used by convertNSEvent() to stamp event.childWindowId so the main dispatcher can route
-    // content-surface events correctly. Matches the X11/Wayland pattern.
-    std::vector<std::pair<NativeWindowHandle, id_t>> m_childWindows;
+    // WindowManager-provided native-handle -> child id lookup, called in
+    // convertNSEvent() to stamp event.childWindowId so the main dispatcher can
+    // route content-surface events correctly.
+    Ui::Window::child_id_fn_t m_childWindowLookup;
 };
 
 } // namespace Ui::Window::Platform

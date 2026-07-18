@@ -185,12 +185,20 @@ public:
 
     void show() override
     {
-        // TODO(sergio): Wayland show
+        // A wl_surface (re)maps when it next commits a buffer; the EGL swap in the
+        // render loop does exactly that. Requesting a frame brings a hidden surface
+        // back on screen (the counterpart to hide()'s null-buffer unmap).
+        this->requestRender();
     }
 
     void hide() override
     {
-        // TODO(sergio): Wayland hide
+        // Wayland has no explicit hide; attaching a null buffer unmaps the surface.
+        // It remaps on the next buffer commit - see show().
+        if (m_surface) {
+            wl_surface_attach(m_surface, nullptr, 0, 0);
+            wl_surface_commit(m_surface);
+        }
     }
 
     void moveResize(const Ui::Res::Type::bound_t & bound) override
@@ -288,13 +296,14 @@ public:
     bool shouldClose() const { return m_shouldClose; }
 
     // Accessors for event handling
-    wl_display *    wlDisplay() const { return m_display; }
-    wl_surface *    wlSurface() const { return m_surface; }
-    xdg_wm_base *   xdgWmBase() const { return m_xdgWmBase; }
-    wl_seat *       wlSeat() const { return m_seat; }
-    wl_compositor * wlCompositor() const { return m_compositor; }
-    wl_shm *        wlShm() const { return m_shm; }
-    xdg_surface *   xdgSurface() const { return m_xdgSurface; }
+    wl_display *             wlDisplay() const { return m_display; }
+    wl_surface *             wlSurface() const { return m_surface; }
+    xdg_wm_base *            xdgWmBase() const { return m_xdgWmBase; }
+    wl_seat *                wlSeat() const { return m_seat; }
+    wl_compositor *          wlCompositor() const { return m_compositor; }
+    wl_data_device_manager * wlDataDeviceManager() const { return m_dataDeviceManager; }
+    wl_shm *                 wlShm() const { return m_shm; }
+    xdg_surface *            xdgSurface() const { return m_xdgSurface; }
 
 protected:
     wl_display *                  m_display = nullptr;
@@ -311,6 +320,8 @@ private:
     wl_output *        m_output        = nullptr;
     wl_subcompositor * m_subcompositor = nullptr;
     wl_shm *           m_shm           = nullptr;
+    // Clipboard selection source manager (bound if the compositor advertises it).
+    wl_data_device_manager * m_dataDeviceManager = nullptr;
 
     // Window surfaces
     xdg_surface *   m_xdgSurface  = nullptr;
@@ -447,6 +458,9 @@ private:
             wl_registry_bind(registry, name, &wl_subcompositor_interface, 1));
         } else if (interface == wl_shm_interface.name) {
             m_shm = static_cast<wl_shm *>(wl_registry_bind(registry, name, &wl_shm_interface, 1));
+        } else if (interface == wl_data_device_manager_interface.name) {
+            m_dataDeviceManager = static_cast<wl_data_device_manager *>(
+            wl_registry_bind(registry, name, &wl_data_device_manager_interface, std::min(version, 3U)));
         }
     }
 
@@ -568,6 +582,9 @@ private:
             std::cerr << "[WaylandWindow] Failed to init EGL" << std::endl;
             return false;
         }
+        // Only the connection owner terminates the shared EGLDisplay on teardown
+        // (popups reuse the parent's wl_display).
+        m_context->setOwnsDisplay(m_ownsDisplay);
 
         if (!m_context->chooseConfig(true, true)) { // want alpha + MSAA
             std::cerr << "[WaylandWindow] Failed to choose EGL config" << std::endl;

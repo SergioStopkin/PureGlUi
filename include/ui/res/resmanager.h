@@ -139,18 +139,25 @@ public:
             if (appJson.is_open()) {
                 nlohmann::json app;
                 appJson >> app;
-                m_title       = app.value(appKeyName(AppKey::Title), m_title);
-                m_sessionDir  = app.value(appKeyName(AppKey::SessionDir), m_sessionDir);
-                m_sessionFile = app.value(appKeyName(AppKey::SessionFile), m_sessionFile);
+                m_title       = Common::Sanitize::string(app.value(appKeyName(AppKey::Title), m_title), "app.title");
+                m_sessionDir  = Common::Sanitize::filePath(app.value(appKeyName(AppKey::SessionDir), m_sessionDir),
+                                                          "app.sessionDir");
+                m_sessionFile = Common::Sanitize::filePath(app.value(appKeyName(AppKey::SessionFile), m_sessionFile),
+                                                           "app.sessionFile");
 
                 // Native open-dialog config (optional). Absent/empty filters =>
                 // the dialog offers any file.
                 if (app.contains(appKeyName(AppKey::OpenFile))) {
                     const auto & openFile = app[appKeyName(AppKey::OpenFile)];
-                    m_openFileTitle       = openFile.value(appKeyName(AppKey::Title), m_openFileTitle);
+                    m_openFileTitle       = Common::Sanitize::string(
+                    openFile.value(appKeyName(AppKey::Title), m_openFileTitle),
+                    "app.openFile.title");
                     for (const auto & filter : openFile.value(appKeyName(AppKey::Filters), nlohmann::json::array())) {
-                        m_openFileFilters.push_back({ filter.value(appKeyName(AppKey::Name), std::string {}),
-                                                      filter.value(appKeyName(AppKey::Spec), std::string {}) });
+                        m_openFileFilters.push_back(
+                        { Common::Sanitize::string(filter.value(appKeyName(AppKey::Name), std::string {}),
+                                                   "app.filter.name"),
+                          Common::Sanitize::string(filter.value(appKeyName(AppKey::Spec), std::string {}),
+                                                   "app.filter.spec") });
                     }
                 }
 

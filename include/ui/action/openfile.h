@@ -18,29 +18,15 @@
 #pragma once
 
 #include "common/unicode.h"
+#include "ui/action/fileextension.h"
 #include "ui/io/filedialog.h"
 #include "ui/res/key/iconrole.h"
 #include "ui/res/type/dialog.h"
 
-#include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <string>
 
 namespace Ui::Action {
-
-// Lowercase file extension without the dot ("/p/Model.STEP" -> "step").
-inline std::string fileExtension(const std::string & file)
-{
-    std::string extension = std::filesystem::path(file).extension().string();
-    if (!extension.empty() && extension.front() == '.') {
-        extension.erase(0, 1);
-    }
-    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return extension;
-}
 
 // Warn that no handler is registered for a file type, e.g. "No handler for
 // *.svg". The prefix is localized; the glob is appended at runtime. Tinted with

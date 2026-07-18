@@ -18,6 +18,7 @@
 #pragma once
 
 #include "common/json.h"
+#include "common/sanitize.h"
 #include "nlohmann/json.hpp"
 #include "ui/res/type/changed.h"
 #include "ui/res/util.h"
@@ -48,14 +49,15 @@ public:
         if (j.is_array()) {
             for (const auto & item : j) {
                 if (item.contains("action") && item.contains("keys")) {
-                    const std::string keys = Util::strKey(item.value("keys", ""));
-                    m_shortcuts[keys]      = item.value("action", "");
+                    const std::string keys = Util::strKey(
+                    Common::Sanitize::string(item.value("keys", ""), "shortcut.keys"));
+                    m_shortcuts[keys] = Common::Sanitize::string(item.value("action", ""), "shortcut.action");
                 }
             }
         } else if (j.is_object()) {
             if (j.contains("action") && j.contains("keys")) {
-                const std::string keys = Util::strKey(j.value("keys", ""));
-                m_shortcuts[keys]      = j.value("action", "");
+                const std::string keys = Util::strKey(Common::Sanitize::string(j.value("keys", ""), "shortcut.keys"));
+                m_shortcuts[keys]      = Common::Sanitize::string(j.value("action", ""), "shortcut.action");
             }
         }
 

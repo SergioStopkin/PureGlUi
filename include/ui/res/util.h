@@ -21,6 +21,7 @@
 #include <chrono>
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace Ui::Res {
 
@@ -44,6 +45,25 @@ public:
         }
 
         return result;
+    }
+
+    // Split a hierarchical menu key on ':' into its path segments
+    // ("View:Theme:default" -> {"View","Theme","default"}). Always returns at
+    // least one segment (an empty key yields a single empty segment).
+    static std::vector<std::string> splitMenuKey(const std::string & key)
+    {
+        std::vector<std::string> segments;
+        size_t                   start = 0;
+        while (start <= key.size()) {
+            const size_t pos = key.find(':', start);
+            if (pos == std::string::npos) {
+                segments.emplace_back(key.substr(start));
+                break;
+            }
+            segments.emplace_back(key.substr(start, pos - start));
+            start = pos + 1;
+        }
+        return segments;
     }
 
     // Generated key using ns time
