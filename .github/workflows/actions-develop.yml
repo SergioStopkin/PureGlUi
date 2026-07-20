@@ -52,6 +52,9 @@ jobs:
       - name: Run Tests
         run:  xvfb-run -a ./run.sh test
 
+      - name: Build Coverage
+        run:  ./build.sh cov
+
       - name: Unit Tests Coverage
         run:  ./unit-tests-coverage.sh
 

@@ -26,6 +26,7 @@
  *        files depend on.
  */
 
+#include "ui/res/key/app.h"
 #include "ui/res/key/cssprop.h"
 #include "ui/res/key/dialog.h"
 #include "ui/res/key/element.h"
@@ -198,4 +199,18 @@ TEST(ResKeys, MenuAndDialogKeySpellings)
     EXPECT_EQ(menuKeyName(MenuKey::Submenus), "submenus");
     EXPECT_EQ(dialogKeyName(DialogKey::Buttons), "buttons");
     EXPECT_EQ(dialogKeyName(DialogKey::Primary), "primary");
+}
+
+// app.json keys: ResManager only reads a subset at construction (which depends
+// on whether app.json carries an openFile/filters block), so exercise every
+// case here to keep appKeyName fully covered.
+TEST(ResKeys, AppKeySpellings)
+{
+    EXPECT_EQ(appKeyName(AppKey::Title), "title");
+    EXPECT_EQ(appKeyName(AppKey::SessionDir), "sessionDir");
+    EXPECT_EQ(appKeyName(AppKey::SessionFile), "sessionFile");
+    EXPECT_EQ(appKeyName(AppKey::OpenFile), "openFile");
+    EXPECT_EQ(appKeyName(AppKey::Filters), "filters");
+    EXPECT_EQ(appKeyName(AppKey::Name), "name");
+    EXPECT_EQ(appKeyName(AppKey::Spec), "spec");
 }
