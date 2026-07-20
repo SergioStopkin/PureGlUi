@@ -32,7 +32,6 @@
 #include "ui/res/type/popup.h"
 #include "ui/res/type/region.h"
 
-#include <iostream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -174,11 +173,6 @@ public:
                     cssVariables[it.key()] = it.value().get<std::string>();
                 }
             }
-        }
-
-        std::cout << "[ KEY ]:[ VALUE ]" << std::endl;
-        for (const auto & [key, value] : cssVariables) {
-            std::cout << "[" << key << "]:[" << value << "]" << std::endl;
         }
 
         // Helper to resolve var(--...) in a value

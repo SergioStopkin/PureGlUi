@@ -19,13 +19,24 @@ mkdir $COV_RESULT_DIR
 find $BUILD_DIR_COV/$COV_SOURCE_DIR -name "*.gcno" -exec cp "{}" $COV_RESULT_DIR/ \;
 find $BUILD_DIR_COV/$COV_SOURCE_DIR -name "*.gcda" -exec cp "{}" $COV_RESULT_DIR/ \;
 
-lcov -q -c --external --gcov-tool "$PWD/llvm-gcov.sh" -d $COV_RESULT_DIR -o $COV_RESULT_DIR/coverage.info
-lcov -q -r $COV_RESULT_DIR/coverage.info "/usr/*" -o $COV_RESULT_DIR/coverage.info
-lcov -q -r $COV_RESULT_DIR/coverage.info "*/3rd/*" -o $COV_RESULT_DIR/coverage.info
-lcov -q -r $COV_RESULT_DIR/coverage.info "*/interface/*" -o $COV_RESULT_DIR/coverage.info
-lcov -q -r $COV_RESULT_DIR/coverage.info "/*/$COV_SOURCE_DIR/*" -o $COV_RESULT_DIR/coverage.info
+# lcov 2.x makes clang/gcov function-line mismatches (implicit destructors) and
+# unused remove patterns fatal, and rejects the categories 1.16 lacks - so pass
+# the ignore flags only when lcov is 2.x or newer.
+LCOV_MAJOR=$(lcov --version 2>/dev/null | grep -oE 'version [0-9]+' | grep -oE '[0-9]+')
+LCOV_IGNORE=""
+GENHTML_IGNORE=""
+if [[ -n "$LCOV_MAJOR" && "$LCOV_MAJOR" -ge 2 ]]; then
+    LCOV_IGNORE="--ignore-errors inconsistent,unused"
+    GENHTML_IGNORE="--ignore-errors inconsistent"
+fi
 
-RESULT=$(genhtml -t "Unit Tests Coverage" --num-spaces 4 $COV_RESULT_DIR/coverage.info -o $COV_RESULT_DIR)
+lcov -q $LCOV_IGNORE -c --external --gcov-tool "$PWD/llvm-gcov.sh" -d $COV_RESULT_DIR -o $COV_RESULT_DIR/coverage.info
+lcov -q $LCOV_IGNORE -r $COV_RESULT_DIR/coverage.info "/usr/*" -o $COV_RESULT_DIR/coverage.info
+lcov -q $LCOV_IGNORE -r $COV_RESULT_DIR/coverage.info "*/3rd/*" -o $COV_RESULT_DIR/coverage.info
+lcov -q $LCOV_IGNORE -r $COV_RESULT_DIR/coverage.info "*/interface/*" -o $COV_RESULT_DIR/coverage.info
+lcov -q $LCOV_IGNORE -r $COV_RESULT_DIR/coverage.info "/*/$COV_SOURCE_DIR/*" -o $COV_RESULT_DIR/coverage.info
+
+RESULT=$(genhtml $GENHTML_IGNORE -t "Unit Tests Coverage" --num-spaces 4 $COV_RESULT_DIR/coverage.info -o $COV_RESULT_DIR)
 IS_FOUND=0
 
 for item in $RESULT
@@ -42,6 +53,11 @@ done
 echo
 
 STATUS=0
+
+if [[ -z "$COVERAGE" ]]; then
+    echo "Coverage: no line figure parsed - empty tracefile (see the lcov/geninfo errors above)"
+    exit 1
+fi
 
 if (( `echo "$COVERAGE < $COV_MIN_LIMIT" | sed 's/%//g' | bc -l` )); then
     echo "Unit tests coverage $COVERAGE less then $COV_MIN_LIMIT"
