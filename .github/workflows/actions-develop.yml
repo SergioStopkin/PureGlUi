@@ -52,8 +52,8 @@ jobs:
       - name: Run Tests
         run:  xvfb-run -a ./run.sh test
 
-      # - name: Unit Tests Coverage
-      #   run:  ./unit-tests-coverage.sh
+      - name: Unit Tests Coverage
+        run:  ./unit-tests-coverage.sh
 
   macos:
     if:       github.ref != 'refs/heads/release'

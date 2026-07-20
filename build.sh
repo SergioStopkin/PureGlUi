@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 . .cicd-config
 
-USAGE_TEXT="Usage: ./build.sh <dev|rel|test>"
+USAGE_TEXT="Usage: ./build.sh <dev|rel|test|cov>"
 
 if [[ $# -eq 0 ]]; then
     PrintUsageAndExit
@@ -41,6 +41,10 @@ elif [[ $1 == "test" ]]; then
     BUILD_DIR=$BUILD_DIR_REL
     CMAKE_ARGS="$CMAKE_ARGS -DBUILD_TESTING=ON"
     TARGET=$TARGET_TEST
+elif [[ $1 == "cov" ]]; then
+    BUILD_DIR=$BUILD_DIR_COV
+    CMAKE_ARGS="$CMAKE_ARGS -DBUILD_TESTING=ON -DCOVERAGE=ON"
+    TARGET=unit-tests
 else
     PrintUsageAndExit
 fi

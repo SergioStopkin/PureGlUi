@@ -308,6 +308,25 @@ public:
         return screen ? [screen backingScaleFactor] : 1.0;
     }
 
+    // Height (points) of the PRIMARY screen - the one whose top-left is the
+    // global coordinate origin. This is the stable reference for flipping
+    // between Cocoa's bottom-left global space and the top-down physical-pixel
+    // coordinates the host persists (matching X11/Win32 virtual-desktop
+    // semantics, where the primary top-left is (0,0)). +mainScreen must NOT be
+    // used here: it returns the screen with keyboard focus, so its height varies
+    // as focus moves between monitors of different heights - save and restore
+    // would then use different references and a window on a secondary monitor
+    // would land offset. screens[0] is the primary and does not move.
+    static CGFloat primaryScreenHeightPts()
+    {
+        NSArray<NSScreen*>* screens = [NSScreen screens];
+        if (screens.count > 0) {
+            return [screens firstObject].frame.size.height;
+        }
+        NSScreen* main = [NSScreen mainScreen];
+        return main ? main.frame.size.height : 0.0;
+    }
+
     // Create a borderless popup NSWindow as a child of `parent`, shared GL context.
     // screenX/screenY are top-left in physical pixels; width/height are physical pixels.
     // Leaves m_bound.x/y untouched (callers set those via setPosition() as parent-relative).
@@ -324,7 +343,7 @@ public:
         @autoreleasepool {
             const CGFloat bsf = backingScaleFactor();
             // Convert screen-top-left physical pixels -> screen-bottom-left points (NSScreen coord system).
-            const CGFloat screenHeightPts = [[NSScreen mainScreen] frame].size.height;
+            const CGFloat screenHeightPts = primaryScreenHeightPts();
             const CGFloat xPts = screenX / bsf;
             const CGFloat yPts = screenHeightPts - (screenY / bsf) - (height / bsf);
             NSRect frame = NSMakeRect(xPts, yPts, width / bsf, height / bsf);
@@ -465,7 +484,7 @@ public:
             // position by the frame top-left corner: setFrameTopLeftPoint takes a
             // bottom-left-origin screen point whose y is the TOP edge, so we only flip Y
             // (no title-bar height needed) - the inverse of the screenFramePosition save.
-            const CGFloat screenHeightPts = [[NSScreen mainScreen] frame].size.height;
+            const CGFloat screenHeightPts = primaryScreenHeightPts();
             [m_nsWindow setContentSize:NSMakeSize(bound.w / bsf, bound.h / bsf)];
             [m_nsWindow setFrameTopLeftPoint:NSMakePoint(bound.x / bsf, screenHeightPts - (bound.y / bsf))];
             applyRoundedCorners();
@@ -506,7 +525,7 @@ public:
     {
         // Return top-left of the content in physical pixels (matches X11/Win32).
         const CGFloat bsf = backingScaleFactor();
-        const CGFloat screenHeightPts = [[NSScreen mainScreen] frame].size.height;
+        const CGFloat screenHeightPts = primaryScreenHeightPts();
         if (m_nsWindow) {
             // NSWindow.frame includes the title bar; our UI coordinates start at the content rect.
             const NSRect contentRect = [m_nsWindow contentRectForFrameRect:[m_nsWindow frame]];
@@ -537,7 +556,7 @@ public:
         // at the saved spot. screenPosition() returns the content origin (offset
         // down by the title bar), which drifts the window up on each restore.
         const CGFloat bsf = backingScaleFactor();
-        const CGFloat screenHeightPts = [[NSScreen mainScreen] frame].size.height;
+        const CGFloat screenHeightPts = primaryScreenHeightPts();
         if (m_nsWindow) {
             const NSRect frame = [m_nsWindow frame];
             screenX = static_cast<int>(frame.origin.x * bsf);

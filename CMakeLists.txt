@@ -128,6 +128,21 @@ if(ASAN)
     endif()
 endif()
 
+# Coverage instrumentation for the test build. --coverage emits the gcov
+# .gcno/.gcda files that unit-tests-coverage.sh feeds to lcov/genhtml (gated by
+# COV_MIN_LIMIT in .cicd-config). -O0 -g keeps line mapping accurate. Enable with
+# `cmake -DCOVERAGE=ON` (see unit-tests-coverage.sh for the harvest step). MSVC
+# has no gcov, so it is a no-op there.
+option(COVERAGE "Instrument the build for gcov/lcov code coverage" OFF)
+if(COVERAGE)
+    if(MSVC)
+        message(WARNING "COVERAGE (gcov/lcov) not supported on MSVC; ignoring.")
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g --coverage")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+    endif()
+endif()
+
 option(ENABLE_CLANG_FORMATTER "Use clang-formatter to format source code?" ON)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
