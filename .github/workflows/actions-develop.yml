@@ -62,11 +62,6 @@ jobs:
     if:       github.ref != 'refs/heads/release'
     runs-on:  macos-latest
 
-    # The runner image pre-taps aws/tap + azure/bicep (unused here); opt into the
-    # future Homebrew default so it silently ignores them instead of warning.
-    env:
-      HOMEBREW_REQUIRE_TAP_TRUST: 1
-
     steps:
       - uses: actions/checkout@v5
         with:
