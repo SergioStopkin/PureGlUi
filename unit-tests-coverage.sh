@@ -3,8 +3,14 @@
 
 export LLVM_COV="llvm-cov$CLANG_VERSION"
 
-# lcov 1.16's geninfo emits harmless Perl "Subroutine ... redefined" warnings; drop just those.
-exec 2> >(grep -v 'Subroutine .* redefined' >&2)
+# lcov's Perl internals emit noise we cannot fix from here, so drop exactly these
+# two messages and nothing else:
+#   - 1.16's geninfo: "Subroutine ... redefined"
+#   - 2.x: "Use of uninitialized value $line", from the same header-only case the
+#     --ignore-errors flags below cover - a function record with no line record, so
+#     lcov compares an undef line number. Suppressing its own formatted warning
+#     leaves this raw one behind, which carries no context at all.
+exec 2> >(grep -Ev 'Subroutine .* redefined|Use of uninitialized value \$line' >&2)
 
 TEST_BIN=$BUILD_DIR_COV/$COV_SOURCE_DIR/unit-tests
 if [[ ! -x $TEST_BIN ]]; then
