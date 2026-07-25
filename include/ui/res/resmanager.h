@@ -56,6 +56,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -107,8 +108,8 @@ class ResManager final {
     std::vector<std::string> m_sessionOpenFiles;
     std::string              m_sessionActiveFile;
     std::string              m_title       = "PureGlUi";
-    std::string              m_sessionDir  = ".pureglui";    // from app.json; read by host to locate session.json
-    std::string              m_sessionFile = "session.json"; // from app.json; host owns the actual file I/O
+    std::string              m_sessionDir  = ".pureglui";    // from app.json; loadSession/saveSession use it
+    std::string              m_sessionFile = "session.json"; // from app.json; joined by sessionPath()
     // Native open-dialog config (app.json "openFile"). Domain-blind: the app
     // supplies title + file-type filters; empty filters => any file.
     std::string                        m_openFileTitle;
@@ -118,6 +119,7 @@ class ResManager final {
     // Host hook invoked whenever a persisted setting changes. The fw owns no
     // session concept; a host wires this to its own session save.
     Ui::task_fn_t m_onPersistChange = [] {};
+    bool          m_isRestoring     = false; // true while deserializeSession applies values
 
     // Accumulate a Changed flag into the pending reload mask. Sub-store loads
     // and runtime setters funnel their Changed return through here.
@@ -130,9 +132,8 @@ public:
     explicit ResManager(std::string resDir = "./res")
         : m_resPath(std::move(resDir))
     {
-        // Load app.json for identity (title) + session storage location. The
-        // session location is exposed to the host (sessionDir/sessionFile); the
-        // host owns the actual session.json read/write.
+        // Load app.json for identity (title) + session storage location, which
+        // loadSession/saveSession then use.
         try {
             using Ui::Res::Key::AppKey;
             std::ifstream appJson(m_resPath.appFile());
@@ -301,13 +302,13 @@ public:
     void switchThemeMode()
     {
         markChanged(m_themeStore.switchThemeMode(m_resPath));
-        m_onPersistChange();
+        notifyPersistChange();
     }
 
     void setThemeName(const std::string & name)
     {
         markChanged(m_themeStore.setThemeName(name, m_resPath));
-        m_onPersistChange();
+        notifyPersistChange();
     }
 
     [[nodiscard]] const std::string & themeName() const { return m_themeStore.themeName(); }
@@ -334,7 +335,7 @@ public:
     void setDockState(const std::string & name, const Ui::Res::Dock::dock_state_t & state) const
     {
         m_dockStore.setDockState(name, state);
-        m_onPersistChange();
+        notifyPersistChange();
     }
 
     const std::string & lastOpenDir() const { return m_lastOpenDir; }
@@ -342,7 +343,7 @@ public:
     void setLastOpenDir(const std::string & dir)
     {
         m_lastOpenDir = dir;
-        m_onPersistChange();
+        notifyPersistChange();
     }
 
     [[nodiscard]] int sessionWindowX() const { return m_sessionWindowX; }
@@ -362,7 +363,7 @@ public:
         }
         m_sessionOpenFiles  = std::move(files);
         m_sessionActiveFile = std::move(activeFile);
-        m_onPersistChange();
+        notifyPersistChange();
     }
 
     // Commit main-window geometry. Diff-checked so a stream of identical
@@ -379,7 +380,7 @@ public:
         m_sessionWindowY      = y;
         m_sessionWindowWidth  = width;
         m_sessionWindowHeight = height;
-        m_onPersistChange();
+        notifyPersistChange();
     }
 
     // Section first, then key: arguments read outer -> inner, like the JSON
@@ -424,15 +425,93 @@ public:
         m_menuStore.setActionValueProvider("SwitchTheme", [this] { return m_themeStore.themeName(); });
     }
 
-    // Host seam for persistence. The fw owns no session FILE - a host reads/writes
-    // the blob wherever it likes (sessionDir()/sessionFile() are the suggested
-    // location, from app.json) and wires setOnPersistChange to its own save. The
-    // fw owns the FORMAT: serializeSession()/deserializeSession() encode/decode
-    // the persisted state, so JSON never leaks into the host.
+    // Host seam for persistence: wire this to whatever should happen when a
+    // persisted value changes (typically saveSession(), possibly off-thread). The
+    // fw owns the FORMAT (serializeSession/deserializeSession) so JSON never leaks
+    // into the host, AND the default LOCATION (sessionDir/sessionFile come from
+    // app.json), so loadSession/saveSession below do the file I/O too - otherwise
+    // every host re-writes the same few lines of stream code. A host that wants a
+    // different sink ignores them and uses the serialize/deserialize pair.
     void setOnPersistChange(Ui::task_fn_t onPersistChange) { m_onPersistChange = std::move(onPersistChange); }
+
+    // True while deserializeSession is applying loaded values. Restoring a session
+    // walks the same setters a user edit does, so without this every restore would
+    // trigger a save of what was just read. A host whose own state objects fire
+    // their own persist hooks (reached through the registry setters) checks this in
+    // its save path for the same reason.
+    [[nodiscard]] bool isRestoringSession() const { return m_isRestoring; }
 
     [[nodiscard]] const std::string & sessionDir() const { return m_sessionDir; }
     [[nodiscard]] const std::string & sessionFile() const { return m_sessionFile; }
+
+    // Fire the host's persist hook unless we are mid-restore.
+    void notifyPersistChange() const
+    {
+        if (!m_isRestoring) {
+            m_onPersistChange();
+        }
+    }
+
+    // <sessionDir>/<sessionFile>, both from app.json.
+    [[nodiscard]] std::string sessionPath() const
+    {
+        return (std::filesystem::path(m_sessionDir) / m_sessionFile).string();
+    }
+
+    // Read the session blob back. Missing file = fresh start (not an error), so
+    // this returns false only when there was something to read and it failed.
+    // Call BEFORE Shell::initialize(): loadAll() then builds from the saved theme,
+    // and window creation reads the saved geometry.
+    bool loadSession()
+    {
+        const std::string path = sessionPath();
+        if (!std::filesystem::exists(path)) {
+            std::cout << "[ResManager] No existing session file, starting fresh" << std::endl;
+            return true;
+        }
+        std::ifstream file(path);
+        if (!file) {
+            std::cerr << "[ResManager] Failed to open session file: " << path << std::endl;
+            return false;
+        }
+        std::ostringstream buffer;
+        buffer << file.rdbuf();
+        deserializeSession(buffer.str());
+        return true;
+    }
+
+    // Write the session blob. Writes a sibling temp file and renames it over the
+    // target, so a crash - or a second save racing this one - can never leave a
+    // half-written session.json behind; rename is atomic within one filesystem.
+    bool saveSession() const { return writeSession(sessionPath(), serializeSession()); }
+
+    // The write half of saveSession as a free-standing step, for a host that builds
+    // the blob on the UI thread and posts the disk write to a worker.
+    static bool writeSession(const std::string & sessionPath, const std::string & blob)
+    {
+        try {
+            const std::filesystem::path target(sessionPath);
+            if (target.has_parent_path()) {
+                std::filesystem::create_directories(target.parent_path());
+            }
+            std::filesystem::path temp = target;
+            temp += ".tmp";
+            {
+                std::ofstream file(temp, std::ios::trunc);
+                if (!file) {
+                    std::cerr << "[ResManager] Failed to open session temp file: " << temp.string() << std::endl;
+                    return false;
+                }
+                file << blob;
+            }
+            std::filesystem::rename(temp, target);
+            std::cout << "[ResManager] Saved session to " << sessionPath << std::endl;
+            return true;
+        } catch (const std::exception & e) {
+            std::cerr << "[ResManager] Failed to save session: " << e.what() << std::endl;
+            return false;
+        }
+    }
 
     // Encode all persisted state (window geometry + the persisted-setting registry
     // + dock state) to an opaque session blob the host stores verbatim.
@@ -491,11 +570,17 @@ public:
     // reloaded. session.json is user-editable, so ingested paths pass Sanitize.
     void deserializeSession(const std::string & data)
     {
+        // Suppress the persist hook while we apply: restoring walks the same
+        // setters a user edit does. Cleared on both exits below; the parse is
+        // non-throwing (allow_exceptions=false), so there is no third path.
+        m_isRestoring = true;
+
         using Ui::Res::Key::SectionKey;
         using Ui::Res::Key::SessionKey;
 
         const nlohmann::json j = nlohmann::json::parse(data, nullptr, /*allow_exceptions=*/false);
         if (!j.is_object()) {
+            m_isRestoring = false;
             return;
         }
 
@@ -542,6 +627,8 @@ public:
         if (j.contains(docksKey)) {
             m_dockStore.readDockJson(j[docksKey]);
         }
+
+        m_isRestoring = false;
     }
 
     // Load resource methods
