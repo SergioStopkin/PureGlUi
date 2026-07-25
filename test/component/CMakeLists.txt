@@ -13,11 +13,13 @@ add_executable(
     TestInitHooks.cpp
 )
 
-# macOS: TestGlSmoke creates a real window via NativeWindow -> Cocoa (macoswindow.h), so it must compile as
-# Objective-C++ (same as the app's src/main.cpp). The other suites are windowless pure C++. GL_SILENCE_DEPRECATION
-# quiets the deprecated-GL SDK annotations for this Obj-C++ unit (CMAKE_CXX_FLAGS' -Wno-... only covers CXX).
+# macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Two do: TestGlSmoke
+# creates a real window via NativeWindow -> macoswindow.h, and TestInitHooks includes ui/shell.h, which pulls Cocoa
+# transitively through action/openfile.h -> io/filedialog.h. So on macOS, including shell.h at all forces Obj-C++ on the
+# includer. The other suites are windowless pure C++. GL_SILENCE_DEPRECATION quiets the deprecated-GL SDK annotations
+# for these Obj-C++ units (CMAKE_CXX_FLAGS' -Wno-... only covers CXX).
 if(APPLE)
-    set_source_files_properties(TestGlSmoke.cpp PROPERTIES LANGUAGE OBJCXX)
+    set_source_files_properties(TestGlSmoke.cpp TestInitHooks.cpp PROPERTIES LANGUAGE OBJCXX)
     target_compile_definitions(${TARGET} PRIVATE GL_SILENCE_DEPRECATION)
 endif()
 

@@ -41,6 +41,12 @@ Ui::Render::Context &       context();
 Ui::Action::Registry &      actions();   // host registers domain actions here
 ```
 
+On macOS, including `ui/shell.h` forces the includer to compile as Objective-C++:
+it reaches `<Cocoa/Cocoa.h>` transitively through `action/openfile.h` ->
+`io/filedialog.h`. Mark any such translation unit
+`set_source_files_properties(<file> PROPERTIES LANGUAGE OBJCXX)` (see the demo's
+`src/CMakeLists.txt`).
+
 ### Lifecycle
 
 ```cpp
