@@ -19,15 +19,23 @@ mkdir $COV_RESULT_DIR
 find $BUILD_DIR_COV/$COV_SOURCE_DIR -name "*.gcno" -exec cp "{}" $COV_RESULT_DIR/ \;
 find $BUILD_DIR_COV/$COV_SOURCE_DIR -name "*.gcda" -exec cp "{}" $COV_RESULT_DIR/ \;
 
-# lcov 2.x makes clang/gcov function-line mismatches (implicit destructors) and
-# unused remove patterns fatal, and rejects the categories 1.16 lacks - so pass
-# the ignore flags only when lcov is 2.x or newer.
+# lcov 2.x makes clang/gcov function-line mismatches and unused remove patterns
+# fatal, and rejects the categories 1.16 lacks - so pass the ignore flags only
+# when lcov is 2.x or newer.
+#
+# Each category is listed TWICE on purpose (lcov's own hint spells this out): the
+# first occurrence downgrades the error to a warning, the second suppresses the
+# warning as well. Listing once left hundreds of "function found on line but no
+# corresponding 'line' coverage data point" lines in the CI log - unavoidable for
+# a header-only library, where one-line inline accessors and implicit destructors
+# of function-local types get a function record with no line record to derive an
+# end line from. Do not "simplify" the duplicates away.
 LCOV_MAJOR=$(lcov --version 2>/dev/null | grep -oE 'version [0-9]+' | grep -oE '[0-9]+')
 LCOV_IGNORE=""
 GENHTML_IGNORE=""
 if [[ -n "$LCOV_MAJOR" && "$LCOV_MAJOR" -ge 2 ]]; then
-    LCOV_IGNORE="--ignore-errors inconsistent,unused"
-    GENHTML_IGNORE="--ignore-errors inconsistent"
+    LCOV_IGNORE="--ignore-errors inconsistent,inconsistent,unused,unused"
+    GENHTML_IGNORE="--ignore-errors inconsistent,inconsistent"
 fi
 
 lcov -q $LCOV_IGNORE -c --external --gcov-tool "$PWD/llvm-gcov.sh" -d $COV_RESULT_DIR -o $COV_RESULT_DIR/coverage.info
