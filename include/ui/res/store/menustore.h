@@ -178,7 +178,12 @@ public:
 
     // Disable menu nodes that can do nothing (the recursive collapse lives in
     // Ui::Res::Store::disableUnhandled); this exposes it over the private m_menus.
-    void disableUnhandledMenuItems(const Ui::predicate_fn_t & isHandled) { disableUnhandled(m_menus, isHandled); }
+    // Menus and toolbar buttons alike: an actionKey with no handler is a dead click.
+    void disableUnhandledItems(const Ui::predicate_fn_t & isHandled)
+    {
+        disableUnhandled(m_menus, isHandled);
+        disableUnhandled(m_buttons, isHandled);
+    }
 
     // Recursive by design: builds the nested menu_t tree bottom-up. An iterative
     // builder would hold references into item vectors that reallocate as siblings

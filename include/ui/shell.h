@@ -150,7 +150,7 @@ public:
             (void)std::signal(SIGINT, on_signal);
             (void)std::signal(SIGTERM, on_signal);
 
-            m_resManager.loadSession();
+            m_resManager.loadSession(m_resManager.sessionPath());
 
             if (initialize(hooks)) {
                 run();
@@ -318,15 +318,15 @@ public:
         m_windowManager.requestContentRefresh();
     }
 
-    // Grey out leaf menu items whose actionKey has no registered handler, so the
-    // chrome never offers a click that does nothing. Both initialize() and
-    // reloadChrome() run this for you (via gateAndDisableUnhandled), so a host
-    // only calls it after registering an action LATE - i.e. after initialize().
-    // Dialog/submenu items stay enabled - the shell drives them without an
-    // Action::Registry entry.
-    void disableUnhandledMenuItems()
+    // Grey out every menu item and toolbar button whose actionKey has no registered
+    // handler, so the chrome never offers a click that does nothing. Both
+    // initialize() and reloadChrome() run this for you (via gateAndDisableUnhandled),
+    // so a host only calls it after registering an action LATE - i.e. after
+    // initialize(). Dialog/submenu items stay enabled - the shell drives them
+    // without an Action::Registry entry.
+    void disableUnhandledItems()
     {
-        m_resManager.disableUnhandledMenuItems([this](const std::string & key) { return m_actions.has(key); });
+        m_resManager.disableUnhandledItems([this](const std::string & key) { return m_actions.has(key); });
     }
 
     // Run the init spine. A host supplies its domain steps as hooks rather than
@@ -798,7 +798,7 @@ private:
         if (m_hooks.gateFeatures) {
             m_hooks.gateFeatures();
         }
-        disableUnhandledMenuItems();
+        disableUnhandledItems();
     }
 
     // Total physical pixel width of all menu buttons.

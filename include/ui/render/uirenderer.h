@@ -534,6 +534,16 @@ private:
                     op.tinted = true;
                     op.tint   = cp.fg;
                 }
+                // A disabled element's icon is flat-tinted with the same colour
+                // disabled menu text uses, so buttons and menu items read as one
+                // system. Wins over any tint above - being unusable outranks
+                // whatever the element normally looks like. The no-animation half
+                // is already free: a Disabled element never becomes Hovered or
+                // Active, so it gets neither the hover shadow nor the press scale.
+                if (el.state == UiElementState::Disabled) {
+                    op.tinted = true;
+                    op.tint   = theme.menuItemDisabledColor;
+                }
                 op.hovered = (el.state == UiElementState::Hovered);
                 op.active  = (el.state == UiElementState::Active);
                 m_imageOps.emplace_back(op);
@@ -588,7 +598,14 @@ private:
         case UiElementType::TabArrow: {
             return theme.tabArrow;
         }
-        case UiElementType::ToolbarButton: return theme.button;
+        case UiElementType::ToolbarButton:
+            // Keep the normal background - the greyed icon carries the signal - but
+            // match MenuButton's disabled foreground so a button that renders a
+            // label instead of an icon greys too.
+            if (el.state == UiElementState::Disabled) {
+                return { theme.menuItemDisabledColor, theme.button.bg };
+            }
+            return theme.button;
         case UiElementType::Text:
             if (el.state == UiElementState::Active) {
                 return theme.statusBarActive;

@@ -69,7 +69,7 @@ Menu queries and mutation:
   action (recurses into submenus).
 - `setMenuItemEnabled(actionKey, label, bool)` - per-(action,label) variant for
   parameterised actions where many items share one actionKey.
-- `disableUnhandledMenuItems(const predicate_fn_t& isHandled)` - grey out leaf
+- `disableUnhandledItems(const predicate_fn_t& isHandled)` - grey out leaf
   action items with no handler, and parents whose every child is disabled;
   dialog items stay enabled. Runtime equivalent of `"enabled": false`.
 - `setActionValueProvider(actionKey, provider_fn_t)` - host wires the value
@@ -99,8 +99,17 @@ Persistence seam:
   from a save when the value is empty. A host extends session.json with its own
   domain keys through this call.
 - `setOnPersistChange(task_fn_t)` - the host hook fired whenever a persisted
-  setting changes. The fw owns no session file; the host wires this to its save.
-- `sessionDir()`, `sessionFile()` - suggested storage location (from app.json).
+  setting changes; wire it to a save. Suppressed while a restore is in progress.
+- `isRestoringSession()` - true while `deserializeSession` applies values. A host
+  whose own state objects fire their own persist hooks (reached through the
+  registry setters, which the fw cannot suppress) checks this in its save path.
+- `sessionDir()`, `sessionFile()`, `sessionPath()` - storage location, from
+  app.json. `sessionPath()` joins the two.
+- `loadSession(path)` / `static writeSession(path, blob)` - the file I/O, path
+  explicit (pass `sessionPath()` for the default location). Missing file on load =
+  fresh start, not an error. The write goes to a sibling temp file and is renamed
+  over the target, so a crash or a racing save cannot leave a half-written file.
+- `saveSession()` - serialize + write to `sessionPath()` in one call.
 - `serializeSession()` -> `std::string` - encode all persisted state to a v2
   session blob (see below).
 - `deserializeSession(const std::string&)` - restore from a v2 blob; tolerant of
@@ -351,12 +360,14 @@ res.registerPersisted(Ui::Res::Key::SectionKey::View,
                       [&host] { return host.gridVisible() ? "1" : "0"; },
                       [&host](const std::string & v) { host.setGridVisible(v == "1"); });
 
-res.setOnPersistChange([&res, &host] {
-    host.writeSessionFile(res.sessionDir(), res.sessionFile(), res.serializeSession());
-});
+// ResManager owns the file too, so a save is one call. Post it off-thread if the
+// host has a hook that fires often (a dock drag): build the blob on the UI thread,
+// write on the worker.
+res.setOnPersistChange([&res] { (void)res.saveSession(); });
 
-// On startup, restore from the stored blob (tolerant of missing/garbage data).
-res.deserializeSession(host.readSessionFile(res.sessionDir(), res.sessionFile()));
+// On startup, before Shell::initialize() (loadAll builds from the restored theme,
+// and window creation reads the restored geometry). Tolerant of missing/garbage.
+(void)res.loadSession(res.sessionPath());
 ```
 
 ## See also

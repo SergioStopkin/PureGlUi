@@ -71,7 +71,7 @@ never produce different chrome:
 
 ```cpp
 void loadAllResources();        // resManager().loadAll(), then the loadDomainResources hook
-void gateAndDisableUnhandled(); // the gateFeatures hook, then disableUnhandledMenuItems()
+void gateAndDisableUnhandled(); // the gateFeatures hook, then disableUnhandledItems()
 ```
 
 Both are private. The disable pass runs LAST because it also collapses a parent
@@ -84,7 +84,7 @@ constructor binds the built-in actions via `Ui::Action::registerActions(*this)`,
 the registry is complete before a host registers anything: a host overrides a
 built-in key simply by calling `actions().on()` later, with no ordering rule.
 
-`disableUnhandledMenuItems()` stays public, but only for registering an action
+`disableUnhandledItems()` stays public, but only for registering an action
 LATE (after `initialize()` returned); both entry points already run it. It greys
 every leaf menu item whose `actionKey` has no registered handler (`m_actions.has(key)`),
 so the chrome never offers a dead click. Dialog/submenu items stay enabled (the
@@ -168,7 +168,7 @@ bool has(const std::string & actionKey) const;                             // [[
 One entry per action: parameterized actions read `arg` (e.g. the item label a menu
 click carries), simple ones ignore it. There is no value-provider seam on the
 Registry. The `"action"` key itself comes from res JSON (menus/shortcuts); a menu
-item whose key has no handler is greyed out by `Shell::disableUnhandledMenuItems`.
+item or toolbar button whose key has no handler is greyed out by `Shell::disableUnhandledItems`.
 A host registers a domain action via `shell.actions().on(key, fn)`.
 
 ### Ui::Action::registerActions
@@ -347,7 +347,7 @@ Notes:
 
 - Register actions BEFORE `initialize()` so their menu items are not greyed out:
   the disable pass runs inside the spine. Registering later works too, but then
-  call `disableUnhandledMenuItems()` yourself. Domain steps that must land at a
+  call `disableUnhandledItems()` yourself. Domain steps that must land at a
   specific point of the spine go in `Ui::init_hooks_t` (see the load cycle above),
   never by driving the spine steps directly.
 - Overriding a built-in key (e.g. re-registering `"Reload"`) replaces the default

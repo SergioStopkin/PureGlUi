@@ -279,10 +279,7 @@ public:
     // Disable menu nodes that can do nothing: a leaf whose actionKey has no
     // handler, or a parent (submenu / top-menu) whose every child is disabled
     // (`isHandled` reports handler presence). Dialog items stay enabled.
-    void disableUnhandledMenuItems(const Ui::predicate_fn_t & isHandled)
-    {
-        m_menuStore.disableUnhandledMenuItems(isHandled);
-    }
+    void disableUnhandledItems(const Ui::predicate_fn_t & isHandled) { m_menuStore.disableUnhandledItems(isHandled); }
 
     Ui::TabBar &                         tabBar() { return m_tabBar; }
     const Ui::TabBar &                   tabBar() const { return m_tabBar; }
@@ -458,13 +455,14 @@ public:
         return (std::filesystem::path(m_sessionDir) / m_sessionFile).string();
     }
 
-    // Read the session blob back. Missing file = fresh start (not an error), so
-    // this returns false only when there was something to read and it failed.
-    // Call BEFORE Shell::initialize(): loadAll() then builds from the saved theme,
-    // and window creation reads the saved geometry.
-    bool loadSession()
+    // Read the session blob back - the counterpart of writeSession. Takes the path
+    // explicitly (sessionPath() for the default location) so a host can keep
+    // sessions elsewhere and a test never touches the real one. Call BEFORE
+    // Shell::initialize(): loadAll() then builds from the saved theme, and window
+    // creation reads the saved geometry. Missing file = fresh start, not an error,
+    // so this returns false only when there was something to read and it failed.
+    bool loadSession(const std::string & path)
     {
-        const std::string path = sessionPath();
         if (!std::filesystem::exists(path)) {
             std::cout << "[ResManager] No existing session file, starting fresh" << std::endl;
             return true;

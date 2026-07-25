@@ -34,6 +34,7 @@ add_executable(
     TestFs.cpp
     TestResManager.cpp
     TestMenuStore.cpp
+    TestSig.cpp
 )
 
 # Resolve the ui/ prefix from the include/ root. UI framework tests stay light - pure C++, no GL/X11 - matching the fw's

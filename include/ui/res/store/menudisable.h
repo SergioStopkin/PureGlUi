@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "ui/res/type/button.h"
 #include "ui/res/type/menu.h"
 #include "ui/type.h"
 
@@ -64,6 +65,19 @@ inline void disableUnhandled(std::vector<Ui::Res::Type::menu_t> & menus, const U
         const bool isLeaf = item.submenu.empty() && item.dialog.title.empty() && !item.actionKey.empty();
         if (isLeaf && !isHandled(item.actionKey)) {
             item.enabled = false;
+        }
+    }
+}
+
+// Same rule for toolbar buttons: no handler means nothing can happen on click, so
+// do not offer it. Buttons are flat (no children), so there is no collapse step -
+// just the leaf test. Also only ever sets enabled=false, so a button disabled in
+// res JSON stays disabled.
+inline void disableUnhandled(std::vector<Ui::Res::Type::button_t> & buttons, const Ui::predicate_fn_t & isHandled)
+{
+    for (Ui::Res::Type::button_t & button : buttons) {
+        if (!button.actionKey.empty() && !isHandled(button.actionKey)) {
+            button.enabled = false;
         }
     }
 }
