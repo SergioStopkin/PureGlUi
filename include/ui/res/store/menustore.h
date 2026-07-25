@@ -30,6 +30,7 @@
 #include "ui/res/store/iconstore.h"
 #include "ui/res/store/layoutstore.h"
 #include "ui/res/store/menudisable.h"
+#include "ui/res/store/submenuentry.h"
 #include "ui/res/store/themestore.h"
 #include "ui/res/type/button.h"
 #include "ui/res/type/changed.h"
@@ -463,12 +464,7 @@ public:
             return items;
         }
 
-        struct alignas(128) entry_t {
-            int         order = 0;
-            std::string key;
-            std::string display;
-        };
-        std::vector<entry_t> entries;
+        std::vector<submenu_entry_t> entries;
 
         for (const auto & path : std::filesystem::directory_iterator(dir)) {
             if (path.path().extension() != ".json") {
@@ -494,7 +490,7 @@ public:
             entries.push_back({ j.value(menuKeyName(MenuKey::Order), 0), std::move(key), display });
         }
 
-        std::sort(entries.begin(), entries.end(), [](const entry_t & a, const entry_t & b) {
+        std::sort(entries.begin(), entries.end(), [](const submenu_entry_t & a, const submenu_entry_t & b) {
             if (a.order != b.order) {
                 return a.order < b.order;
             }

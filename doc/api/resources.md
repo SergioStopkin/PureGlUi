@@ -199,8 +199,10 @@ that never diff return `void`. `MenuStore` and `DockStore` are
   (`buildActionMap`). `loadMenus` / `loadButtons` return `Changed::Menu` /
   `Changed::Button`. Also answers find-by-id/key, radio highlight, and
   enable/disable queries. Composes `LocaleManager`, `IconStore`, `ThemeStore`,
-  `LayoutStore`, `ResPath` by reference. The collapse pass lives in
-  `store/menudisable.h` (`disableUnhandled`).
+  `LayoutStore`, `ResPath` by reference. The disable pass lives in
+  `store/menudisable.h` (`disableUnhandled`, one overload for menus + one for
+  buttons); the auto-submenu walker's intermediate is `submenu_entry_t`
+  (`store/submenuentry.h`).
 - `DockStore` (`store/dockstore.h`) - session-persisted per-dock state
   (`dock_state_t`), keyed by dock name. Reads the dock CONFIG list from the
   injected `LayoutStore` (for orphan-filtering on write). `writeDockJson` /
