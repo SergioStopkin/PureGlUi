@@ -1,9 +1,9 @@
 # See TARGET_SRC in .cicd-config
-add_executable(${TARGET_SRC} main.cpp sig.cpp)
+add_executable(${TARGET_SRC} main.cpp)
 
 # macOS: compile as Objective-C++ so Cocoa headers work
 if(APPLE)
-    set_source_files_properties(main.cpp sig.cpp PROPERTIES LANGUAGE OBJCXX)
+    set_source_files_properties(main.cpp PROPERTIES LANGUAGE OBJCXX)
     target_compile_definitions(${TARGET_SRC} PRIVATE GL_SILENCE_DEPRECATION)
 endif()
 

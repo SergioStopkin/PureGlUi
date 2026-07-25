@@ -17,14 +17,63 @@
 
 #pragma once
 
+#include <atomic>
+#include <csignal>
+#include <cstdlib>
 #include <functional>
+#include <iostream>
 #include <string_view>
+#include <utility>
 
-// Install the stop callback invoked when a termination signal is caught. The
-// caller supplies how to stop (Shell::requestStop), so this stays free of any
-// framework type.
-void g_app_init(std::function<void()> stopCallback) noexcept;
+// Signal handling for graceful shutdown. Inline (header-only) so the framework
+// ships no translation unit at all: a consumer links the INTERFACE target and
+// compiles nothing of ours. Not tied to any concrete app type - the caller
+// supplies how to stop, so this stays free of framework types.
 
-// Signal helpers
-[[nodiscard]] std::string_view signal_name(int sig) noexcept;
-void                           on_signal(int sig) noexcept;
+// The stop callback. Inline variable: one definition across all TUs.
+inline std::function<void()> g_stop;
+
+// Install the stop callback invoked when a termination signal is caught.
+inline void g_app_init(std::function<void()> stopCallback) noexcept { g_stop = std::move(stopCallback); }
+
+[[nodiscard]] inline std::string_view signal_name(int sig) noexcept
+{
+    switch (sig) {
+    case SIGINT: return "SIGINT";
+    case SIGTERM: return "SIGTERM";
+#if defined(SIGHUP)
+    case SIGHUP: return "SIGHUP";
+#endif
+#if defined(SIGQUIT)
+    case SIGQUIT: return "SIGQUIT";
+#endif
+#if defined(SIGABRT)
+    case SIGABRT: return "SIGABRT";
+#endif
+#if defined(SIGSEGV)
+    case SIGSEGV: return "SIGSEGV";
+#endif
+    default: return "UNKNOWN";
+    }
+}
+
+inline void on_signal(int sig) noexcept
+{
+    static std::atomic<bool> s_shutdownRequested { false };
+
+    // Note: printing in a signal handler is not async-signal-safe; acceptable for CI/dev.
+    std::cout << "\n\nSignal " << signal_name(sig) << "(" << sig << ") caught. Shutdown requested." << std::endl;
+
+    if (s_shutdownRequested.exchange(true)) {
+        std::cout << "Forced exit." << std::endl;
+        std::_Exit(1);
+    }
+
+    // Only set the running flag to false - let the main loop exit gracefully
+    // and call shutdown() from the main thread. Calling shutdown() directly
+    // from a signal handler can interrupt system calls (X11, EGL) mid-flight,
+    // causing hangs or crashes.
+    if (g_stop) {
+        g_stop();
+    }
+}
