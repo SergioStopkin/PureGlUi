@@ -44,46 +44,51 @@ Ui::Action::Registry &      actions();   // host registers domain actions here
 ### Lifecycle
 
 ```cpp
-bool initialize(const Ui::task_fn_t & afterLoadResources = {}); // [[nodiscard]]
+bool initialize(const Ui::init_hooks_t & hooks = {}); // [[nodiscard]]
 void run();
 void requestStop();   // -> windowManager().stop()
 void shutdown();      // -> windowManager().shutdown()
 ```
 
-- `initialize(afterLoadResources)` runs the full generic init spine and returns
-  false if window creation fails. Spine order: `loadResources()` ->
-  `afterLoadResources()` (optional, runs after resources load but before the
-  window exists - the point to restore persisted theme/geometry) -> `initWindow()`
-  -> `mainWindow().makeCurrent()` -> `preloadButtonIcons()` -> `initRenderer()` ->
-  `wireEvents()` -> `disableUnhandledMenuItems()`.
+- `initialize(hooks)` runs the whole init spine and returns false if window
+  creation fails. Spine order: `loadAllResources()` (framework res, then the
+  `loadDomainResources` hook) -> `initWindow()` -> `mainWindow().makeCurrent()` ->
+  `afterWindowCreated` hook -> `gateAndDisableUnhandled()` (the `gateFeatures`
+  hook, then the disable pass) -> `preloadButtonIcons()` -> `initRenderer()` ->
+  `wireEvents()`. A host restores persisted state BEFORE calling `initialize()`,
+  and must register its domain actions before it too - the disable pass runs
+  inside the spine.
 - `run()` loops while `windowManager().isRunning()`: drains `frameTasks`, polls +
   dispatches all pending OS events, then on any events runs popup-move tracking,
   temp-status expiry, the `onTick` hook, and deferred actions; renders the dirty
   set; and sleeps ~16 ms when idle.
 - `requestStop()` / `shutdown()` stop the loop and tear down the window manager.
 
-### Init spine (granular)
+### The load cycle
 
-A host that interleaves its own steps drives these directly instead of calling
-`initialize()`:
+`initialize()` and `reloadChrome()` share one ordering, so startup and reload can
+never produce different chrome:
 
 ```cpp
-void loadResources();       // m_resManager.loadAll()
-bool initWindow();          // [[nodiscard]] m_windowManager.initialize()
-void preloadButtonIcons();  // load SVGs referenced by button defs
-void initRenderer();        // create UI renderer, size it, queue first frame
-void wireEvents();          // OS-event subscriptions + hover + default actions + dialog-close
-void disableUnhandledMenuItems(); // grey leaf menu items whose actionKey has no handler
+void loadAllResources();        // resManager().loadAll(), then the loadDomainResources hook
+void gateAndDisableUnhandled(); // the gateFeatures hook, then disableUnhandledMenuItems()
 ```
 
-`wireEvents()` also calls `Ui::Action::registerActions(*this)` (binds the built-in
-actions), installs the dialog content resolver (`resolveDialogPlaceholders`), and
-the dialog-close handler. Call `wireEvents()` once after the renderer exists, then
-register domain actions, then `disableUnhandledMenuItems()`.
+Both are private. The disable pass runs LAST because it also collapses a parent
+whose every child ended up disabled, so it must observe every `enabled` write the
+gate made; reversing the two yields different chrome from identical state.
 
-`disableUnhandledMenuItems()` greys every leaf menu item whose `actionKey` has no
-registered handler (`m_actions.has(key)`), so the chrome never offers a dead click.
-Dialog/submenu items stay enabled (the shell drives them without a registry entry).
+The remaining spine steps (`initWindow`, `preloadButtonIcons`, `initRenderer`,
+`wireEvents`) are framework-internal - `initialize()` owns their order. `Shell`'s
+constructor binds the built-in actions via `Ui::Action::registerActions(*this)`, so
+the registry is complete before a host registers anything: a host overrides a
+built-in key simply by calling `actions().on()` later, with no ordering rule.
+
+`disableUnhandledMenuItems()` stays public, but only for registering an action
+LATE (after `initialize()` returned); both entry points already run it. It greys
+every leaf menu item whose `actionKey` has no registered handler (`m_actions.has(key)`),
+so the chrome never offers a dead click. Dialog/submenu items stay enabled (the
+shell drives them without a registry entry).
 
 ### Host hooks
 
@@ -114,7 +119,7 @@ Returns false (no-op) when no handler is registered for `extension`, letting
 Public interactive-chrome orchestration (menus, popups, dialogs, temp status):
 
 ```cpp
-void      reloadChrome(const Ui::task_fn_t & reloadResources); // save open chrome, run host reload, reopen
+void      reloadChrome();                                      // save open chrome, replay the load cycle, reopen
 Ui::key_t activeMenuKey() const;                               // hierarchical key of deepest active node ("" = none)
 void      restoreActiveMenu(const Ui::key_t & activeKey);      // reopen dropdown/submenu named by key + re-highlight leaf
 void      reopenActivePopup();                                 // recreate open popup at its anchor (after move/resize)
@@ -123,7 +128,7 @@ bool      hasTempStatus() const;                               // true while an 
 std::wstring resolveDialogPlaceholders(const std::string & tpl);
 ```
 
-- `reloadChrome(reloadResources)` remembers any open dialog/menu (as a hierarchical
+- `reloadChrome()` remembers any open dialog/menu (as a hierarchical
   key that survives id reassignment), closes it, runs the host-supplied
   `reloadResources` step, re-queries display DPI, and reopens what was open. The
   save/close/reopen is generic; the host supplies only the domain reload body.
@@ -192,7 +197,7 @@ is type-checked when bound.
 | Key | Header | Function | Intent | arg |
 | --- | --- | --- | --- | --- |
 | `ExitApp` | `action/exitapp.h` | `exitApp` | `host.windowManager().stop()` - end the event loop | ignored |
-| `Reload` | `action/reload.h` | `reload` | reload all res via `host.reloadChrome(...)`: `loadAll` + `disableUnhandledMenuItems` + `apply(changed())` + `requestContentRefresh` | ignored |
+| `Reload` | `action/reload.h` | `reload` | `host.reloadChrome()` - replays the load cycle (framework res + the host's hooks), disable pass, `apply(changed())`, `requestContentRefresh` | ignored |
 | `SwitchThemeMode` | `action/switchthememode.h` | `switchThemeMode` | toggle dark/light (`resManager().switchThemeMode()`), re-apply diff, refresh | ignored |
 | `SwitchTheme` | `action/switchtheme.h` | `switchTheme` | select theme by name; no-op if `arg` empty or already active | theme name |
 | `OpenFile` | `action/openfile.h` | `openFile` | native open dialog, then route each picked file to its per-extension handler | ignored |
@@ -270,7 +275,7 @@ the central content region stays the theme background.
 - `src/main.cpp` - the entry point. It:
   1. constructs `Ui::Shell shell;`
   2. wires signals: `g_app_init([&shell]{ shell.requestStop(); });` then `std::signal(SIGINT/SIGTERM, on_signal)`
-  3. calls `shell.initialize(afterLoadResources)` where `afterLoadResources` restores the persisted session before the window is created
+  3. restores the persisted session, then calls `shell.initialize()`
   4. `shell.run();`
   5. on clean exit saves the session and calls `shell.shutdown()`
 
@@ -332,10 +337,6 @@ int main()
         std::cout << "Tab activated: " << tabId << std::endl;
     });
 
-    // Re-run the disable pass so the new domain action's menu items are enabled
-    // (initialize() already ran it once, before the action above existed).
-    shell.disableUnhandledMenuItems();
-
     shell.run();
     shell.shutdown();
     return 0;
@@ -344,12 +345,11 @@ int main()
 
 Notes:
 
-- Register actions before the final `disableUnhandledMenuItems()` so their menu
-  items are not greyed out. (For finer control - restoring persisted state before
-  the window opens, interleaving domain init - drive the granular spine
-  (`loadResources`/`initWindow`/`preloadButtonIcons`/`initRenderer`/`wireEvents`)
-  instead of `initialize()`, or pass an `afterLoadResources` callback to
-  `initialize()`.)
+- Register actions BEFORE `initialize()` so their menu items are not greyed out:
+  the disable pass runs inside the spine. Registering later works too, but then
+  call `disableUnhandledMenuItems()` yourself. Domain steps that must land at a
+  specific point of the spine go in `Ui::init_hooks_t` (see the load cycle above),
+  never by driving the spine steps directly.
 - Overriding a built-in key (e.g. re-registering `"Reload"`) replaces the default
   handler.
 

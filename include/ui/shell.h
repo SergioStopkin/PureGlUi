@@ -21,10 +21,12 @@
 #include "common/noncopyable.h"
 #include "common/system.h"
 #include "common/unicode.h"
+#include "sig.h"
 #include "ui/action/actionmap.h"
 #include "ui/action/registry.h"
 #include "ui/gl/localglew.h"
 #include "ui/gl/svgrenderer.h"
+#include "ui/inithooks.h"
 #include "ui/intent.h"
 #include "ui/interface/ichromecommands.h"
 #include "ui/pubsub/subscribeid.h"
@@ -41,7 +43,9 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <csignal>
 #include <cstddef>
+#include <exception>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -64,8 +68,19 @@ namespace Ui {
  */
 class Shell final : private Common::NonCopyable, private Ui::IChromeCommands {
 public:
-    Shell() { std::cout << "Hello!" << std::endl; }
-    ~Shell() override { std::cout << "Bye!" << std::endl; }
+    // No banner here: m_resManager is constructed - and logs its app.json load -
+    // before this body runs, so anything printed here can never be the first line.
+    // main() owns the greeting.
+    Shell()
+    {
+        // Bind the built-in actions here, not in wireEvents(), so the registry is
+        // complete before a host registers anything. A host overriding a key
+        // (e.g. Reload) just calls actions().on() afterwards and wins by
+        // overwrite - there is no registration-order rule to remember.
+        Ui::Action::registerActions(*this);
+    }
+
+    ~Shell() override = default;
 
     [[nodiscard]] Ui::Res::ResManager &       resManager() { return m_resManager; }
     [[nodiscard]] const Ui::Res::ResManager & resManager() const { return m_resManager; }
@@ -114,13 +129,51 @@ public:
     void requestStop() { m_windowManager.stop(); }
     void shutdown() { m_windowManager.shutdown(); }
 
-    // Reload-with-open-chrome: remember any open dialog/menu, close it, run the
-    // host's resource reload (it applies Changed + refreshes content), then
-    // reopen what was open. The save/close/reopen is generic chrome; the host
-    // supplies only the domain reload step. The open menu is remembered as a
+    // The application lifecycle in one call: signal handlers, session restore,
+    // init, run, session save, and an exit code. Optional convenience - a host
+    // that needs its own process policy (an embedder with its own signal handling
+    // or exit conventions) drives initialize()/run()/shutdown() directly instead.
+    //
+    // Deliberately does NOT shut down: teardown belongs to whoever owns this Shell,
+    // because a host with content surfaces must destroy those FIRST (child windows
+    // share the main window's display). ~WindowManager covers the standalone case.
+    //
+    // No Hello!/Bye! banner either, for the same reason: this is a member function,
+    // so our own members (ResManager logging its app.json load) are already
+    // constructed before it can print, and it returns before we are destroyed. Only
+    // main() brackets the whole lifetime, so main() owns the banner.
+    [[nodiscard]] int runApp(const Ui::init_hooks_t & hooks = {})
+    {
+        int exitCode = 1;
+        try {
+            g_app_init([this]() { requestStop(); });
+            (void)std::signal(SIGINT, on_signal);
+            (void)std::signal(SIGTERM, on_signal);
+
+            m_resManager.loadSession();
+
+            if (initialize(hooks)) {
+                run();
+                m_resManager.saveSession(); // persist on clean exit (incl. SIGINT/SIGTERM)
+                exitCode = 0;
+            } else {
+                std::cerr << "[Shell] Initialization failed" << std::endl;
+            }
+        } catch (const std::exception & e) {
+            std::cerr << "[Shell] Error: " << e.what() << std::endl;
+        }
+
+        return exitCode;
+    }
+
+    // Reload-with-open-chrome: remember any open dialog/menu, close it, replay the
+    // load cycle (the SAME one initialize() runs, hooks included), apply what
+    // changed, then reopen what was open. Takes no host callback: the domain steps
+    // come from the hooks stored at initialize(), which is what keeps startup and
+    // reload from producing different chrome. The open menu is remembered as a
     // single hierarchical key (the deepest active node), since numeric ids are
     // reassigned by loadAll() but label-derived keys survive it.
-    void reloadChrome(const Ui::task_fn_t & reloadResources)
+    void reloadChrome()
     {
         const bool                    hadDialog   = m_windowManager.hasDialog();
         const Ui::Res::Type::dialog_t savedDialog = hadDialog ? m_windowManager.lastDialogData()
@@ -137,9 +190,11 @@ public:
             destroyPopup();
         }
 
-        if (reloadResources) {
-            reloadResources();
-        }
+        loadAllResources();
+        gateAndDisableUnhandled();
+
+        m_windowManager.apply(m_resManager.changed());
+        m_windowManager.requestContentRefresh();
 
         // Re-query display DPI: the environment may have changed since init
         // (system zoom, monitor move) and every CSS->physical conversion below
@@ -155,6 +210,10 @@ public:
             m_windowManager.openDialog(savedDialog);
         } else if (!activeKey.empty()) {
             restoreActiveMenu(activeKey);
+        }
+
+        if (m_hooks.afterReload) {
+            m_hooks.afterReload();
         }
     }
 
@@ -228,9 +287,8 @@ public:
     // model-status updater checks this so it does not clobber a temp message.
     [[nodiscard]] bool hasTempStatus() const { return !m_tempStatusText.empty(); }
 
-    // --- init spine (each step is generic; a host interleaves its domain steps) ---
-
-    void loadResources() { m_resManager.loadAll(); }
+    // --- init spine: framework-internal steps. initialize() owns their order; a
+    // host supplies its domain steps as init_hooks_t instead of calling these. ---
 
     [[nodiscard]] bool initWindow() { return m_windowManager.initialize(); }
 
@@ -261,42 +319,48 @@ public:
     }
 
     // Grey out leaf menu items whose actionKey has no registered handler, so the
-    // chrome never offers a click that does nothing. Call once after all actions
-    // are registered (shell defaults + any host domain actions). Dialog/submenu
-    // items stay enabled - the shell drives them without an Action::Registry entry.
+    // chrome never offers a click that does nothing. Both initialize() and
+    // reloadChrome() run this for you (via gateAndDisableUnhandled), so a host
+    // only calls it after registering an action LATE - i.e. after initialize().
+    // Dialog/submenu items stay enabled - the shell drives them without an
+    // Action::Registry entry.
     void disableUnhandledMenuItems()
     {
         m_resManager.disableUnhandledMenuItems([this](const std::string & key) { return m_actions.has(key); });
     }
 
-    // Run the full generic init spine (standalone shell convenience). A host
-    // that interleaves domain steps does NOT call this - it drives the granular
-    // pieces itself, calls wireEvents() + registers its domain actions, then
-    // calls disableUnhandledMenuItems() at the right point.
+    // Run the init spine. A host supplies its domain steps as hooks rather than
+    // driving the steps itself, so the framework keeps sole ownership of the
+    // ordering - the first two hooks are replayed identically by every reload.
     //
-    // afterLoadResources (optional) runs once after resources load but before the
-    // window is created - the point at which a host restores persisted state
-    // (theme, window geometry) so the first window picks it up.
-    [[nodiscard]] bool initialize(const Ui::task_fn_t & afterLoadResources = {})
+    // A host must register its domain actions BEFORE calling this: the disable
+    // pass below runs inside the spine, and an action registered after it returns
+    // leaves its menu items greyed until the next reload.
+    [[nodiscard]] bool initialize(const Ui::init_hooks_t & hooks = {})
     {
-        loadResources();
-        if (afterLoadResources) {
-            afterLoadResources();
-        }
+        m_hooks = hooks;
+
+        loadAllResources();
         if (!initWindow()) {
             return false;
         }
         m_windowManager.mainWindow().makeCurrent();
+        if (m_hooks.afterWindowCreated) {
+            m_hooks.afterWindowCreated();
+        }
+        gateAndDisableUnhandled();
         preloadButtonIcons();
         initRenderer();
         wireEvents();
-        disableUnhandledMenuItems();
+        if (m_hooks.afterInit) {
+            m_hooks.afterInit();
+        }
         return true;
     }
 
-    // Register the generic OS-event subscriptions, hover wiring, default shell
-    // actions, and the dialog-close handler. Host calls this once after the
-    // renderer exists; standalone initialize() calls it too.
+    // Register the generic OS-event subscriptions, hover wiring, and the
+    // dialog-close handler. The built-in actions are NOT bound here - the
+    // constructor does that, so the registry is complete before a host adds to it.
     void wireEvents()
     {
         auto & sub = m_windowManager.subscribe();
@@ -550,11 +614,6 @@ public:
             handleMenuHover(id);
         });
 
-        // Bind the built-in framework actions (ui/action/). A host registers its
-        // own domain actions the same way (m_shell.actions().on(...)); keys with
-        // no binding are greyed out by the disable pass.
-        Ui::Action::registerActions(*this);
-
         // Dialog content placeholders (%VERSION%/%CPU%/%RAM%/%GPU%/%GL%) resolved
         // from APP_VERSION + Common::System + the main window's GL context.
         m_windowManager.setDialogContentResolver(
@@ -676,6 +735,9 @@ private:
     Ui::Render::Context       m_context { m_resManager };
     Ui::Action::Registry      m_actions;
 
+    // Host domain steps, kept from initialize() so every reload replays them.
+    Ui::init_hooks_t m_hooks;
+
     Ui::task_fn_t m_frameTasks;
     Ui::task_fn_t m_onTick;
 
@@ -711,6 +773,33 @@ private:
     bool m_menuJustActivated = false; // True briefly after creating a popup until it renders once
 
     static constexpr std::chrono::seconds TEMP_STATUS_DURATION { 1 };
+
+    // ---- the load cycle: the one ordering that must never differ between
+    // startup and reload. Split in two because loadAll() has to precede window
+    // creation (WindowManager reads layout/theme/dock state from ResManager)
+    // while the gate needs a live GL context to query capabilities.
+
+    // First half: framework resources, then the host's own.
+    void loadAllResources()
+    {
+        m_resManager.loadAll();
+        if (m_hooks.loadDomainResources) {
+            m_hooks.loadDomainResources();
+        }
+    }
+
+    // Second half: the host disables what this machine cannot do, then the
+    // unhandled-item pass runs. The pass is LAST because it also collapses a
+    // parent whose every child ended up disabled, so it has to observe every
+    // enabled-write the gate made - reverse the two and the same state yields
+    // different chrome.
+    void gateAndDisableUnhandled()
+    {
+        if (m_hooks.gateFeatures) {
+            m_hooks.gateFeatures();
+        }
+        disableUnhandledMenuItems();
+    }
 
     // Total physical pixel width of all menu buttons.
     [[nodiscard]] int menusTotalWidthPhysical() const

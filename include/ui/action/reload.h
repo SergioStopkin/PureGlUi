@@ -21,20 +21,16 @@
 
 namespace Ui::Action {
 
-// "Reload": reload all framework resources (res/*.json) live. reloadChrome
-// preserves any open popup/dialog across the reload; loadAll re-marks every
-// Changed bit so apply() rebuilds layout/theme/fonts; the disable pass re-runs
-// because loadAll resets enabled from JSON. A host overrides "Reload" to also
-// reload its domain resources.
+// "Reload": reload all resources (res/*.json) live. reloadChrome owns the whole
+// cycle - preserve any open popup/dialog, replay the load cycle (framework res,
+// then the host's own res + feature gate via the hooks it passed to initialize),
+// re-run the disable pass because loadAll resets enabled from JSON, apply every
+// Changed bit, reopen the chrome. A host needs no override: its domain reload is
+// already one of those hooks.
 template <class Host>
 void reload(Host & host, const std::string & /*arg*/)
 {
-    host.reloadChrome([&host]() {
-        host.resManager().loadAll();
-        host.disableUnhandledMenuItems();
-        host.windowManager().apply(host.resManager().changed());
-        host.windowManager().requestContentRefresh();
-    });
+    host.reloadChrome();
 }
 
 } // namespace Ui::Action

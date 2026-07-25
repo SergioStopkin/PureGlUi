@@ -21,73 +21,24 @@
 // shortcuts work; the central content region stays the theme background (no
 // content surfaces are registered).
 //
-// The one host-side touch is session persistence: this demo restores window
-// geometry + theme (+ dock state) on launch and saves them on exit. The format
-// is the framework's concern - serializeSession()/deserializeSession() hand back
-// an opaque blob - so this file only does plain file I/O (no JSON dependency).
-#include "sig.h"
+// runApp() covers signals, session restore/save, init, run and the exit code. The
+// banner stays here because only main() brackets the Shell's whole lifetime: its
+// members log while being constructed, and its teardown runs when it goes out of
+// scope - hence the explicit scope below, so "Bye!" really is the last line.
 #include "ui/shell.h"
 
-#include <csignal>
-#include <exception>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <sstream>
-#include <string>
-
-namespace {
-
-std::string sessionPath(const Ui::Res::ResManager & res) { return res.sessionDir() + "/" + res.sessionFile(); }
-
-// Restore persisted state before the window is created (geometry is picked up at
-// window creation). The blob is opaque here; ResManager owns the format.
-void restoreSession(Ui::Res::ResManager & res)
-{
-    const std::ifstream file(sessionPath(res));
-    if (!file) {
-        return; // no prior session
-    }
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    res.deserializeSession(buffer.str());
-}
-
-// Write the current persisted state to <sessionDir>/session.json.
-void saveSession(const Ui::Res::ResManager & res)
-{
-    std::error_code ec;
-    std::filesystem::create_directories(res.sessionDir(), ec);
-    std::ofstream file(sessionPath(res));
-    if (file) {
-        file << res.serializeSession();
-    }
-}
-
-} // namespace
 
 int main()
 {
-    try {
+    std::cout << "Hello!" << std::endl;
+
+    int exitCode = 1;
+    {
         Ui::Shell shell;
-
-        // Host-agnostic signal handling: stop the shell loop on SIGINT/SIGTERM.
-        g_app_init([&shell]() { shell.requestStop(); });
-        (void)std::signal(SIGINT, on_signal);
-        (void)std::signal(SIGTERM, on_signal);
-
-        if (!shell.initialize([&shell]() { restoreSession(shell.resManager()); })) {
-            std::cerr << "Failed to initialize Shell" << std::endl;
-            return 1;
-        }
-
-        shell.run();
-        saveSession(shell.resManager()); // persist on clean exit (incl. SIGINT/SIGTERM)
-        shell.shutdown();
-        return 0;
-
-    } catch (const std::exception & e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return 1;
+        exitCode = shell.runApp();
     }
+
+    std::cout << "Bye!" << std::endl;
+    return exitCode;
 }
