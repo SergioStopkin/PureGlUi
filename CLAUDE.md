@@ -14,8 +14,8 @@
 Always read these files first to understand the project structure and build system:
 - `doc/api/` - developer API reference (start at `doc/api/README.md`): per-subsystem docs covering the public types, signatures, and host seams. The prose orientation for the same layers this section lists as headers.
 - `.cicd-config` - CI/CD configuration and project naming (`TARGET_SRC` = `pureglui`, `TARGET_TEST` = `unit-tests component-tests`)
-- `build.sh` - Build script: `./build.sh <dev|rel|test>` (always use `rel` for builds; `test` enables `BUILD_TESTING`)
-- `run.sh` - Run script: `./run.sh <dev|rel|test> [args...]`
+- `build.sh` - Build script: `./build.sh <dev|rel|test|ut|ct|cov>` (always use `rel` for builds; `test`/`ut`/`ct` enable `BUILD_TESTING` - `ut` and `ct` build a single suite each so a compile failure names it, `test` builds both)
+- `run.sh` - Run script: `./run.sh <dev|rel|test|ut|ct> [args...]` (`ut`/`ct` run one suite; `test` runs both and sums the exit codes)
 - `CMakeLists.txt` - CMake configuration and dependencies (no OpenCASCADE; gtest is a test-only dep)
 
 ### Codebase Reading (required on session start)

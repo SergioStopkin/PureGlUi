@@ -124,7 +124,8 @@ See [shell-actions.md](shell-actions.md) for the full host walkthrough.
 
 ## Building
 
-- `./build.sh <dev|rel|test>` - build (`test` enables `BUILD_TESTING`).
-- `./run.sh <dev|rel|test> [args...]` - run the demo app or the test suites.
+- `./build.sh <dev|rel|test|ut|ct|cov>` - build (`test`/`ut`/`ct` enable `BUILD_TESTING`;
+  `ut`/`ct` build one suite each, `test` both).
+- `./run.sh <dev|rel|test|ut|ct> [args...]` - run the demo app, both suites, or one.
 
 See the repo root `CLAUDE.md` for the full contributor guide.

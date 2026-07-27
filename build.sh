@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 . .cicd-config
 
-USAGE_TEXT="Usage: ./build.sh <dev|rel|test|cov>"
+USAGE_TEXT="Usage: ./build.sh <dev|rel|test|ut|ct|cov>"
 
 if [[ $# -eq 0 ]]; then
     PrintUsageAndExit
@@ -25,7 +25,8 @@ else
 fi
 
 # Build type. gtest is a test-only dependency, so demo builds (dev/rel) disable
-# BUILD_TESTING; the test build enables it.
+# BUILD_TESTING; the test builds enable it. ut/ct build one suite each so a
+# compile failure names which suite; test builds both.
 if [[ $1 == "dev" ]]; then
     BUILD_DIR=$BUILD_DIR_DEV
     CMAKE_ARGS="$CMAKE_ARGS -DASAN=ON -DBUILD_TESTING=OFF"
@@ -41,6 +42,14 @@ elif [[ $1 == "test" ]]; then
     BUILD_DIR=$BUILD_DIR_REL
     CMAKE_ARGS="$CMAKE_ARGS -DBUILD_TESTING=ON"
     TARGET=$TARGET_TEST
+elif [[ $1 == "ut" ]]; then
+    BUILD_DIR=$BUILD_DIR_REL
+    CMAKE_ARGS="$CMAKE_ARGS -DBUILD_TESTING=ON"
+    TARGET=$TARGET_UT
+elif [[ $1 == "ct" ]]; then
+    BUILD_DIR=$BUILD_DIR_REL
+    CMAKE_ARGS="$CMAKE_ARGS -DBUILD_TESTING=ON"
+    TARGET=$TARGET_CT
 elif [[ $1 == "cov" ]]; then
     BUILD_DIR=$BUILD_DIR_COV
     CMAKE_ARGS="$CMAKE_ARGS -DBUILD_TESTING=ON -DCOVERAGE=ON"

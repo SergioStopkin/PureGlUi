@@ -11,7 +11,9 @@ fi
 
 PROJECT_NAME=`basename \`pwd\``
 TARGET_SRC=`echo $PROJECT_NAME | tr '[:upper:]' '[:lower:]'`
-TARGET_TEST="unit-tests component-tests"
+TARGET_UT="unit-tests"
+TARGET_CT="component-tests"
+TARGET_TEST="$TARGET_UT $TARGET_CT"
 
 CMAKE_SOURCE_DIR=.
 

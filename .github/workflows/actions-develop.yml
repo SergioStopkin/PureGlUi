@@ -46,11 +46,18 @@ jobs:
       # - name: Clang Tidy
         # run:  ./clang-tidy.sh
 
-      - name: Build Tests
-        run:  ./build.sh test
+      - name: Build Unit Tests
+        run:  ./build.sh ut
 
-      - name: Run Tests
-        run:  xvfb-run -a ./run.sh test
+      # No xvfb: the unit suite is pure C++ with no window or GL.
+      - name: Run Unit Tests
+        run:  ./run.sh ut
+
+      - name: Build Component Tests
+        run:  ./build.sh ct
+
+      - name: Run Component Tests
+        run:  xvfb-run -a ./run.sh ct
 
       - name: Build Coverage
         run:  ./build.sh cov
@@ -79,13 +86,19 @@ jobs:
       - name: Build Release
         run:  ./build.sh rel
 
-      - name: Build Tests
-        run:  ./build.sh test
+      - name: Build Unit Tests
+        run:  ./build.sh ut
+
+      - name: Run Unit Tests
+        run:  ./run.sh ut
+
+      - name: Build Component Tests
+        run:  ./build.sh ct
 
       # No xvfb/Mesa: the X11 GL suite is HAVE_X11-gated out here, so every
-      # remaining test (unit + the windowless component suites) is CPU-only.
-      - name: Run Tests
-        run:  ./run.sh test
+      # remaining component suite is CPU-only.
+      - name: Run Component Tests
+        run:  ./run.sh ct
 
   windows:
     if:       github.ref != 'refs/heads/release'
@@ -124,12 +137,19 @@ jobs:
           MSYS_NO_PATHCONV: 1
         run:  ./build.sh rel
 
-      - name: Build Tests
+      - name: Build Unit Tests
         env:
           VCPKG_TARGET_TRIPLET: x64-windows-release
           CMAKE_TOOLCHAIN_FILE: C:/vcpkg/scripts/buildsystems/vcpkg.cmake
           MSYS_NO_PATHCONV: 1
-        run:  ./build.sh test
+        run:  ./build.sh ut
+
+      - name: Build Component Tests
+        env:
+          VCPKG_TARGET_TRIPLET: x64-windows-release
+          CMAKE_TOOLCHAIN_FILE: C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          MSYS_NO_PATHCONV: 1
+        run:  ./build.sh ct
 
       # Mesa (software GL) is cached and fetched independently of the vcpkg
       # cache gate so GL test coverage is deterministic on every run - the
@@ -146,10 +166,16 @@ jobs:
         if:   steps.mesa-cache.outputs.cache-hit != 'true'
         run:  ./mesa-windows.sh fetch
 
-      # The X11 corner-capture suite is compiled out here (HAVE_X11); TestGlSmoke
-      # runs on Mesa. Prepend the vcpkg bin dir so the runtime DLLs
-      # (cairo/rsvg/freetype/glew/...) resolve if applocal deploy misses any.
-      - name: Run Tests
+      # Prepend the vcpkg bin dir so the runtime DLLs (cairo/rsvg/freetype/glew/...)
+      # resolve if applocal deploy misses any.
+      - name: Run Unit Tests
         run: |
           export PATH="/c/vcpkg/installed/x64-windows-release/bin:$PATH"
-          ./run.sh test
+          ./run.sh ut
+
+      # The X11 corner-capture suite is compiled out here (HAVE_X11); TestGlSmoke
+      # runs on Mesa, which run.sh deploys next to the binary.
+      - name: Run Component Tests
+        run: |
+          export PATH="/c/vcpkg/installed/x64-windows-release/bin:$PATH"
+          ./run.sh ct
