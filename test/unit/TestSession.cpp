@@ -152,10 +152,15 @@ TEST(Session, WriteSessionIsAtomicAndLeavesNoTemp)
     ASSERT_TRUE(std::filesystem::exists(target));
     EXPECT_FALSE(std::filesystem::exists(target.string() + ".tmp"));
 
-    std::ifstream      file(target);
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    EXPECT_EQ(buffer.str(), R"({"version":2})");
+    // Scoped: on Windows an open read handle blocks the rename that replaces the
+    // target, so leaving this stream open would fail the overwrite below (and the
+    // cleanup) for a reason that has nothing to do with the code under test.
+    {
+        std::ifstream      file(target);
+        std::ostringstream buffer;
+        buffer << file.rdbuf();
+        EXPECT_EQ(buffer.str(), R"({"version":2})");
+    }
 
     // Overwriting an existing file works and still leaves no temp.
     EXPECT_TRUE(Ui::Res::ResManager::writeSession(target.string(), "{}"));
