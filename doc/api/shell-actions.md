@@ -50,20 +50,36 @@ it reaches `<Cocoa/Cocoa.h>` transitively through `action/openfile.h` ->
 ### Lifecycle
 
 ```cpp
+int  runApp(const Ui::init_hooks_t & hooks = {}); // [[nodiscard]] whole lifecycle
 bool initialize(const Ui::init_hooks_t & hooks = {}); // [[nodiscard]]
 void run();
 void requestStop();   // -> windowManager().stop()
 void shutdown();      // -> windowManager().shutdown()
 ```
 
+`Ui::init_hooks_t` (`ui/inithooks.h`) - the host steps, all optional, named by
+purpose rather than spine position because the first two run on both paths:
+
+| hook | when |
+|---|---|
+| `loadDomainResources` | after framework res load - startup AND every reload |
+| `gateFeatures` | after that, before the disable pass - startup AND every reload |
+| `afterWindowCreated` | one-time: window + GL exist, renderer does not |
+| `afterInit` | one-time: the spine is complete, everything is live |
+| `afterReload` | once per reload, after the chrome is back up |
+
 - `initialize(hooks)` runs the whole init spine and returns false if window
   creation fails. Spine order: `loadAllResources()` (framework res, then the
   `loadDomainResources` hook) -> `initWindow()` -> `mainWindow().makeCurrent()` ->
   `afterWindowCreated` hook -> `gateAndDisableUnhandled()` (the `gateFeatures`
   hook, then the disable pass) -> `preloadButtonIcons()` -> `initRenderer()` ->
-  `wireEvents()`. A host restores persisted state BEFORE calling `initialize()`,
-  and must register its domain actions before it too - the disable pass runs
-  inside the spine.
+  `wireEvents()` -> `afterInit` hook. A host restores persisted state BEFORE
+  calling `initialize()`, and must register its domain actions before it too - the
+  disable pass runs inside the spine.
+- `runApp(hooks)` is the whole lifecycle in one call: signal handlers, session
+  restore, `initialize`, `run`, session save, exit code. It deliberately does NOT
+  shut down (a host's content surfaces must die before the main window) and does
+  not print a banner (only `main()` brackets the object's lifetime).
 - `run()` loops while `windowManager().isRunning()`: drains `frameTasks`, polls +
   dispatches all pending OS events, then on any events runs popup-move tracking,
   temp-status expiry, the `onTick` hook, and deferred actions; renders the dirty
