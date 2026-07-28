@@ -55,7 +55,14 @@ TEST(ResPath, TopLevelFiles)
     EXPECT_EQ(resPath().shortcutFile(), "/base/shortcut.json");
     EXPECT_EQ(resPath().iconDefaultsFile(), "/base/icon-defaults.json");
     EXPECT_EQ(resPath().inputFile(), "/base/input.json");
-    EXPECT_EQ(resPath().renderFile(), "/base/render.json");
+}
+
+// The generic resolver a host uses for its own res, so no host filename needs a
+// framework-side accessor.
+TEST(ResPath, FileResolvesAnyName)
+{
+    EXPECT_EQ(resPath().file("render.json"), "/base/render.json");
+    EXPECT_EQ(resPath().file("nested/thing.json"), "/base/nested/thing.json");
 }
 
 TEST(ResPath, SubmenuAndDirs)

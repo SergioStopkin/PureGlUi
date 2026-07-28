@@ -24,7 +24,9 @@
 
 namespace Ui::Res {
 
-// Resolves bundled resource paths relative to the res/ base directory.
+// Resolves bundled resource paths relative to the res/ base directory. The named
+// accessors cover exactly what the framework loads; file(name) resolves anything
+// else, so a host's own resources need no framework-side accessor.
 // Joins via fs::path and returns forward-slash strings via generic_string()
 // so log output, SVG cache keys, and content surface font registration stay
 // platform-neutral (no mixed / and \ on Windows).
@@ -39,6 +41,11 @@ public:
     {
     }
 
+    // Resolve any res-root-relative name. The named accessors below exist for the
+    // files the FRAMEWORK itself loads; a host uses this for its own res, so that
+    // no host filename has to be hard-coded into framework API.
+    [[nodiscard]] std::string file(std::string_view name) const { return join(name); }
+
     [[nodiscard]] std::string icon(std::string_view name) const { return join("icon/") + std::string(name); }
     [[nodiscard]] std::string fontDir() const { return join("font"); }
     [[nodiscard]] std::string fontFile(std::string_view name) const { return join("font/") + std::string(name); }
@@ -48,7 +55,6 @@ public:
     }
     [[nodiscard]] std::string layoutFile() const { return join("layout.json"); }
     [[nodiscard]] std::string appFile() const { return join("app.json"); }
-    [[nodiscard]] std::string renderFile() const { return join("render.json"); }
     [[nodiscard]] std::string inputFile() const { return join("input.json"); }
     [[nodiscard]] std::string dialogFile() const { return join("dialog.json"); }
     [[nodiscard]] std::string iconDefaultsFile() const { return join("icon-defaults.json"); }

@@ -130,7 +130,8 @@ Resolves bundled `res/` paths relative to a base directory. Joins via
 so log output, SVG cache keys, and font registration stay platform-neutral.
 
 - `explicit ResPath(std::string base = "./res")`.
-- File resolvers: `layoutFile()`, `appFile()`, `renderFile()`, `inputFile()`,
+- File resolvers: `file(name)` (anything res-root-relative - what a host uses for
+  its own resources), `layoutFile()`, `appFile()`, `inputFile()`,
   `dialogFile()`, `iconDefaultsFile()`, `shortcutFile()`.
 - Directory resolvers: `fontDir()`, `buttonDir()`, `menuDir()`, `dockDir()`,
   `submenuRoot()`, `submenuDir(name)`.
