@@ -6,6 +6,7 @@ jobs:
   linux-all-steps:
     if:       github.ref != 'refs/heads/release'
     runs-on:  ubuntu-latest
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v5
@@ -39,7 +40,7 @@ jobs:
         run:  ./build.sh dev
 
       - name: Run with ASAN
-        run:  xvfb-run -a timeout --preserve-status --signal=INT 3 ./run.sh dev
+        run:  xvfb-run -a timeout --preserve-status -k 5 --signal=INT 3 ./run.sh dev
 
       # - name: Clang Tidy
         # run:  ./clang-tidy.sh
@@ -66,6 +67,7 @@ jobs:
   macos:
     if:       github.ref != 'refs/heads/release'
     runs-on:  macos-latest
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v5
@@ -99,6 +101,7 @@ jobs:
   windows:
     if:       github.ref != 'refs/heads/release'
     runs-on:  windows-latest
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash

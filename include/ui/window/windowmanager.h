@@ -167,7 +167,12 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     GLint  m_compositeUProjection = -1;
     GLint  m_compositeUTex        = -1;
 
-    std::atomic<bool> m_running { false };
+    std::atomic<bool> m_isRunning { false };
+    // Sticky, and not derivable from m_isRunning: that is already false before init,
+    // so a stop arriving during initialize() would leave no trace and be undone by
+    // the m_isRunning = true at the end of it. A signal caught mid-startup has to
+    // still stop the app.
+    std::atomic<bool> m_isStopRequested { false };
 
     // Platform-specific event handler (compile-time detected)
     std::unique_ptr<NativeEvent> m_eventHandler {};
@@ -683,7 +688,7 @@ public:
         std::cout << "[WindowManager] Main window initialized: " << m_main->window().nativeHandle() << " "
                   << m_windowWidth << "x" << m_windowHeight << std::endl;
 
-        m_running = true;
+        m_isRunning = true;
         return true;
     }
 
@@ -2333,8 +2338,12 @@ public:
      */
     [[nodiscard]] bool hasUiRenderer() const { return m_main != nullptr && m_main->hasRenderer(); }
 
-    [[nodiscard]] bool isRunning() const { return m_running.load(); }
-    void               stop() { m_running = false; }
+    [[nodiscard]] bool isRunning() const { return m_isRunning.load() && !m_isStopRequested.load(); }
+    void               stop()
+    {
+        m_isRunning       = false;
+        m_isStopRequested = true;
+    }
 
     /**
      * @brief Poll for platform events (non-blocking)
@@ -2658,7 +2667,7 @@ public:
 
         std::cout << "[WindowManager] Shutting down..." << std::endl;
 
-        m_running = false;
+        m_isRunning = false;
 
         destroyPopup(true);
         m_dialogWindow.reset();
