@@ -66,7 +66,7 @@ struct alignas(128) layout_t final {
     std::string dialogCloseIcon;
 
     // Scalars (from layout.json element blocks + :root vars)
-    int   menuMaxDepth   = 8;          // --menu-max-depth: submenu nesting cap (guards parser recursion)
+    int   menuMaxDepth   = 3;          // --menu-max-depth: nesting cap, bar = 1 (3 = bar/dropdown/submenu)
     fpx_t menuButtonPadH = 16;         // top-menu-button-label horizontal padding
     fpx_t menuItemHoverMarginV {};     // top-menu-item:hover vertical margin (px)
     fpx_t menuItemHoverMarginH {};     // top-menu-item:hover horizontal margin (px)

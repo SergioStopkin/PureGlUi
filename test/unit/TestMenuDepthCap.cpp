@@ -17,10 +17,11 @@
 
 /**
  * @file TestMenuDepthCap.cpp
- * @brief Pins the menu depth cap: --menu-max-depth N allows exactly N nesting
- *        levels (deeper children are dropped, no crash), and a malformed
- *        nonpositive config value falls back to the default instead of gutting
- *        every submenu. Pure C++ - builds menu JSON in memory.
+ * @brief Pins the menu depth cap: --menu-max-depth N counts the menu bar as
+ *        level 1, so N allows N-1 nesting levels below a bar entry (deeper
+ *        children are dropped, no crash), and a malformed nonpositive config
+ *        value falls back to the default instead of gutting every submenu.
+ *        Pure C++ - builds menu JSON in memory.
  */
 
 #include "menustorefixture.h"
@@ -63,22 +64,25 @@ int chainDepth(const Ui::Res::Type::menu_t & root)
     return depth;
 }
 
-// "--menu-max-depth: 8" means 8 levels allowed: a 12-deep chain parses to
-// exactly 8 levels (children that would sit at level 9 are dropped, no crash).
-TEST(MenuDepthCap, CapAllowsExactlyCapLevels)
+// The cap counts the bar, so "--menu-max-depth: 3" leaves 2 levels for the chain
+// below a bar entry: a 12-deep chain parses to the dropdown row and its submenu,
+// and the child that would sit at level 4 is dropped (no crash).
+TEST(MenuDepthCap, CapCountsTheBarAsLevelOne)
 {
     TestSupport::menu_store_fixture_t fx;
-    ASSERT_EQ(fx.layout.layout().menuMaxDepth, 8); // default under test
-    const Ui::Res::Type::menu_t root = fx.store.parseMenuItem(nestedMenuJson(12), 1);
-    EXPECT_EQ(chainDepth(root), 8);
+    ASSERT_EQ(fx.layout.layout().menuMaxDepth, 3); // default under test
+    const Ui::Res::Type::menu_t root = fx.store.parseMenuItem(nestedMenuJson(12),
+                                                              Ui::Res::Store::MenuStore::DROPDOWN_LEVEL);
+    EXPECT_EQ(chainDepth(root), fx.layout.layout().menuMaxDepth - 1);
 }
 
-// A chain shallower than the cap is untouched.
+// A chain that fits under the cap is untouched.
 TEST(MenuDepthCap, BelowCapParsesFully)
 {
     TestSupport::menu_store_fixture_t fx;
-    const Ui::Res::Type::menu_t       root = fx.store.parseMenuItem(nestedMenuJson(3), 1);
-    EXPECT_EQ(chainDepth(root), 3);
+    const Ui::Res::Type::menu_t       root = fx.store.parseMenuItem(nestedMenuJson(2),
+                                                              Ui::Res::Store::MenuStore::DROPDOWN_LEVEL);
+    EXPECT_EQ(chainDepth(root), 2);
 }
 
 // Malformed "--menu-max-depth: 0" must not gut every submenu: nonpositive
@@ -87,7 +91,7 @@ TEST(MenuDepthCap, ZeroConfigFallsBackToDefault)
 {
     Ui::Res::Store::LayoutStore layout;
     (void)layout.load(TEST_DATA_DIR "/layoutdepthzero.json");
-    EXPECT_EQ(layout.layout().menuMaxDepth, 8);
+    EXPECT_EQ(layout.layout().menuMaxDepth, 3);
 }
 
 // A sane configured value still applies.

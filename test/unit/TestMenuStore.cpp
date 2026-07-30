@@ -103,7 +103,7 @@ TEST(MenuStore, ActionMapAndFindRoundTrip)
     TestSupport::menu_store_fixture_t fixture;
     fixture.layout.load(resPath().layoutFile());
     fixture.store.loadMenus(resPath().menuDir());
-    fixture.store.buildActionMap();
+    fixture.store.buildIndexes();
 
     const action_item_t item = firstActionItem(fixture.store.menus());
     ASSERT_TRUE(item.found);
@@ -120,6 +120,9 @@ TEST(MenuStore, EnableDisableMutators)
     TestSupport::menu_store_fixture_t fixture;
     fixture.layout.load(resPath().layoutFile());
     fixture.store.loadMenus(resPath().menuDir());
+    // The lookups read the index, so the mutators below are only observable once
+    // it exists (ResManager::loadAll does this step for its own callers).
+    fixture.store.buildIndexes();
 
     const action_item_t item = firstActionItem(fixture.store.menus());
     ASSERT_TRUE(item.found);

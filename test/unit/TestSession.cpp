@@ -27,6 +27,8 @@
  * setThemeName() resolves a valid theme and deserialize's theme reload succeeds.
  */
 
+#include "nlohmann/json.hpp"
+#include "ui/res/key/session.h"
 #include "ui/res/resmanager.h"
 
 #include <filesystem>
@@ -183,7 +185,14 @@ TEST(Session, LoadSessionSucceedsWhenFileAbsent)
     std::filesystem::remove(absent);
 
     EXPECT_TRUE(manager.loadSession(absent.string()));
-    EXPECT_EQ(manager.serializeSession(), saved); // state untouched
+    // lastUpdate is stamped as the blob is built, so two calls a millisecond apart
+    // differ there by design. Drop it and compare everything that is real state.
+    auto withoutTimestamp = [](const std::string & blob) {
+        nlohmann::json json = nlohmann::json::parse(blob);
+        json.erase(Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::LastUpdate));
+        return json;
+    };
+    EXPECT_EQ(withoutTimestamp(manager.serializeSession()), withoutTimestamp(saved)); // state untouched
 }
 
 // The full disk round-trip: writeSession out, loadSession back in.

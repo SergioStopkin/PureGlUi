@@ -23,6 +23,11 @@
 
 #ifdef __APPLE__
 #include <OpenGL/gl3.h>
+// gl3.h caps at the newest GL macOS offers, so a consumer that re-declares the
+// API from its own glext must top it up rather than re-emit it. Those headers
+// gate an undef-all block on GL_VERSION_1_2; clearing it keeps every version
+// gl3.h already declared intact, and the glext still adds the ones above it.
+#undef GL_VERSION_1_2
 #else
 #include <GL/glew.h>
 #endif

@@ -57,6 +57,14 @@ inline bool initGlLoader()
     return true;
 }
 
+// GL strings are raw C pointers, and NULL whenever no context is current. Every
+// caller wants an owned string, so the null check belongs here, once.
+[[nodiscard]] inline std::string glString(GLenum name, std::string_view fallback = "N/A")
+{
+    const GLubyte * value = glGetString(name);
+    return value != nullptr ? Common::fromCString(value) : std::string(fallback);
+}
+
 // True when the current context provides modern (>= 3.x) GL - required by the
 // framework's core-profile pipeline (#version 330 shaders, VAOs). False on
 // legacy contexts like Microsoft's software GL 1.1 (no GPU driver installed),
@@ -64,8 +72,8 @@ inline bool initGlLoader()
 // GL version strings are spec-required to start with the major number.
 inline bool hasModernGl()
 {
-    const GLubyte * version = glGetString(GL_VERSION);
-    return version != nullptr && *version >= '3';
+    const std::string version = glString(GL_VERSION, "");
+    return !version.empty() && version.front() >= '3';
 }
 
 // True when the current GL context runs on a software rasterizer. They name
@@ -76,11 +84,7 @@ inline bool hasModernGl()
 // current context; false when no context is bound.
 inline bool isSoftwareRenderer()
 {
-    const GLubyte * renderer = glGetString(GL_RENDERER);
-    if (renderer == nullptr) {
-        return false;
-    }
-    std::string name = Common::fromCString(renderer);
+    std::string name = glString(GL_RENDERER, "");
     std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::tolower(c); });
     constexpr std::array<std::string_view, 6> MARKERS = {
         "llvmpipe", "softpipe", "swiftshader", "software", "gdi generic", "basic render driver",

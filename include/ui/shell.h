@@ -17,13 +17,13 @@
 
 #pragma once
 
-#include "common/cstr.h"
 #include "common/noncopyable.h"
 #include "common/system.h"
 #include "common/unicode.h"
 #include "sig.h"
 #include "ui/action/actionmap.h"
 #include "ui/action/registry.h"
+#include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/inithooks.h"
@@ -670,10 +670,8 @@ public:
         // GL info (requires current context)
         auto & mainWindow = m_windowManager.mainWindow();
         mainWindow.makeCurrent();
-        const GLubyte *   gpu    = glGetString(GL_RENDERER);
-        const GLubyte *   gl     = glGetString(GL_VERSION);
-        const std::string gpuStr = gpu != nullptr ? Common::fromCString(gpu) : "N/A";
-        std::string       glStr  = gl != nullptr ? Common::fromCString(gl) : "N/A";
+        const std::string gpuStr = Ui::Gl::Util::glString(GL_RENDERER);
+        std::string       glStr  = Ui::Gl::Util::glString(GL_VERSION);
         // isHardwareGl() is authoritative: WindowManager folds the GL_RENDERER
         // software-rasterizer check into it right after context creation.
         glStr += mainWindow.isHardwareGl() ? " (hardware)" : " (software)";

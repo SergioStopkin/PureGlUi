@@ -18,7 +18,6 @@
 #pragma once
 
 #include "common/bit.h"
-#include "common/cstr.h"
 #include "common/noncopyable.h"
 #include "common/sanitize.h"
 #include "common/unicode.h"
@@ -623,9 +622,7 @@ public:
         // GPU driver is installed) the modern entry points are NULL and the
         // first frame would segfault - fail here with a clear message instead.
         if (!Ui::Gl::Util::hasModernGl()) {
-            const GLubyte * glVersion = glGetString(GL_VERSION);
-            std::cerr << "[WindowManager] OpenGL >= 3.3 required, got: "
-                      << (glVersion != nullptr ? Common::fromCString(glVersion) : "none")
+            std::cerr << "[WindowManager] OpenGL >= 3.3 required, got: " << Ui::Gl::Util::glString(GL_VERSION, "none")
                       << " - install a GPU driver or a software GL like Mesa (see mesa-windows.sh)" << std::endl;
             return false;
         }

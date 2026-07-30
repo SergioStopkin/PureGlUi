@@ -190,7 +190,7 @@ public:
         // load is the host's job, done separately - the fw only builds menu items.
         markChanged(m_menuStore.loadMenus(m_resPath.menuDir()));
         loadDocks(m_resPath.dockDir());
-        m_menuStore.buildActionMap();
+        m_menuStore.buildIndexes();
     }
 
     const Ui::Res::Type::layout_t & layout() const { return m_layoutStore.layout(); }

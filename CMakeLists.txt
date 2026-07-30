@@ -258,10 +258,16 @@ if(WIN32)
     if(NOT LIBRSVG_LIBRARY OR NOT LIBRSVG_INCLUDE_DIR)
         message(FATAL_ERROR "librsvg not found. Install via: vcpkg install librsvg --triplet x64-windows-release")
     endif()
-    # Add all vcpkg include subdirectories (librsvg transitively depends on glib, gdk-pixbuf, pango, etc.)
+    # All vcpkg include subdirectories (librsvg transitively depends on glib,
+    # gdk-pixbuf, pango, etc.). Collected into a variable rather than passed to
+    # include_directories(): that is DIRECTORY-scoped, so it would reach this
+    # directory and its children but not a consumer that add_subdirectory()s us -
+    # its src/ is our sibling. These go onto the ui target below as usage
+    # requirements instead. On other platforms the PkgConfig imported targets carry
+    # their own include dirs, so this list is Windows-only.
     set(_VCPKG_INC "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
     set(_VCPKG_LIB "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib")
-    include_directories(
+    set(CAIRO_RSVG_INCLUDE_DIRS
         ${_VCPKG_INC}/cairo
         ${_VCPKG_INC}/glib-2.0
         ${_VCPKG_LIB}/glib-2.0/include
@@ -338,6 +344,11 @@ if(GLEW_INCLUDE_DIR)
 endif()
 if(DEFINED FREETYPE_INCLUDE_DIRS)
     target_include_directories(ui SYSTEM INTERFACE ${FREETYPE_INCLUDE_DIRS})
+endif()
+# Windows only: cairo/librsvg are bare find_library paths there, so unlike the
+# PkgConfig imported targets they carry no include dirs of their own.
+if(CAIRO_RSVG_INCLUDE_DIRS)
+    target_include_directories(ui SYSTEM INTERFACE ${CAIRO_RSVG_INCLUDE_DIRS})
 endif()
 
 # Core libs (all platforms). Freetype/librsvg/cairo are imported targets that

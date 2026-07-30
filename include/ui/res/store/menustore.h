@@ -55,7 +55,7 @@ namespace Ui::Res::Store {
 // resource manager - it composes the other stores (icons for chevrons, theme
 // for the theme submenu, layout for popup metrics, locale for display names),
 // so ResManager injects them by reference. loadMenus/loadButtons return their
-// Changed bit; buildActionMap is a pure rebuild over the loaded menus/buttons.
+// Changed bit; buildIndexes is a pure rebuild over the loaded menus/buttons.
 class MenuStore final : private Common::NonCopyable {
     // Injected collaborators (owned by ResManager; named to match so the loader
     // bodies read naturally). All outlive this store.
@@ -68,9 +68,35 @@ class MenuStore final : private Common::NonCopyable {
     std::vector<Ui::Res::Type::button_t>  m_buttons;
     std::vector<Ui::Res::Type::menu_t>    m_menus;
     std::unordered_map<id_t, std::string> m_actionMap; // element id -> actionKey (menus + items + buttons)
+    // Node lookup by id and by hierarchical key, both rebuilt by buildIndexes.
+    // The chrome resolves a node per element per render, so these have to be hash
+    // hits; the walk that fills them runs once per load. References, not copies:
+    // the enable/disable passes rewrite node fields afterwards and a copy would
+    // hand back a stale `enabled`.
+    std::unordered_map<id_t, std::reference_wrapper<const Ui::Res::Type::menu_t>>      m_menuById;
+    std::unordered_map<Ui::key_t, std::reference_wrapper<const Ui::Res::Type::menu_t>> m_menuByKey;
     // Current value of each stateful (radio) action; a menu item highlights when
     // item.label == m_actionState[item.actionKey](). Providers are host-wired.
     std::unordered_map<std::string, Ui::provider_fn_t> m_actionState;
+
+    // One hash lookup, with the empty value as the miss answer - every caller
+    // reads fields straight off the result rather than testing for presence.
+    // find(), not contains()-then-index: the value is the point, and contains()
+    // would hash the key a second time for the same answer.
+    //
+    // unwrap_ref_decay_t is what lets the reference-holding node maps share this
+    // with the by-value m_actionMap: it turns reference_wrapper<const menu_t> into
+    // menu_t, which has the default that reference_wrapper lacks.
+    //
+    // Defined up here because the deduced return type has to be seen before the
+    // accessors below can call it.
+    template <class Map, class Key>
+    [[nodiscard]] static auto lookup(const Map & map, const Key & key)
+    {
+        using Value         = std::unwrap_ref_decay_t<typename Map::mapped_type>;
+        const auto iterator = map.find(key);
+        return iterator != map.end() ? Value(iterator->second) : Value {};
+    }
 
 public:
     MenuStore(Ui::Res::LocaleManager &   localeManager,
@@ -89,11 +115,7 @@ public:
     [[nodiscard]] const std::vector<Ui::Res::Type::button_t> & buttons() const { return m_buttons; }
     [[nodiscard]] const std::vector<Ui::Res::Type::menu_t> &   menus() const { return m_menus; }
 
-    [[nodiscard]] std::string actionKeyFor(id_t elementId) const
-    {
-        auto it = m_actionMap.find(elementId);
-        return (it != m_actionMap.end()) ? it->second : std::string {};
-    }
+    [[nodiscard]] std::string actionKeyFor(id_t elementId) const { return lookup(m_actionMap, elementId); }
 
     // True when this item is the active choice of its stateful action - i.e. its
     // label (the value) equals the action's current value. Computed live.
@@ -113,48 +135,16 @@ public:
         m_actionState[actionKey] = std::move(provider);
     }
 
-    // Find a menu item by its element ID (searches items and submenus).
-    [[nodiscard]] Ui::Res::Type::menu_t findMenuItem(id_t elementId) const
-    {
-        for (const auto & menu : m_menus) {
-            if (menu.id == elementId) {
-                return menu;
-            }
-            for (const auto & item : menu.items) {
-                if (item.id == elementId) {
-                    return item;
-                }
-                for (const auto & sub : item.items) {
-                    if (sub.id == elementId) {
-                        return sub;
-                    }
-                }
-            }
-        }
-        return {};
-    }
+    // Find a menu item by its element ID. Empty menu_t when the id is unknown -
+    // the callers read fields off the result without checking.
+    [[nodiscard]] Ui::Res::Type::menu_t findMenuItem(id_t elementId) const { return lookup(m_menuById, elementId); }
 
     // Resolve a node by its hierarchical key ("View", "View:Theme",
     // "View:Theme:default"). The cross-reload anchor: keys are label-derived so
     // they survive a loadAll() that reassigns numeric ids.
     [[nodiscard]] Ui::Res::Type::menu_t findMenuItemByKey(const Ui::key_t & key) const
     {
-        for (const auto & menu : m_menus) {
-            if (menu.key == key) {
-                return menu;
-            }
-            for (const auto & item : menu.items) {
-                if (item.key == key) {
-                    return item;
-                }
-                for (const auto & sub : item.items) {
-                    if (sub.key == key) {
-                        return sub;
-                    }
-                }
-            }
-        }
-        return {};
+        return lookup(m_menuByKey, key);
     }
 
     // Mark every menu item bound to `actionKey` enabled/disabled (recurses into
@@ -186,6 +176,12 @@ public:
         disableUnhandled(m_buttons, isHandled);
     }
 
+    // Menu levels count the bar as 1, so a dropdown row hanging off a bar entry is
+    // level 2. The single definition of that convention - every parseMenuItem seed
+    // comes from here, so production and tests cannot drift apart on what a level
+    // means.
+    static constexpr int DROPDOWN_LEVEL = 2;
+
     // Recursive by design: builds the nested menu_t tree bottom-up. An iterative
     // builder would hold references into item vectors that reallocate as siblings
     // append (dangling refs). Depth is capped by --menu-max-depth at each descent.
@@ -213,10 +209,14 @@ public:
         if (itemJson.contains(menuKeyName(MenuKey::Submenus))) {
             const auto & subs = itemJson[menuKeyName(MenuKey::Submenus)];
             if (subs.is_array()) {
-                // Depth cap from layout.json (--menu-max-depth = N allows N levels):
-                // bounds the parser recursion - and thereby every downstream
-                // menu-tree walk - against a malformed/hostile res JSON. Children
-                // past the cap are dropped.
+                // Depth cap from layout.json, counted with the menu bar as level 1
+                // (so the default 3 is bar -> dropdown -> submenu). That is what
+                // the chrome can actually show: WindowManager owns one submenu
+                // window, not a chain, and identity assignment reaches the same
+                // three levels - so a deeper node would be built but never
+                // rendered, clicked, or indexed. Dropping it here turns silent
+                // unreachability into a warning, and bounds the recursion against
+                // malformed res JSON.
                 if (depth + 1 > m_layoutStore.layout().menuMaxDepth) {
                     std::cerr << "[MenuStore] menu depth cap (" << m_layoutStore.layout().menuMaxDepth
                               << ") reached at item: " << item.label << " - submenu ignored" << std::endl;
@@ -300,7 +300,7 @@ public:
 
                 if (j.contains(menuKeyName(MenuKey::Items)) && j[menuKeyName(MenuKey::Items)].is_array()) {
                     for (const auto & itemJson : j[menuKeyName(MenuKey::Items)]) {
-                        menu.items.emplace_back(parseMenuItem(itemJson, 1));
+                        menu.items.emplace_back(parseMenuItem(itemJson, DROPDOWN_LEVEL));
                     }
                 }
 
@@ -511,28 +511,49 @@ public:
         return items;
     }
 
-    // Map every actionable element id to its actionKey, so a click (which
-    // carries only an id) can dispatch. The radio highlight needs no map -
-    // it is a live per-item check (see isActiveItem).
-    void buildActionMap()
+    // Rebuild the runtime lookups: element id -> actionKey (a click carries only
+    // an id), plus node by id and by key for the chrome. Load-time work, so one
+    // plain walk fills all three - the cost that matters is the per-render lookup,
+    // not this pass. The radio highlight needs no map - it is a live per-item
+    // check (see isActiveItem).
+    //
+    // Runs after both loaders because m_actionMap spans menus and buttons, and
+    // after loadMenus' sort and id assignment because the node maps hold
+    // references into m_menus, which sorting relocates.
+    void buildIndexes()
     {
         m_actionMap.clear();
-        auto registerItem = [&](id_t id, const std::string & actionKey) {
-            if (!actionKey.empty()) {
-                m_actionMap[id] = actionKey;
+        m_menuById.clear();
+        m_menuByKey.clear();
+        // Separators carry no identity, so they are indexed under nothing: an
+        // INVALID_ID or empty-key lookup answers "no such node" rather than
+        // handing back the first separator. First insert wins, matching the
+        // find-first semantics of a tree walk.
+        auto registerNode = [this](const Ui::Res::Type::menu_t & node) {
+            if (node.id == INVALID_ID) {
+                return;
+            }
+            if (!node.actionKey.empty()) {
+                m_actionMap[node.id] = node.actionKey;
+            }
+            m_menuById.emplace(node.id, std::cref(node));
+            if (!node.key.empty()) {
+                m_menuByKey.emplace(node.key, std::cref(node));
             }
         };
         for (const auto & menu : m_menus) {
-            registerItem(menu.id, menu.actionKey);
+            registerNode(menu);
             for (const auto & item : menu.items) {
-                registerItem(item.id, item.actionKey);
+                registerNode(item);
                 for (const auto & sub : item.items) {
-                    registerItem(sub.id, sub.actionKey);
+                    registerNode(sub);
                 }
             }
         }
         for (const auto & btn : m_buttons) {
-            registerItem(btn.id, btn.actionKey);
+            if (!btn.actionKey.empty()) {
+                m_actionMap[btn.id] = btn.actionKey;
+            }
         }
     }
 

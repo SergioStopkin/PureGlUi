@@ -196,10 +196,11 @@ that never diff return `void`. `MenuStore` and `DockStore` are
   `res/menu/*` and `res/button/*`, parses the recursive `menu_t` tree
   (depth-capped by `layout.menuMaxDepth`), expands `"submenus": {"auto": ...}`
   into one child per file in the named `submenu/` subdir, assigns numeric ids and
-  hierarchical keys, and builds the element-id -> actionKey map
-  (`buildActionMap`). `loadMenus` / `loadButtons` return `Changed::Menu` /
-  `Changed::Button`. Also answers find-by-id/key, radio highlight, and
-  enable/disable queries. Composes `LocaleManager`, `IconStore`, `ThemeStore`,
+  hierarchical keys, and builds the runtime lookups - element-id -> actionKey plus
+  node-by-id and node-by-key (`buildIndexes`, run once per load after both
+  loaders, since the chrome resolves a node per element per render).
+  `loadMenus` / `loadButtons` return `Changed::Menu` / `Changed::Button`. Also
+  answers find-by-id/key, radio highlight, and enable/disable queries. Composes `LocaleManager`, `IconStore`, `ThemeStore`,
   `LayoutStore`, `ResPath` by reference. The disable pass lives in
   `store/menudisable.h` (`disableUnhandled`, one overload for menus + one for
   buttons); the auto-submenu walker's intermediate is `submenu_entry_t`

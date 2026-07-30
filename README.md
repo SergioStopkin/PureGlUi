@@ -2,15 +2,20 @@
 
 <p align="center">
     <a href="https://github.com/SergioStopkin/PureGlUi/actions/workflows/actions-develop.yml" style="text-decoration: none">
-        <img src="https://img.shields.io/github/actions/workflow/status/SergioStopkin/PureGlUi/actions-develop.yml?style=flat-square&labelColor=553355&label=develop"/>
+        <img src="https://img.shields.io/github/actions/workflow/status/SergioStopkin/PureGlUi/actions-develop.yml
+        ?style=flat-square&labelColor=553355&label=develop"/>
     </a>
     &nbsp;
-    <a href="https://github.com/SergioStopkin/PureGlUi/blob/develop/COPYING" style="text-decoration: none">
-        <img src="https://img.shields.io/github/license/SergioStopkin/PureGlUi?style=flat-square&labelColor=553355"/>
+    <a href="https://github.com/SergioStopkin/PureGlUi/blob/develop/COPYING"
+    style="text-decoration: none">
+        <img src="https://img.shields.io/github/license/SergioStopkin/PureGlUi
+        ?style=flat-square&labelColor=553355"/>
     </a>
     &nbsp;
-    <a href="https://github.com/SergioStopkin/PureGlUi/archive/develop.zip" style="text-decoration: none">
-        <img src="https://img.shields.io/github/repo-size/SergioStopkin/PureGlUi?style=flat-square&labelColor=553355&label=download"/>
+    <a href="https://github.com/SergioStopkin/PureGlUi/archive/develop.zip"
+    style="text-decoration: none">
+        <img src="https://img.shields.io/github/repo-size/SergioStopkin/PureGlUi
+        ?style=flat-square&labelColor=553355&label=download"/>
     </a>
 </p>
 
