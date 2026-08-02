@@ -57,19 +57,23 @@ public:
 
         // Parse button definitions: name -> locale label
         std::unordered_map<std::string, std::string> buttonLabels;
-        if (j.contains(buttonsKey) && j[buttonsKey].is_object()) {
-            for (auto it = j[buttonsKey].begin(); it != j[buttonsKey].end(); ++it) {
-                if (it.value().is_object() && it.value().contains(labelKey)) {
-                    buttonLabels[it.key()] = Common::Sanitize::string(it.value()[labelKey].get<std::string>(),
-                                                                      "dialog.button.label");
-                }
+        const auto &                                 buttons = Common::Json::object(j, buttonsKey);
+        for (auto it = buttons.begin(); it != buttons.end(); ++it) {
+            // Presence still decides whether the button exists at all, so a
+            // mistyped label registers empty exactly as before - it just no
+            // longer throws on the way through.
+            if (!it.value().is_object() || !it.value().contains(labelKey)) {
+                continue;
             }
+            buttonLabels[it.key()] = Common::Sanitize::string(Common::Json::string(it.value(), labelKey),
+                                                              "dialog.button.label");
         }
 
         // Parse type definitions: type name -> button list + primary
         const std::string typesKey = dialogKeyName(DialogKey::Types);
-        if (j.contains(typesKey) && j[typesKey].is_object()) {
-            for (auto it = j[typesKey].begin(); it != j[typesKey].end(); ++it) {
+        const auto &      types    = Common::Json::object(j, typesKey);
+        {
+            for (auto it = types.begin(); it != types.end(); ++it) {
                 const Type::DialogType type    = Type::dialogTypeFromName(it.key());
                 const auto &           typeDef = it.value();
                 if (!typeDef.is_object() || !typeDef.contains(buttonsKey) || !typeDef[buttonsKey].is_array()) {
@@ -77,7 +81,7 @@ public:
                 }
 
                 const std::string primaryName = Common::Sanitize::string(
-                typeDef.value(dialogKeyName(DialogKey::Primary), ""),
+                Common::Json::string(typeDef, dialogKeyName(DialogKey::Primary)),
                 "dialog.primary");
                 Type::dialog_type_config_t config;
 

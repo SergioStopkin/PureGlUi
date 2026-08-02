@@ -43,6 +43,7 @@
 #include <functional>
 #include <iostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -79,23 +80,27 @@ class MenuStore final : private Common::NonCopyable {
     // item.label == m_actionState[item.actionKey](). Providers are host-wired.
     std::unordered_map<std::string, Ui::provider_fn_t> m_actionState;
 
-    // One hash lookup, with the empty value as the miss answer - every caller
-    // reads fields straight off the result rather than testing for presence.
-    // find(), not contains()-then-index: the value is the point, and contains()
-    // would hash the key a second time for the same answer.
+    // Lookup with the empty value as the miss answer - every caller reads fields
+    // straight off the result rather than testing for presence. The map is the
+    // only parameter: the key type is its own, and the return type is the value
+    // behind whatever it holds, so no call site restates either and none can
+    // substitute a type the map never stored.
     //
-    // unwrap_ref_decay_t is what lets the reference-holding node maps share this
-    // with the by-value m_actionMap: it turns reference_wrapper<const menu_t> into
-    // menu_t, which has the default that reference_wrapper lacks.
+    // unwrap_ref_decay_t turns reference_wrapper<const menu_t> into const menu_t &
+    // and remove_cvref_t drops that reference. Returning the reference instead
+    // would dangle on the miss below; the node maps hold references precisely so
+    // a hit sees the live node, and the copy is taken here at call time.
     //
-    // Defined up here because the deduced return type has to be seen before the
+    // Defined up here because the return type has to be seen before the
     // accessors below can call it.
-    template <class Map, class Key>
-    [[nodiscard]] static auto lookup(const Map & map, const Key & key)
+    template <typename Map>
+    [[nodiscard]] static std::remove_cvref_t<std::unwrap_ref_decay_t<typename Map::mapped_type>>
+    lookup(const Map & map, const typename Map::key_type & key)
     {
-        using Value         = std::unwrap_ref_decay_t<typename Map::mapped_type>;
-        const auto iterator = map.find(key);
-        return iterator != map.end() ? Value(iterator->second) : Value {};
+        if (!map.contains(key)) {
+            return {};
+        }
+        return map.at(key);
     }
 
 public:
@@ -190,14 +195,17 @@ public:
     {
         using Ui::Res::Key::MenuKey;
         Ui::Res::Type::menu_t item;
-        item.label     = Common::Sanitize::string(itemJson.value(menuKeyName(MenuKey::Label), ""), "menu.label");
-        item.actionKey = Common::Sanitize::string(itemJson.value(menuKeyName(MenuKey::Action), ""), "menu.action");
+        item.label             = Common::Sanitize::string(Common::Json::string(itemJson, menuKeyName(MenuKey::Label)),
+                                              "menu.label");
+        item.actionKey         = Common::Sanitize::string(Common::Json::string(itemJson, menuKeyName(MenuKey::Action)),
+                                                  "menu.action");
         item.showsThemePreview = (item.actionKey == "SwitchTheme");
-        item.shortcut  = Common::Sanitize::string(itemJson.value(menuKeyName(MenuKey::Shortcut), ""), "menu.shortcut");
-        item.icon      = Common::Sanitize::filePath(itemJson.value(menuKeyName(MenuKey::Icon), ""), "menu.icon");
-        item.separator = itemJson.value(menuKeyName(MenuKey::Separator), false);
-        item.enabled   = itemJson.value(menuKeyName(MenuKey::Enabled), true);
-        item.visible   = itemJson.value(menuKeyName(MenuKey::Visible), true);
+        item.shortcut = Common::Sanitize::string(Common::Json::string(itemJson, menuKeyName(MenuKey::Shortcut)),
+                                                 "menu.shortcut");
+        item.icon = Common::Sanitize::filePath(Common::Json::string(itemJson, menuKeyName(MenuKey::Icon)), "menu.icon");
+        item.separator = Common::Json::boolean(itemJson, menuKeyName(MenuKey::Separator), false);
+        item.enabled   = Common::Json::boolean(itemJson, menuKeyName(MenuKey::Enabled), true);
+        item.visible   = Common::Json::boolean(itemJson, menuKeyName(MenuKey::Visible), true);
 
         // "submenus" is polymorphic by design:
         //   array  -> explicit list of submenu items (parsed recursively)
@@ -225,33 +233,36 @@ public:
                         item.items.emplace_back(parseMenuItem(subJson, depth + 1));
                     }
                 }
-            } else if (subs.is_object() && subs.contains(menuKeyName(MenuKey::Auto))
-                       && subs[menuKeyName(MenuKey::Auto)].is_string()) {
-                item.submenu = Common::Sanitize::string(subs[menuKeyName(MenuKey::Auto)].get<std::string>(),
-                                                        "menu.submenu");
+            } else if (const std::string autoName = Common::Json::string(subs, menuKeyName(MenuKey::Auto));
+                       !autoName.empty()) {
+                item.submenu = Common::Sanitize::string(autoName, "menu.submenu");
                 // actionKey fired by each auto-generated child (opaque string from
                 // JSON). An unknown key simply dispatches to nothing - inert.
-                if (subs.contains(menuKeyName(MenuKey::Action)) && subs[menuKeyName(MenuKey::Action)].is_string()) {
-                    item.submenuActionKey = Common::Sanitize::string(
-                    subs[menuKeyName(MenuKey::Action)].get<std::string>(),
-                    "menu.submenuAction");
-                }
+                item.submenuActionKey = Common::Sanitize::string(
+                Common::Json::string(subs, menuKeyName(MenuKey::Action)),
+                "menu.submenuAction");
             }
         }
 
-        const bool hasDialog = itemJson.contains(menuKeyName(MenuKey::Dialog))
-                            && itemJson[menuKeyName(MenuKey::Dialog)].is_object();
-        if (hasDialog) {
-            const auto & dlg    = itemJson[menuKeyName(MenuKey::Dialog)];
-            item.dialog.type    = Ui::Res::Type::dialogTypeFromName(dlg.value(menuKeyName(MenuKey::Type), "Info"));
-            item.dialog.title   = Common::Sanitize::string(dlg.value(menuKeyName(MenuKey::Title), ""), "dialog.title");
-            item.dialog.content = Common::Sanitize::string(dlg.value(menuKeyName(MenuKey::Content), ""),
-                                                           "dialog.content");
-            item.dialog.link    = Common::Sanitize::string(dlg.value(menuKeyName(MenuKey::Link), ""), "dialog.link");
-            item.dialog.icon    = Common::Sanitize::filePath(dlg.value(menuKeyName(MenuKey::Icon), ""), "dialog.icon");
-            item.dialog.file    = Common::Sanitize::filePath(dlg.value(menuKeyName(MenuKey::File), ""), "dialog.file");
-            item.dialog.width   = Ui::Convert::parseCssNumber(dlg.value(menuKeyName(MenuKey::Width), ""));
-            item.dialog.height  = Ui::Convert::parseCssNumber(dlg.value(menuKeyName(MenuKey::Height), ""));
+        const auto & dialogJson = Common::Json::object(itemJson, menuKeyName(MenuKey::Dialog));
+        if (!dialogJson.empty()) {
+            item.dialog.type = Ui::Res::Type::dialogTypeFromName(
+            Common::Json::string(dialogJson, menuKeyName(MenuKey::Type), "Info"));
+            item.dialog.title = Common::Sanitize::string(Common::Json::string(dialogJson, menuKeyName(MenuKey::Title)),
+                                                         "dialog.title");
+            item.dialog.content = Common::Sanitize::string(
+            Common::Json::string(dialogJson, menuKeyName(MenuKey::Content)),
+            "dialog.content");
+            item.dialog.link  = Common::Sanitize::string(Common::Json::string(dialogJson, menuKeyName(MenuKey::Link)),
+                                                        "dialog.link");
+            item.dialog.icon  = Common::Sanitize::filePath(Common::Json::string(dialogJson, menuKeyName(MenuKey::Icon)),
+                                                          "dialog.icon");
+            item.dialog.file  = Common::Sanitize::filePath(Common::Json::string(dialogJson, menuKeyName(MenuKey::File)),
+                                                          "dialog.file");
+            item.dialog.width = Ui::Convert::parseCssNumber(
+            Common::Json::string(dialogJson, menuKeyName(MenuKey::Width)));
+            item.dialog.height = Ui::Convert::parseCssNumber(
+            Common::Json::string(dialogJson, menuKeyName(MenuKey::Height)));
         }
 
         // No explicit icon? Fall back to a role default from icon-defaults.json.
@@ -261,7 +272,7 @@ public:
             const char * role = nullptr;
             if (!item.items.empty() || !item.submenu.empty()) {
                 role = "submenu";
-            } else if (hasDialog) {
+            } else if (!dialogJson.empty()) {
                 role = "dialog";
             }
             if (role != nullptr) {
@@ -292,16 +303,17 @@ public:
                 }
 
                 Ui::Res::Type::menu_t menu;
-                menu.label     = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Label), ""), "menu.label");
-                menu.order     = j.value(menuKeyName(MenuKey::Order), int16_t {});
-                menu.visible   = j.value(menuKeyName(MenuKey::Visible), true);
-                menu.icon      = Common::Sanitize::filePath(j.value(menuKeyName(MenuKey::Icon), ""), "menu.icon");
-                menu.actionKey = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Action), ""), "menu.action");
+                menu.label     = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Label)),
+                                                      "menu.label");
+                menu.order     = Common::Json::number(j, menuKeyName(MenuKey::Order), int16_t {});
+                menu.visible   = Common::Json::boolean(j, menuKeyName(MenuKey::Visible), true);
+                menu.icon      = Common::Sanitize::filePath(Common::Json::string(j, menuKeyName(MenuKey::Icon)),
+                                                       "menu.icon");
+                menu.actionKey = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Action)),
+                                                          "menu.action");
 
-                if (j.contains(menuKeyName(MenuKey::Items)) && j[menuKeyName(MenuKey::Items)].is_array()) {
-                    for (const auto & itemJson : j[menuKeyName(MenuKey::Items)]) {
-                        menu.items.emplace_back(parseMenuItem(itemJson, DROPDOWN_LEVEL));
-                    }
+                for (const auto & itemJson : Common::Json::array(j, menuKeyName(MenuKey::Items))) {
+                    menu.items.emplace_back(parseMenuItem(itemJson, DROPDOWN_LEVEL));
                 }
 
                 m_menus.emplace_back(menu);
@@ -422,15 +434,19 @@ public:
                 }
 
                 Ui::Res::Type::button_t btn;
-                btn.label     = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Label), ""), "button.label");
-                btn.actionKey = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Action), ""), "button.action");
-                btn.icon      = Common::Sanitize::filePath(j.value(menuKeyName(MenuKey::Icon), ""), "button.icon");
-                btn.tooltip   = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Tooltip), ""), "button.tooltip");
-                btn.width     = j.value(menuKeyName(MenuKey::Width), fpx_t {});
-                btn.height    = j.value(menuKeyName(MenuKey::Height), fpx_t {});
-                btn.order     = j.value(menuKeyName(MenuKey::Order), int16_t {});
-                btn.enabled   = j.value(menuKeyName(MenuKey::Enabled), true);
-                btn.visible   = j.value(menuKeyName(MenuKey::Visible), true);
+                btn.label     = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Label)),
+                                                     "button.label");
+                btn.actionKey = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Action)),
+                                                         "button.action");
+                btn.icon      = Common::Sanitize::filePath(Common::Json::string(j, menuKeyName(MenuKey::Icon)),
+                                                      "button.icon");
+                btn.tooltip   = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Tooltip)),
+                                                       "button.tooltip");
+                btn.width     = Common::Json::number(j, menuKeyName(MenuKey::Width), fpx_t {});
+                btn.height    = Common::Json::number(j, menuKeyName(MenuKey::Height), fpx_t {});
+                btn.order     = Common::Json::number(j, menuKeyName(MenuKey::Order), int16_t {});
+                btn.enabled   = Common::Json::boolean(j, menuKeyName(MenuKey::Enabled), true);
+                btn.visible   = Common::Json::boolean(j, menuKeyName(MenuKey::Visible), true);
                 m_buttons.emplace_back(btn);
             }
         }
@@ -478,7 +494,7 @@ public:
                 continue;
             }
             using Ui::Res::Key::MenuKey;
-            const std::string display = Common::Sanitize::string(j.value(menuKeyName(MenuKey::Name), std::string {}),
+            const std::string display = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Name)),
                                                                  "submenu.name");
             if (display.empty()) {
                 continue;
@@ -487,7 +503,7 @@ public:
             std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
                 return static_cast<char>(std::tolower(ch));
             });
-            entries.push_back({ j.value(menuKeyName(MenuKey::Order), 0), std::move(key), display });
+            entries.push_back({ Common::Json::number(j, menuKeyName(MenuKey::Order), 0), std::move(key), display });
         }
 
         std::sort(entries.begin(), entries.end(), [](const submenu_entry_t & a, const submenu_entry_t & b) {

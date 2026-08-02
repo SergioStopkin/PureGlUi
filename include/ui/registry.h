@@ -32,7 +32,7 @@ namespace Ui {
 // (tabs today). The caller supplies the id on add - the container never invents
 // identity. "active" is intentionally not modelled here: only some collections
 // have an active element, so that lives on the owner.
-template <class T>
+template <typename T>
 class Registry final {
     std::unordered_map<id_t, T> m_items;
     std::vector<id_t>           m_order;

@@ -31,7 +31,7 @@ namespace Ui::Action {
 // Warn that no handler is registered for a file type, e.g. "No handler for
 // *.svg". The prefix is localized; the glob is appended at runtime. Tinted with
 // --cl-warn via the Warning dialog type; icon is the Warning icon role.
-template <class Host>
+template <typename Host>
 void openNoHandlerDialog(Host & host, const std::string & extension)
 {
     Ui::Res::Type::dialog_t dialog;
@@ -49,7 +49,7 @@ void openNoHandlerDialog(Host & host, const std::string & extension)
 // per-extension handler (setFileHandler); a file type with no handler shows the
 // warning dialog. The standalone shell registers none, so any open warns. Title
 // + filters are data-driven (res app.json); empty filters => any file.
-template <class Host>
+template <typename Host>
 void openFile(Host & host, const std::string & /*arg*/)
 {
     host.closePopupMenu();

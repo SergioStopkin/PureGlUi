@@ -23,7 +23,7 @@ namespace Ui::Action {
 
 // "ExitApp": stop the event loop. Host-templated so Ui::Action never depends on
 // the concrete shell type (the body is checked when bound in the shell).
-template <class Host>
+template <typename Host>
 void exitApp(Host & host, const std::string & /*arg*/)
 {
     host.windowManager().stop();

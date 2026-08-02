@@ -71,9 +71,12 @@ public:
                 continue;
             }
             Type::icon_default_t entry;
-            entry.icon = Common::Sanitize::filePath(it.value().value(iconKey, ""), "iconDefault.icon");
-            if (it.value().contains(placeKey) && it.value()[placeKey].is_string()) {
-                entry.place = Type::iconPlaceFromName(it.value()[placeKey].get<std::string>());
+            entry.icon = Common::Sanitize::filePath(Common::Json::string(it.value(), iconKey), "iconDefault.icon");
+            // Only override when the field is actually there: iconPlaceFromName
+            // answers anything that is not "left" with Right, so feeding it an
+            // absent value would flip every entry that omits place.
+            if (const std::string place = Common::Json::string(it.value(), placeKey); !place.empty()) {
+                entry.place = Type::iconPlaceFromName(place);
             }
             m_iconDefaults.emplace(it.key(), std::move(entry));
         }

@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/json.h"
 #include "common/noncopyable.h"
 #include "common/sanitize.h"
 #include "nlohmann/json.hpp"
@@ -118,15 +119,15 @@ public:
                 continue;
             }
             const std::string name = Common::Sanitize::string(
-            entry.value(sessionKeyName(SessionKey::Name), std::string {}),
+            Common::Json::string(entry, sessionKeyName(SessionKey::Name)),
             "dock.name",
             MAX_DOCK_NAME_LENGTH);
             if (name.empty()) {
                 continue;
             }
             Ui::Res::Dock::dock_state_t state;
-            state.width   = sanitizeDockWidth(entry.value(sessionKeyName(SessionKey::Width), 0.0));
-            state.memoryX = sanitizeDockWidth(entry.value(sessionKeyName(SessionKey::MemoryX), 0.0));
+            state.width   = sanitizeDockWidth(Common::Json::number(entry, sessionKeyName(SessionKey::Width), 0.0));
+            state.memoryX = sanitizeDockWidth(Common::Json::number(entry, sessionKeyName(SessionKey::MemoryX), 0.0));
             m_dockStates.emplace(name, state);
         }
     }

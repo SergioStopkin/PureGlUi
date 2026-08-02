@@ -27,7 +27,7 @@ namespace Ui::Action {
 // re-run the disable pass because loadAll resets enabled from JSON, apply every
 // Changed bit, reopen the chrome. A host needs no override: its domain reload is
 // already one of those hooks.
-template <class Host>
+template <typename Host>
 void reload(Host & host, const std::string & /*arg*/)
 {
     host.reloadChrome();

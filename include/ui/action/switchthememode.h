@@ -24,7 +24,7 @@
 namespace Ui::Action {
 
 // "SwitchThemeMode": toggle dark/light, re-apply the diff, refresh content.
-template <class Host>
+template <typename Host>
 void switchThemeMode(Host & host, const std::string & /*arg*/)
 {
     auto t0 = std::chrono::steady_clock::now();

@@ -50,6 +50,7 @@
 #include "ui/tabbar.h"
 #include "ui/type.h"
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <filesystem>
@@ -58,6 +59,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -71,11 +73,12 @@ class ResManager final {
     // field. Both menu-driven settings (themeName, displayMode, ambience) and
     // programmatic ones (themeMode, lastOpenDir) flow through the same path.
     struct alignas(128) persisted_setting_t final {
-        Ui::Res::Key::SectionKey section;             // session.json section it lives in
-        std::string              sessionKey;          // camelCase key inside the section
-        Ui::provider_fn_t        get;                 // current value -> string
-        Ui::action_fn_t          set;                 // string -> apply to typed field
-        bool                     skipIfEmpty = false; // omit from save when value is empty
+        std::string       section;             // resolved session.json section name (fw or host enum)
+        std::string       sessionKey;          // camelCase key inside the section (empty when isJsonValue)
+        Ui::provider_fn_t get;                 // current value -> string
+        Ui::action_fn_t   set;                 // string -> apply to typed field
+        bool              skipIfEmpty = false; // omit from save when value is empty
+        bool              isJsonValue = false; // value is JSON text and owns the whole section
     };
 
     Store::LayoutStore     m_layoutStore; // res/layout.json: layout_t + popup_t (logical sub-store)
@@ -133,41 +136,32 @@ public:
         : m_resPath(std::move(resDir))
     {
         // Load app.json for identity (title) + session storage location, which
-        // loadSession/saveSession then use.
-        try {
-            using Ui::Res::Key::AppKey;
-            std::ifstream appJson(m_resPath.appFile());
-            if (appJson.is_open()) {
-                nlohmann::json app;
-                appJson >> app;
-                m_title       = Common::Sanitize::string(app.value(appKeyName(AppKey::Title), m_title), "app.title");
-                m_sessionDir  = Common::Sanitize::filePath(app.value(appKeyName(AppKey::SessionDir), m_sessionDir),
-                                                          "app.sessionDir");
-                m_sessionFile = Common::Sanitize::filePath(app.value(appKeyName(AppKey::SessionFile), m_sessionFile),
-                                                           "app.sessionFile");
+        // loadSession/saveSession then use. Every fallback is the default already
+        // in hand, so a missing or malformed file keeps all of them - and no read
+        // below can throw, which is why there is no try/catch any more.
+        using Ui::Res::Key::AppKey;
+        const auto app = Common::loadJson(m_resPath.appFile());
+        m_title = Common::Sanitize::string(Common::Json::string(app, appKeyName(AppKey::Title), m_title), "app.title");
+        m_sessionDir = Common::Sanitize::filePath(
+        Common::Json::string(app, appKeyName(AppKey::SessionDir), m_sessionDir),
+        "app.sessionDir");
+        m_sessionFile = Common::Sanitize::filePath(
+        Common::Json::string(app, appKeyName(AppKey::SessionFile), m_sessionFile),
+        "app.sessionFile");
 
-                // Native open-dialog config (optional). Absent/empty filters =>
-                // the dialog offers any file.
-                if (app.contains(appKeyName(AppKey::OpenFile))) {
-                    const auto & openFile = app[appKeyName(AppKey::OpenFile)];
-                    m_openFileTitle       = Common::Sanitize::string(
-                    openFile.value(appKeyName(AppKey::Title), m_openFileTitle),
-                    "app.openFile.title");
-                    for (const auto & filter : openFile.value(appKeyName(AppKey::Filters), nlohmann::json::array())) {
-                        m_openFileFilters.push_back(
-                        { Common::Sanitize::string(filter.value(appKeyName(AppKey::Name), std::string {}),
-                                                   "app.filter.name"),
-                          Common::Sanitize::string(filter.value(appKeyName(AppKey::Spec), std::string {}),
-                                                   "app.filter.spec") });
-                    }
-                }
-
-                std::cout << "[ResManager] Loaded app.json: title=" << m_title << " sessionDir=" << m_sessionDir
-                          << std::endl;
-            }
-        } catch (const std::exception & e) {
-            std::cerr << "[ResManager] Failed to load app.json, using defaults: " << e.what() << std::endl;
+        // Native open-dialog config (optional). Absent/empty filters => the
+        // dialog offers any file.
+        const auto & openFile = Common::Json::object(app, appKeyName(AppKey::OpenFile));
+        m_openFileTitle       = Common::Sanitize::string(
+        Common::Json::string(openFile, appKeyName(AppKey::Title), m_openFileTitle),
+        "app.openFile.title");
+        for (const auto & filter : Common::Json::array(openFile, appKeyName(AppKey::Filters))) {
+            m_openFileFilters.push_back(
+            { Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Name)), "app.filter.name"),
+              Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Spec)), "app.filter.spec") });
         }
+
+        std::cout << "[ResManager] Loaded app.json: title=" << m_title << " sessionDir=" << m_sessionDir << std::endl;
 
         // Build the persisted-setting registry (raw getters/setters over the
         // owned fields). The host drives load/save through persistedSettings().
@@ -380,15 +374,68 @@ public:
         notifyPersistChange();
     }
 
+    // A section is either owned by one JSON provider or carries plain keys,
+    // never both: serializeSession assigns the whole node for an owner and
+    // string-subscripts it for a key, so mixing them either throws (subscripting
+    // an array) or silently drops the keys, depending purely on registration
+    // order. Both symptoms surface at SAVE time, far from the registration that
+    // caused them, so the conflict is refused here instead.
+    [[nodiscard]] bool isSectionOwned(const std::string & section) const
+    {
+        return std::any_of(
+        m_persistedSettings.begin(),
+        m_persistedSettings.end(),
+        [&section](const persisted_setting_t & setting) { return setting.section == section && setting.isJsonValue; });
+    }
+
+    [[nodiscard]] bool hasSectionKeys(const std::string & section) const
+    {
+        return std::any_of(
+        m_persistedSettings.begin(),
+        m_persistedSettings.end(),
+        [&section](const persisted_setting_t & setting) { return setting.section == section && !setting.isJsonValue; });
+    }
+
     // Section first, then key: arguments read outer -> inner, like the JSON
-    // they produce (j[sectionKey][key]).
+    // they produce (j[sectionKey][key]). Keys go in FRAMEWORK sections - the fw
+    // owns those names and a host adds its domain keys to them.
     void registerPersisted(Ui::Res::Key::SectionKey section,
                            std::string              key,
                            Ui::provider_fn_t        getter,
                            Ui::action_fn_t          setter,
                            bool                     skipIfEmpty = false)
     {
-        m_persistedSettings.push_back({ section, std::move(key), std::move(getter), std::move(setter), skipIfEmpty });
+        m_persistedSettings.push_back(
+        { Ui::Res::Key::sectionKeyName(section), std::move(key), std::move(getter), std::move(setter), skipIfEmpty });
+    }
+
+    // Structured variant: the getter returns JSON TEXT, which lands in the file
+    // as real JSON rather than an escaped string, and the setter gets it back the
+    // same way. One provider owns a whole section (arrays included - the
+    // section/key registry above cannot express a root-level array).
+    //
+    // The section is the HOST's: it brings its own enum and its own
+    // sectionKeyName() overload, found here by ADL, so the fw stores a resolved
+    // name and never learns a host concept. SectionKey is excluded by the
+    // constraint, so claiming a framework section fails to COMPILE; the checks
+    // below only catch a host mapper that returns a framework name anyway.
+    template <typename SectionEnum>
+        requires std::is_enum_v<SectionEnum> && (!std::is_same_v<SectionEnum, Ui::Res::Key::SectionKey>)
+    void registerPersistedJson(SectionEnum hostSection, Ui::provider_fn_t getter, Ui::action_fn_t setter)
+    {
+        std::string section = sectionKeyName(hostSection);
+        if (section.empty() || Ui::Res::Key::isFrameworkSection(section) || isSectionOwned(section)
+            || hasSectionKeys(section)) {
+            std::cerr << "[ResManager] Section '" << section
+                      << "' is unusable, framework-owned, or already registered; ignoring JSON provider" << std::endl;
+            return;
+        }
+        m_persistedSettings.push_back({ std::move(section),
+                                        /*sessionKey=*/ {},
+                                        std::move(getter),
+                                        std::move(setter),
+                                        /*skipIfEmpty=*/true,
+                                        /*isJsonValue=*/true });
     }
 
     void registerPersistedSettings()
@@ -467,7 +514,9 @@ public:
             std::cout << "[ResManager] No existing session file, starting fresh" << std::endl;
             return true;
         }
-        std::ifstream file(path);
+        // const: nothing here mutates the stream object itself - rdbuf() is a
+        // const member and the read happens through the buffer it returns.
+        const std::ifstream file(path);
         if (!file) {
             std::cerr << "[ResManager] Failed to open session file: " << path << std::endl;
             return false;
@@ -537,19 +586,12 @@ public:
             };
         }
 
-        for (const auto & setting : m_persistedSettings) {
-            const std::string value = setting.get();
-            if (setting.skipIfEmpty && value.empty()) {
-                continue;
-            }
-            j[sectionKeyName(setting.section)][setting.sessionKey] = value;
-        }
-
+        // Key by key, not a whole-node assignment, so a registry key sharing this
+        // section survives.
         if (!m_sessionOpenFiles.empty() || !m_sessionActiveFile.empty()) {
-            j[sectionKeyName(SectionKey::Files)] = {
-                { sessionKeyName(SessionKey::Active), m_sessionActiveFile },
-                { sessionKeyName(SessionKey::Open), m_sessionOpenFiles },
-            };
+            nlohmann::json & files                    = j[sectionKeyName(SectionKey::Files)];
+            files[sessionKeyName(SessionKey::Active)] = m_sessionActiveFile;
+            files[sessionKeyName(SessionKey::Open)]   = m_sessionOpenFiles;
         }
 
         nlohmann::json docks = nlohmann::json::array();
@@ -558,7 +600,35 @@ public:
             j[sectionKeyName(SectionKey::Docks)] = std::move(docks);
         }
 
-        return j.dump(2);
+        // Registry LAST, so a host key registered into a framework section adds
+        // to a node that already exists instead of racing the typed block for
+        // it. Host PROVIDERS cannot land here at all - a framework name is
+        // refused at registration - so nothing below has to defend against it.
+        for (const auto & setting : m_persistedSettings) {
+            const std::string value = setting.get();
+            if (setting.skipIfEmpty && value.empty()) {
+                continue;
+            }
+            if (setting.isJsonValue) {
+                // Host-authored text: a malformed value costs that one section,
+                // never the whole save (parse is non-throwing).
+                nlohmann::json parsed = nlohmann::json::parse(value, nullptr, /*allow_exceptions=*/false);
+                if (parsed.is_discarded()) {
+                    std::cerr << "[ResManager] Skipping unparseable session section: " << setting.section << std::endl;
+                    continue;
+                }
+                j[setting.section] = std::move(parsed);
+                continue;
+            }
+            j[setting.section][setting.sessionKey] = value;
+        }
+
+        // Paths reach this blob verbatim, and a filename is not required to be
+        // valid UTF-8 (legal on Linux; Sanitize only strips control chars).
+        // Default dump() throws on such bytes, and that throw would escape
+        // saveSession() and cost the user every persisted setting, so replace
+        // the offending bytes instead of failing the save.
+        return j.dump(2, ' ', false, nlohmann::json::error_handler_t::replace);
     }
 
     // Restore persisted state from a blob produced by serializeSession (format
@@ -583,20 +653,36 @@ public:
         }
 
         const std::string mainWindowKey = sectionKeyName(SectionKey::MainWindow);
-        if (j.contains(mainWindowKey) && j[mainWindowKey].is_object()) {
-            const auto & w = j[mainWindowKey];
-            setSessionWindowGeometry(w.value(sessionKeyName(SessionKey::X), 0),
-                                     w.value(sessionKeyName(SessionKey::Y), 0),
-                                     w.value(sessionKeyName(SessionKey::Width), 0),
-                                     w.value(sessionKeyName(SessionKey::Height), 0));
+        const auto &      mainWindow    = Common::Json::object(j, mainWindowKey);
+        if (!mainWindow.empty()) {
+            setSessionWindowGeometry(Common::Json::number(mainWindow, sessionKeyName(SessionKey::X), 0),
+                                     Common::Json::number(mainWindow, sessionKeyName(SessionKey::Y), 0),
+                                     Common::Json::number(mainWindow, sessionKeyName(SessionKey::Width), 0),
+                                     Common::Json::number(mainWindow, sessionKeyName(SessionKey::Height), 0));
         }
 
         for (const auto & setting : m_persistedSettings) {
-            const std::string sectionKey = sectionKeyName(setting.section);
-            if (!j.contains(sectionKey) || !j[sectionKey].is_object()) {
+            // One lookup, then read through the iterator - contains() plus three
+            // indexings hashed the same key four times per setting.
+            //
+            // Raw, not a Json:: reader: those answer "absent" and "present but
+            // empty" alike, and the difference decides whether a host setter runs
+            // at all. Calling one with "" for a value the session never stored
+            // would clear that state instead of leaving it.
+            const auto section = j.find(setting.section);
+            if (section == j.end()) {
                 continue;
             }
-            if (auto it = j[sectionKey].find(setting.sessionKey); it != j[sectionKey].end() && it->is_string()) {
+            if (setting.isJsonValue) {
+                // Handed back as text, exactly as the getter produced it. A host
+                // section may be an array, so this cannot go through object().
+                setting.set(section->dump());
+                continue;
+            }
+            if (!section->is_object()) {
+                continue;
+            }
+            if (auto it = section->find(setting.sessionKey); it != section->end() && it->is_string()) {
                 setting.set(it->get<std::string>());
             }
         }
@@ -607,24 +693,18 @@ public:
         m_sessionActiveFile.clear();
         m_sessionOpenFiles.clear();
         const std::string filesKey = sectionKeyName(SectionKey::Files);
-        if (j.contains(filesKey) && j[filesKey].is_object()) {
-            const auto & files  = j[filesKey];
-            m_sessionActiveFile = Common::Sanitize::path(
-            files.value(sessionKeyName(SessionKey::Active), std::string {}),
-            "files.active");
-            if (auto it = files.find(sessionKeyName(SessionKey::Open)); it != files.end() && it->is_array()) {
-                for (const auto & file : *it) {
-                    if (file.is_string()) {
-                        m_sessionOpenFiles.emplace_back(Common::Sanitize::path(file.get<std::string>(), "files.open"));
-                    }
-                }
+        const auto &      files    = Common::Json::object(j, filesKey);
+        m_sessionActiveFile = Common::Sanitize::path(Common::Json::string(files, sessionKeyName(SessionKey::Active)),
+                                                     "files.active");
+        for (const auto & file : Common::Json::array(files, sessionKeyName(SessionKey::Open))) {
+            if (file.is_string()) {
+                m_sessionOpenFiles.emplace_back(Common::Sanitize::path(file.get<std::string>(), "files.open"));
             }
         }
 
-        const std::string docksKey = sectionKeyName(SectionKey::Docks);
-        if (j.contains(docksKey)) {
-            m_dockStore.readDockJson(j[docksKey]);
-        }
+        // readDockJson clears first and ignores a non-array, so an absent section
+        // arrives as an empty array and means the same thing: no dock state.
+        m_dockStore.readDockJson(Common::Json::array(j, sectionKeyName(SectionKey::Docks)));
 
         m_isRestoring = false;
     }
@@ -632,23 +712,16 @@ public:
     // Load resource methods
     void loadInput(const std::string & file)
     {
-        nlohmann::json j;
-        if (!Common::loadJson(file, j)) {
-            return;
-        }
+        const auto j = Common::loadJson(file);
 
-        if (j.contains("scroll") && j["scroll"].is_object()) {
-            const auto & scroll         = j["scroll"];
-            m_input.scrollNatural       = scroll.value("natural", m_input.scrollNatural);
-            m_input.scrollSpeed         = scroll.value("speed", m_input.scrollSpeed);
-            m_input.scrollSmooth        = scroll.value("smooth", m_input.scrollSmooth);
-            m_input.scrollSnapThreshold = scroll.value("snapThreshold", m_input.scrollSnapThreshold);
-        }
+        const auto & scroll         = Common::Json::object(j, "scroll");
+        m_input.scrollNatural       = Common::Json::boolean(scroll, "natural", m_input.scrollNatural);
+        m_input.scrollSpeed         = Common::Json::number(scroll, "speed", m_input.scrollSpeed);
+        m_input.scrollSmooth        = Common::Json::number(scroll, "smooth", m_input.scrollSmooth);
+        m_input.scrollSnapThreshold = Common::Json::number(scroll, "snapThreshold", m_input.scrollSnapThreshold);
 
-        if (j.contains("keyAnimation") && j["keyAnimation"].is_object()) {
-            const auto & keyAnimation = j["keyAnimation"];
-            m_input.keyAnimationDelay = keyAnimation.value("delay", m_input.keyAnimationDelay);
-        }
+        const auto & keyAnimation = Common::Json::object(j, "keyAnimation");
+        m_input.keyAnimationDelay = Common::Json::number(keyAnimation, "delay", m_input.keyAnimationDelay);
     }
 
     // Each file under res/dock/ describes one dock (anchor, order, default
@@ -666,19 +739,18 @@ public:
             if (entry.path().extension() != ".json") {
                 continue;
             }
-            nlohmann::json j;
-            if (!Common::loadJson(entry.path().string(), j)) {
-                continue;
-            }
+            // Also the unreadable-file exit: loadJson has logged why, and a null
+            // json yields no name, which is already the skip condition below.
+            const auto j = Common::loadJson(entry.path().string());
             using Ui::Res::Key::DockKey;
             Ui::Res::Dock::dock_config_t cfg;
-            cfg.name   = Common::Sanitize::string(j.value(dockKeyName(DockKey::Name), std::string {}),
+            cfg.name   = Common::Sanitize::string(Common::Json::string(j, dockKeyName(DockKey::Name)),
                                                 "dock.name",
                                                 Store::DockStore::MAX_DOCK_NAME_LENGTH);
             cfg.anchor = Ui::Res::Dock::dockAnchorFromName(
-            j.value(dockKeyName(DockKey::Anchor), std::string { "left" }));
-            cfg.order        = j.value(dockKeyName(DockKey::Order), 1);
-            cfg.defaultWidth = Ui::Convert::str2fpx(j.value(dockKeyName(DockKey::DefaultWidth), std::string {}));
+            Common::Json::string(j, dockKeyName(DockKey::Anchor), "left"));
+            cfg.order        = Common::Json::number(j, dockKeyName(DockKey::Order), 1);
+            cfg.defaultWidth = Ui::Convert::str2fpx(Common::Json::string(j, dockKeyName(DockKey::DefaultWidth)));
             if (cfg.name.empty()) {
                 std::cerr << "[ResManager] dock file missing name, skipping: " << entry.path() << std::endl;
                 continue;

@@ -34,6 +34,19 @@ namespace Ui::Res::Store {
 class ShortcutStore final {
     std::unordered_map<std::string, std::string> m_shortcuts; // key combo -> actionKey
 
+    // One entry, from either an array element or a lone object. A missing or
+    // mistyped field reads as empty, and an entry without both halves is not a
+    // shortcut, so it is skipped rather than binding "" to something.
+    void addShortcut(const nlohmann::json & entry)
+    {
+        const std::string keys   = Common::Sanitize::string(Common::Json::string(entry, "keys"), "shortcut.keys");
+        const std::string action = Common::Sanitize::string(Common::Json::string(entry, "action"), "shortcut.action");
+        if (keys.empty() || action.empty()) {
+            return;
+        }
+        m_shortcuts[Util::strKey(keys)] = action;
+    }
+
 public:
     [[nodiscard]] const std::unordered_map<std::string, std::string> & shortcuts() const { return m_shortcuts; }
 
@@ -48,17 +61,10 @@ public:
         m_shortcuts.clear();
         if (j.is_array()) {
             for (const auto & item : j) {
-                if (item.contains("action") && item.contains("keys")) {
-                    const std::string keys = Util::strKey(
-                    Common::Sanitize::string(item.value("keys", ""), "shortcut.keys"));
-                    m_shortcuts[keys] = Common::Sanitize::string(item.value("action", ""), "shortcut.action");
-                }
+                addShortcut(item);
             }
-        } else if (j.is_object()) {
-            if (j.contains("action") && j.contains("keys")) {
-                const std::string keys = Util::strKey(Common::Sanitize::string(j.value("keys", ""), "shortcut.keys"));
-                m_shortcuts[keys]      = Common::Sanitize::string(j.value("action", ""), "shortcut.action");
-            }
+        } else {
+            addShortcut(j);
         }
 
         return m_shortcuts != oldShortcuts ? Type::Changed::Shortcut : Type::Changed::None;

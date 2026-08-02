@@ -85,7 +85,7 @@ protected:
 
     // First leaf item (under a popup-opening top menu) matching a predicate,
     // paired with its parent menu so tests can open it the way a user would.
-    template <class Pred>
+    template <typename Pred>
     [[nodiscard]] std::pair<const Ui::Res::Type::menu_t *, const Ui::Res::Type::menu_t *> findLeaf(Pred pred) const
     {
         for (const auto & menu : resManager.menus()) {

@@ -23,7 +23,7 @@ namespace Ui::Action {
 
 // "SwitchTheme": select a theme by name (arg), re-apply the diff, refresh.
 // No-op when the arg is empty or already the active theme.
-template <class Host>
+template <typename Host>
 void switchTheme(Host & host, const std::string & arg)
 {
     if (!arg.empty() && arg != host.resManager().themeName()) {

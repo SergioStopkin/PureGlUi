@@ -146,15 +146,11 @@ public:
         // --cl-main and --bg-main are direct hex strings in :root for every
         // shipped theme - no var() chaining - so a flat lookup suffices.
         auto extractRootHex = [](const nlohmann::json & j, ThemeKey key) -> Ui::Color {
-            const std::string rootKey = elementKeyName(ElementKey::Root);
-            if (j.contains(rootKey) && j[rootKey].is_object()) {
-                const auto &      root = j[rootKey];
-                const std::string name = themeKeyName(key);
-                if (root.contains(name) && root[name].is_string()) {
-                    return Ui::Color::fromHex(root[name].get<std::string>());
-                }
-            }
-            return {};
+            const auto &      root = Common::Json::object(j, elementKeyName(ElementKey::Root));
+            const std::string hex  = Common::Json::string(root, themeKeyName(key));
+            // Absent or mistyped stays the default-constructed colour, as before -
+            // fromHex would answer an empty string with something arbitrary.
+            return hex.empty() ? Ui::Color {} : Ui::Color::fromHex(hex);
         };
 
         const std::string nameKey = themeKeyName(ThemeKey::Name);
@@ -163,25 +159,23 @@ public:
             Ui::Res::Type::color_pair_t light {}; // light variant: fg=--cl-main, bg=--bg-main
             bool                        registeredLocale = false;
             if (!files.dark.empty()) {
-                nlohmann::json j;
-                if (Common::loadJson(files.dark, j)) {
-                    if (j.contains(nameKey) && j[nameKey].is_string()) {
-                        localeManager.set(name, Common::Sanitize::string(j[nameKey].get<std::string>(), "theme.name"));
-                        registeredLocale = true;
-                    }
-                    dark.fg = extractRootHex(j, ThemeKey::ClMain);
-                    dark.bg = extractRootHex(j, ThemeKey::BgMain);
+                const auto        j       = Common::loadJson(files.dark);
+                const std::string display = Common::Sanitize::string(Common::Json::string(j, nameKey), "theme.name");
+                if (!display.empty()) {
+                    localeManager.set(name, display);
+                    registeredLocale = true;
                 }
+                dark.fg = extractRootHex(j, ThemeKey::ClMain);
+                dark.bg = extractRootHex(j, ThemeKey::BgMain);
             }
             if (!files.light.empty()) {
-                nlohmann::json j;
-                if (Common::loadJson(files.light, j)) {
-                    if (!registeredLocale && j.contains(nameKey) && j[nameKey].is_string()) {
-                        localeManager.set(name, Common::Sanitize::string(j[nameKey].get<std::string>(), "theme.name"));
-                    }
-                    light.fg = extractRootHex(j, ThemeKey::ClMain);
-                    light.bg = extractRootHex(j, ThemeKey::BgMain);
+                const auto        j       = Common::loadJson(files.light);
+                const std::string display = Common::Sanitize::string(Common::Json::string(j, nameKey), "theme.name");
+                if (!registeredLocale && !display.empty()) {
+                    localeManager.set(name, display);
                 }
+                light.fg = extractRootHex(j, ThemeKey::ClMain);
+                light.bg = extractRootHex(j, ThemeKey::BgMain);
             }
             m_themePreviewColors[name] = { dark, light };
             names.emplace_back(name);
@@ -224,11 +218,10 @@ public:
 
         // Build variable map for resolving var() references
         std::unordered_map<std::string, std::string> vars;
-        if (j.contains(rootKey) && j[rootKey].is_object()) {
-            for (auto it = j[rootKey].begin(); it != j[rootKey].end(); ++it) {
-                if (it.value().is_string()) {
-                    vars[it.key()] = it.value().get<std::string>();
-                }
+        const auto &                                 root = Common::Json::object(j, rootKey);
+        for (auto it = root.begin(); it != root.end(); ++it) {
+            if (it.value().is_string()) {
+                vars[it.key()] = it.value().get<std::string>();
             }
         }
 
@@ -325,13 +318,10 @@ public:
 
         // Worker: read "background" or "color" from a named JSON block (raw string keys).
         auto blockColorBy = [&](const std::string & block, const std::string & prop) -> Ui::Color {
-            if (j.contains(block) && j[block].is_object()) {
-                const auto & obj = j[block];
-                if (obj.contains(prop) && obj[prop].is_string()) {
-                    return resolveColor(obj[prop].get<std::string>(), m_theme.colorError);
-                }
-            }
-            return m_theme.colorError;
+            // Empty covers absent block, absent property and a mistyped value
+            // alike - all three already resolved to colorError.
+            const std::string value = Common::Json::string(Common::Json::object(j, block), prop);
+            return value.empty() ? m_theme.colorError : resolveColor(value, m_theme.colorError);
         };
         // Enum-typed overload: the call sites reference fixed selectors/properties,
         // so they pass ElementKey/CssPropKey and the spelling stays single-sourced.
@@ -353,38 +343,37 @@ public:
                                   blockColor(ElementKey::WorkspaceTabs, CssPropKey::Background) };
 
         // Interactive elements: normal {fg, bg}, hover {fg, bg}, active {fg, bg}
-        m_theme.topMenuButton       = m_theme.topMenu;
-        m_theme.topMenuButtonHover  = { blockColor(ElementKey::TopMenuButtonLabelHover, CssPropKey::Color),
-                                        blockColor(ElementKey::TopMenuButtonLabelHover, CssPropKey::Background) };
-        m_theme.topMenuButtonActive = { blockColor(ElementKey::TopMenuButtonLabelActive, CssPropKey::Color),
-                                        blockColor(ElementKey::TopMenuButtonLabelActive, CssPropKey::Background) };
-        m_theme.menuItem            = { blockColor(ElementKey::TopMenuItem, CssPropKey::Color),
-                                        blockColor(ElementKey::TopMenuItem, CssPropKey::Background) };
-        m_theme.menuItemHover       = { blockColor(ElementKey::TopMenuItemHover, CssPropKey::Color),
-                                        blockColor(ElementKey::TopMenuItemHover, CssPropKey::Background) };
-        m_theme.menuItemActive      = { blockColor(ElementKey::TopMenuItemActive, CssPropKey::Color),
-                                        blockColor(ElementKey::TopMenuItemActive, CssPropKey::Background) };
-        m_theme.button              = { blockColor(ElementKey::Button, CssPropKey::Color),
-                                        blockColor(ElementKey::Button, CssPropKey::Background) };
-        m_theme.workspaceTab        = { blockColor(ElementKey::WorkspaceTab, CssPropKey::Color),
-                                        blockColor(ElementKey::WorkspaceTab, CssPropKey::Background) };
-        m_theme.workspaceTabHover   = { blockColor(ElementKey::WorkspaceTabHover, CssPropKey::Color),
-                                        blockColor(ElementKey::WorkspaceTabHover, CssPropKey::Background) };
-        m_theme.workspaceTabActive  = { blockColor(ElementKey::WorkspaceTabActive, CssPropKey::Color),
-                                        blockColor(ElementKey::WorkspaceTabActive, CssPropKey::Background) };
-        m_theme.tabClose            = { blockColor(ElementKey::WorkspaceTabClose, CssPropKey::Color),
-                                        blockColor(ElementKey::WorkspaceTabClose, CssPropKey::Background) };
-        m_theme.tabCloseHover       = { blockColor(ElementKey::WorkspaceTabCloseHover, CssPropKey::Color),
-                                        blockColor(ElementKey::WorkspaceTabCloseHover, CssPropKey::Background) };
-        m_theme.dialog              = { blockColor(ElementKey::Dialog, CssPropKey::Color),
-                                        blockColor(ElementKey::Dialog, CssPropKey::Background) };
-        const std::string dialogKey = elementKeyName(ElementKey::Dialog);
-        if (j.contains(dialogKey) && j[dialogKey].is_object()) {
-            const auto &      dlgTheme       = j[dialogKey];
-            const std::string lineHeightProp = cssPropKeyName(CssPropKey::LineHeight);
-            if (dlgTheme.contains(lineHeightProp) && dlgTheme[lineHeightProp].is_string()) {
-                m_theme.dialogLineHeight = Ui::Convert::parseCssNumber(dlgTheme[lineHeightProp].get<std::string>());
-            }
+        m_theme.topMenuButton         = m_theme.topMenu;
+        m_theme.topMenuButtonHover    = { blockColor(ElementKey::TopMenuButtonLabelHover, CssPropKey::Color),
+                                          blockColor(ElementKey::TopMenuButtonLabelHover, CssPropKey::Background) };
+        m_theme.topMenuButtonActive   = { blockColor(ElementKey::TopMenuButtonLabelActive, CssPropKey::Color),
+                                          blockColor(ElementKey::TopMenuButtonLabelActive, CssPropKey::Background) };
+        m_theme.menuItem              = { blockColor(ElementKey::TopMenuItem, CssPropKey::Color),
+                                          blockColor(ElementKey::TopMenuItem, CssPropKey::Background) };
+        m_theme.menuItemHover         = { blockColor(ElementKey::TopMenuItemHover, CssPropKey::Color),
+                                          blockColor(ElementKey::TopMenuItemHover, CssPropKey::Background) };
+        m_theme.menuItemActive        = { blockColor(ElementKey::TopMenuItemActive, CssPropKey::Color),
+                                          blockColor(ElementKey::TopMenuItemActive, CssPropKey::Background) };
+        m_theme.button                = { blockColor(ElementKey::Button, CssPropKey::Color),
+                                          blockColor(ElementKey::Button, CssPropKey::Background) };
+        m_theme.workspaceTab          = { blockColor(ElementKey::WorkspaceTab, CssPropKey::Color),
+                                          blockColor(ElementKey::WorkspaceTab, CssPropKey::Background) };
+        m_theme.workspaceTabHover     = { blockColor(ElementKey::WorkspaceTabHover, CssPropKey::Color),
+                                          blockColor(ElementKey::WorkspaceTabHover, CssPropKey::Background) };
+        m_theme.workspaceTabActive    = { blockColor(ElementKey::WorkspaceTabActive, CssPropKey::Color),
+                                          blockColor(ElementKey::WorkspaceTabActive, CssPropKey::Background) };
+        m_theme.tabClose              = { blockColor(ElementKey::WorkspaceTabClose, CssPropKey::Color),
+                                          blockColor(ElementKey::WorkspaceTabClose, CssPropKey::Background) };
+        m_theme.tabCloseHover         = { blockColor(ElementKey::WorkspaceTabCloseHover, CssPropKey::Color),
+                                          blockColor(ElementKey::WorkspaceTabCloseHover, CssPropKey::Background) };
+        m_theme.dialog                = { blockColor(ElementKey::Dialog, CssPropKey::Color),
+                                          blockColor(ElementKey::Dialog, CssPropKey::Background) };
+        const auto &      dialogTheme = Common::Json::object(j, elementKeyName(ElementKey::Dialog));
+        const std::string lineHeight  = Common::Json::string(dialogTheme, cssPropKeyName(CssPropKey::LineHeight));
+        // Only override when the theme actually states one: parseCssNumber("")
+        // is 0, which would collapse every dialog line.
+        if (!lineHeight.empty()) {
+            m_theme.dialogLineHeight = Ui::Convert::parseCssNumber(lineHeight);
         }
         m_theme.dialogTitleColor          = blockColor(ElementKey::DialogTitle, CssPropKey::Color);
         m_theme.dialogLinkColor           = blockColor(ElementKey::DialogLink, CssPropKey::Color);
@@ -428,22 +417,23 @@ public:
             f.family = familyFallback;
             f.size   = sizeFallback;
             f.weight = weightFallback;
-            if (j.contains(block) && j[block].is_object()) {
-                const auto &      obj        = j[block];
-                const std::string familyProp = cssPropKeyName(CssPropKey::FontFamily);
-                const std::string sizeProp   = cssPropKeyName(CssPropKey::FontSize);
-                const std::string weightProp = cssPropKeyName(CssPropKey::FontWeight);
-                if (obj.contains(familyProp) && obj[familyProp].is_string()) {
-                    f.family = resolveVar(
-                    Common::Sanitize::string(obj[familyProp].get<std::string>(), "theme.font-family"));
-                }
-                if (obj.contains(sizeProp) && obj[sizeProp].is_string()) {
-                    f.size = Ui::Convert::parseCssInt(obj[sizeProp].get<std::string>());
-                }
-                if (obj.contains(weightProp) && obj[weightProp].is_string()) {
-                    const std::string w = obj[weightProp].get<std::string>();
-                    f.weight = (w == "bold") ? Ui::Res::Type::FontWeight::Bold : Ui::Res::Type::FontWeight::Regular;
-                }
+            // Each field keeps its fallback unless the theme states one: an empty
+            // family would erase the font, and parseCssInt("") is 0.
+            const auto & obj = Common::Json::object(j, block);
+
+            const std::string family = Common::Json::string(obj, cssPropKeyName(CssPropKey::FontFamily));
+            if (!family.empty()) {
+                f.family = resolveVar(Common::Sanitize::string(family, "theme.font-family"));
+            }
+
+            const std::string size = Common::Json::string(obj, cssPropKeyName(CssPropKey::FontSize));
+            if (!size.empty()) {
+                f.size = Ui::Convert::parseCssInt(size);
+            }
+
+            const std::string weight = Common::Json::string(obj, cssPropKeyName(CssPropKey::FontWeight));
+            if (!weight.empty()) {
+                f.weight = (weight == "bold") ? Ui::Res::Type::FontWeight::Bold : Ui::Res::Type::FontWeight::Regular;
             }
             return f;
         };

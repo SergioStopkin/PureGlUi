@@ -39,7 +39,7 @@ namespace Ui::Action {
 // is the Registry this seeds (and which the host extends with domain actions),
 // so a second hash map here would just duplicate it. Templated on the host so
 // Ui::Action never depends on the concrete shell type.
-template <class Host>
+template <typename Host>
 void registerActions(Host & host)
 {
     using Fn           = void (*)(Host &, const std::string &);
