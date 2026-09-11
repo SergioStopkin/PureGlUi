@@ -199,6 +199,7 @@ private:
             setMouseXY(event, nsEvent);
             event.mouse.button     = MouseButton::Left;
             event.mouse.clickCount = static_cast<int>([nsEvent clickCount]);
+            event.mouse.modifiers  = convertNSModifiers([nsEvent modifierFlags]);
             break;
 
         case NSEventTypeLeftMouseUp:
@@ -212,6 +213,7 @@ private:
             setMouseXY(event, nsEvent);
             event.mouse.button     = MouseButton::Right;
             event.mouse.clickCount = static_cast<int>([nsEvent clickCount]);
+            event.mouse.modifiers  = convertNSModifiers([nsEvent modifierFlags]);
             break;
 
         case NSEventTypeRightMouseUp:
@@ -220,14 +222,23 @@ private:
             event.mouse.button = MouseButton::Right;
             break;
 
+        // "Other" is every button past right; only button 2 is middle, and the rest
+        // (back/forward) have no MouseButton, so they stay EventType::None
         case NSEventTypeOtherMouseDown:
+            if ([nsEvent buttonNumber] != 2) {
+                break;
+            }
             event.type = EventType::MouseButtonPress;
             setMouseXY(event, nsEvent);
             event.mouse.button     = MouseButton::Middle;
             event.mouse.clickCount = static_cast<int>([nsEvent clickCount]);
+            event.mouse.modifiers  = convertNSModifiers([nsEvent modifierFlags]);
             break;
 
         case NSEventTypeOtherMouseUp:
+            if ([nsEvent buttonNumber] != 2) {
+                break;
+            }
             event.type = EventType::MouseButtonRelease;
             setMouseXY(event, nsEvent);
             event.mouse.button = MouseButton::Middle;

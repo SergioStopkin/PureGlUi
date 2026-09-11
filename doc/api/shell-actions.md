@@ -123,7 +123,14 @@ void setOnTabActivated(std::function<void(id_t)> fn);
 void setOnTabClosed(std::function<void(id_t)> fn);
 void setOnKeyPress(Ui::predicate_fn_t fn);         // consume domain shortcuts before intent mapping (return true = handled)
 void setFileHandler(const std::string & extension, Ui::action_fn_t handler); // per-extension loader (lowercase, no dot)
+void setOnDockRowValue(std::function<void(id_t rowId, fpx_t ratio)> fn);     // a dock slider row moved
 ```
+
+`setOnDockRowValue` forwards to `WindowManager::setOnRowValue`; it is here
+because it is the seam a host actually calls. A slider's value arrives as a hook
+rather than an intent because a drag is a continuous stream, not a discrete
+request - see [windowing.md](windowing.md) for the dock-content API it pairs
+with (`setDockRows` / `resetDockScroll`).
 
 Related file-handler helper:
 

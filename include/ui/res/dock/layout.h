@@ -35,6 +35,11 @@ struct alignas(64) dock_layout_t final {
     fpx_t       gripRadius {};     // grip corner radius on the viewport-facing edge (0 = sharp)
     fpx_t       clickThreshold {}; // drag distance under this counts as a click, not a resize
     std::string gripIcon;          // SVG filename rendered on every grip strip (e.g. "22EE.svg")
+    // Row metrics as a fraction of row height, so the tree stays proportional
+    // at any DPI or font size rather than needing a px value per scale
+    fpx_t rowIndentRatio {};   // indent added per tree depth level
+    fpx_t rowExpanderRatio {}; // side of the square expander box
+    fpx_t rowKeyRatio {};      // share of the padded row the key column takes, value gets the rest
 
     bool operator==(const dock_layout_t &) const = default;
 };

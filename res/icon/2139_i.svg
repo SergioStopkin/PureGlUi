@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="16.915247mm"
+   height="16.915247mm"
+   viewBox="0 0 16.915247 16.915247"
+   version="1.1"
+   id="svg314"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   sodipodi:docname="2139_i.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview316"
+     pagecolor="#ffffff"
+     bordercolor="#999999"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     showgrid="false"
+     inkscape:zoom="7.7740024"
+     inkscape:cx="36.532019"
+     inkscape:cy="31.965516"
+     inkscape:window-width="1280"
+     inkscape:window-height="800"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs311" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-96.625085,-140.67169)">
+    <path
+       id="path17843"
+       style="color:#000000;fill:#000000;stroke-linejoin:round;-inkscape-stroke:none"
+       d="m 35.999354,5.1000179 c -17.031198,0 -30.8993507,13.8681531 -30.8993507,30.8993511 0,17.031198 13.8681527,30.901239 30.8993507,30.901239 17.031198,0 30.901239,-13.870041 30.901239,-30.901239 0,-17.031198 -13.870041,-30.8993511 -30.901239,-30.8993511 z M 35.600982,18.255748 c 0.04124,-0.001 0.08312,0 0.124609,0 2.658751,0 4.808789,2.153619 4.808789,4.808789 0,2.65393 -2.148832,4.80879 -4.808789,4.80879 -2.653928,0 -4.808789,-2.153655 -4.808789,-4.80879 0,-2.612496 2.086351,-4.742897 4.68418,-4.808789 z m 0.411588,12.904623 a 4.8104198,4.8104198 0 0 1 4.80879,4.810677 v 14.990887 a 4.8104198,4.8104198 0 0 1 -4.80879,4.818229 4.8104198,4.8104198 0 0 1 -4.810677,-4.818229 V 35.971048 a 4.8104198,4.8104198 0 0 1 4.810677,-4.810677 z"
+       transform="matrix(0.27370688,0,0,0.27370688,95.229179,139.27578)" />
+  </g>
+</svg>

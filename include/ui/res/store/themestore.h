@@ -31,6 +31,7 @@
 #include "ui/res/type/colorpair.h"
 #include "ui/res/type/font.h"
 #include "ui/res/type/theme.h"
+#include "ui/type.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -54,8 +55,25 @@ class ThemeStore final {
     // Theme key -> {dark variant, light variant}; each variant = {cl-main, bg-main}.
     std::unordered_map<std::string, std::pair<Ui::Res::Type::color_pair_t, Ui::Res::Type::color_pair_t>>
     m_themePreviewColors;
+    // Keys of the theme file's "host" block: {key, what to do with its value}
+    std::vector<std::pair<std::string, Ui::action_fn_t>> m_hostParams;
+    // What was last handed to each of them. Opaque strings the framework cannot
+    // read, but comparing them is what lets a host-only edit report Changed.
+    std::unordered_map<std::string, std::string> m_hostValues;
 
 public:
+    // Let a host pull its own values out of every theme file. The framework hands
+    // over the raw string; parsing it and knowing what it means stay with the
+    // host - the same split registerPersistedJson makes for a host's own session
+    // section. Keys live in the theme's "host" block, never in :root, so the two
+    // owners cannot collide.
+    //
+    // Register before the first theme load, the way domain actions are.
+    void registerThemeParam(std::string key, Ui::action_fn_t apply)
+    {
+        m_hostParams.emplace_back(std::move(key), std::move(apply));
+    }
+
     [[nodiscard]] const Ui::Res::Type::theme_t & theme() const { return m_theme; }
     [[nodiscard]] const std::string &            themeName() const { return m_themeName; }
     [[nodiscard]] const std::string &            themeMode() const { return m_themeMode; }
@@ -262,10 +280,40 @@ public:
             m_theme.colorModel    = Ui::Color::fromHex(getVar(themeKeyName(ThemeKey::ClModel), "#ff9900"));
             m_theme.colorError    = Ui::Color::fromHex(getVar(themeKeyName(ThemeKey::ClError), "#ff00ff"));
             m_theme.colorLoad     = Ui::Color::fromHex(getVar(themeKeyName(ThemeKey::ClLoad), "#aaff00"));
-            m_theme.colorInfo     = Ui::Color::fromHex(getVar(themeKeyName(ThemeKey::ClInfo), "#336699"));
-            m_theme.colorWarn     = Ui::Color::fromHex(getVar(themeKeyName(ThemeKey::ClWarn), "#ff9933"));
+            m_theme.colorInfo     = Ui::Color::fromHex(getVar(themeKeyName(ThemeKey::ClInfo), "#6699cc"));
+            m_theme.colorWarn     = Ui::Color::fromHex(getVar(themeKeyName(ThemeKey::ClWarn), "#cc9900"));
             fontSans              = getVar(themeKeyName(ThemeKey::FontSans), "");
             fontMono              = getVar(themeKeyName(ThemeKey::FontMono), "");
+        }
+
+        // The host's own block, read in this same pass - so by the time the caller
+        // applies the theme diff the host's values are already current, and no
+        // second refresh exists to fall out of step with this one. var() is
+        // resolved for it too, so a host value can point at the palette.
+        //
+        // Diffed alongside theme_t, and counted into the same Changed: these keys
+        // are not theme_t fields, so without this an edit to the host block alone
+        // reaches the host's settings and then stops - nothing downstream is ever
+        // told to re-read them, and a reload leaves what is on screen stale.
+        bool isHostChanged = false;
+        if (!m_hostParams.empty()) {
+            const auto & hostBlock = Common::Json::object(j, elementKeyName(ElementKey::Host));
+            for (const auto & [key, apply] : m_hostParams) {
+                const std::string raw = Common::Json::string(hostBlock, key, "");
+                if (raw.empty()) {
+                    continue;
+                }
+                const std::string value = resolveVarValue(raw);
+                const auto        it    = m_hostValues.find(key);
+                if (it == m_hostValues.end()) {
+                    m_hostValues.emplace(key, value);
+                    isHostChanged = true;
+                } else if (it->second != value) {
+                    it->second    = value;
+                    isHostChanged = true;
+                }
+                apply(value);
+            }
         }
 
         // Resolve var(--X) references in a string value
@@ -375,32 +423,40 @@ public:
         if (!lineHeight.empty()) {
             m_theme.dialogLineHeight = Ui::Convert::parseCssNumber(lineHeight);
         }
-        m_theme.dialogTitleColor          = blockColor(ElementKey::DialogTitle, CssPropKey::Color);
-        m_theme.dialogLinkColor           = blockColor(ElementKey::DialogLink, CssPropKey::Color);
-        m_theme.dialogLinkVisited         = blockColor(ElementKey::DialogLinkVisited, CssPropKey::Color);
-        m_theme.dialogButton              = { blockColor(ElementKey::DialogButton, CssPropKey::Color),
-                                              blockColor(ElementKey::DialogButton, CssPropKey::Background) };
-        m_theme.dialogButtonHover         = { blockColor(ElementKey::DialogButtonHover, CssPropKey::Color),
-                                              blockColor(ElementKey::DialogButtonHover, CssPropKey::Background) };
-        m_theme.dialogButtonActive        = { blockColor(ElementKey::DialogButtonActive, CssPropKey::Color),
-                                              blockColor(ElementKey::DialogButtonActive, CssPropKey::Background) };
-        m_theme.dialogButtonPrimary       = { blockColor(ElementKey::DialogButtonPrimary, CssPropKey::Color),
-                                              blockColor(ElementKey::DialogButtonPrimary, CssPropKey::Background) };
-        m_theme.dialogScrollbarTrack      = blockColor(ElementKey::DialogScrollbar, CssPropKey::Background);
-        m_theme.dialogScrollbarThumb      = blockColor(ElementKey::DialogScrollbarThumb, CssPropKey::Background);
-        m_theme.dialogScrollbarThumbHover = blockColor(ElementKey::DialogScrollbarThumbHover, CssPropKey::Background);
-        m_theme.dialogClose               = { blockColor(ElementKey::DialogClose, CssPropKey::Color),
-                                              blockColor(ElementKey::DialogClose, CssPropKey::Background) };
-        m_theme.dialogCloseHover          = { blockColor(ElementKey::DialogCloseHover, CssPropKey::Color),
-                                              blockColor(ElementKey::DialogCloseHover, CssPropKey::Background) };
-        m_theme.dialogCloseActive         = { blockColor(ElementKey::DialogCloseActive, CssPropKey::Color),
-                                              blockColor(ElementKey::DialogCloseActive, CssPropKey::Background) };
-        m_theme.tabArrow                  = { blockColor(ElementKey::WorkspaceTabArrow, CssPropKey::Color),
-                                              blockColor(ElementKey::WorkspaceTabArrow, CssPropKey::Background) };
-        m_theme.statusBar                 = { blockColor(ElementKey::StatusBar, CssPropKey::Color),
-                                              blockColor(ElementKey::StatusBar, CssPropKey::Background) };
-        m_theme.statusBarActive           = { blockColor(ElementKey::StatusBarActive, CssPropKey::Color),
-                                              blockColor(ElementKey::StatusBarActive, CssPropKey::Background) };
+        // Same guard as line-height: an absent key parses to 0, which would
+        // make an armed toolbar button indistinguishable from an idle one
+        const auto &      buttonTheme    = Common::Json::object(j, elementKeyName(ElementKey::Button));
+        const std::string activeContrast = Common::Json::string(buttonTheme,
+                                                                cssPropKeyName(CssPropKey::ActiveContrast));
+        if (!activeContrast.empty()) {
+            m_theme.buttonActiveContrast = Ui::Convert::parseCssNumber(activeContrast);
+        }
+        m_theme.dialogTitleColor    = blockColor(ElementKey::DialogTitle, CssPropKey::Color);
+        m_theme.dialogLinkColor     = blockColor(ElementKey::DialogLink, CssPropKey::Color);
+        m_theme.dialogLinkVisited   = blockColor(ElementKey::DialogLinkVisited, CssPropKey::Color);
+        m_theme.dialogButton        = { blockColor(ElementKey::DialogButton, CssPropKey::Color),
+                                        blockColor(ElementKey::DialogButton, CssPropKey::Background) };
+        m_theme.dialogButtonHover   = { blockColor(ElementKey::DialogButtonHover, CssPropKey::Color),
+                                        blockColor(ElementKey::DialogButtonHover, CssPropKey::Background) };
+        m_theme.dialogButtonActive  = { blockColor(ElementKey::DialogButtonActive, CssPropKey::Color),
+                                        blockColor(ElementKey::DialogButtonActive, CssPropKey::Background) };
+        m_theme.dialogButtonPrimary = { blockColor(ElementKey::DialogButtonPrimary, CssPropKey::Color),
+                                        blockColor(ElementKey::DialogButtonPrimary, CssPropKey::Background) };
+        m_theme.scrollbarTrack      = blockColor(ElementKey::Scrollbar, CssPropKey::Background);
+        m_theme.scrollbarThumb      = blockColor(ElementKey::ScrollbarThumb, CssPropKey::Background);
+        m_theme.scrollbarThumbHover = blockColor(ElementKey::ScrollbarThumbHover, CssPropKey::Background);
+        m_theme.dialogClose         = { blockColor(ElementKey::DialogClose, CssPropKey::Color),
+                                        blockColor(ElementKey::DialogClose, CssPropKey::Background) };
+        m_theme.dialogCloseHover    = { blockColor(ElementKey::DialogCloseHover, CssPropKey::Color),
+                                        blockColor(ElementKey::DialogCloseHover, CssPropKey::Background) };
+        m_theme.dialogCloseActive   = { blockColor(ElementKey::DialogCloseActive, CssPropKey::Color),
+                                        blockColor(ElementKey::DialogCloseActive, CssPropKey::Background) };
+        m_theme.tabArrow            = { blockColor(ElementKey::WorkspaceTabArrow, CssPropKey::Color),
+                                        blockColor(ElementKey::WorkspaceTabArrow, CssPropKey::Background) };
+        m_theme.statusBar           = { blockColor(ElementKey::StatusBar, CssPropKey::Color),
+                                        blockColor(ElementKey::StatusBar, CssPropKey::Background) };
+        m_theme.statusBarActive     = { blockColor(ElementKey::StatusBarActive, CssPropKey::Color),
+                                        blockColor(ElementKey::StatusBarActive, CssPropKey::Background) };
 
         // Standalone colors
         m_theme.menuItemDisabledColor = blockColor(ElementKey::TopMenuItemDisabled, CssPropKey::Color);
@@ -477,21 +533,27 @@ public:
 
         // Dock primitive. One theme shared by all dock instances; grip is
         // the inkscape-style 3-dot resize handle on the viewport-facing edge.
-        m_theme.dock.background = { blockColor(ElementKey::Dock, CssPropKey::Color),
-                                    blockColor(ElementKey::Dock, CssPropKey::Background) };
-        m_theme.dock.grip       = { blockColor(ElementKey::DockGrip, CssPropKey::Color),
-                                    blockColor(ElementKey::DockGrip, CssPropKey::Background) };
-        m_theme.dock.gripHover  = { blockColor(ElementKey::DockGripHover, CssPropKey::Color),
-                                    blockColor(ElementKey::DockGripHover, CssPropKey::Background) };
-        m_theme.dock.gripActive = { blockColor(ElementKey::DockGripActive, CssPropKey::Color),
-                                    blockColor(ElementKey::DockGripActive, CssPropKey::Background) };
-        m_theme.dock.separator  = blockColor(ElementKey::DockSeparator, CssPropKey::Background);
+        m_theme.dock.background       = { blockColor(ElementKey::Dock, CssPropKey::Color),
+                                          blockColor(ElementKey::Dock, CssPropKey::Background) };
+        m_theme.dock.grip             = { blockColor(ElementKey::DockGrip, CssPropKey::Color),
+                                          blockColor(ElementKey::DockGrip, CssPropKey::Background) };
+        m_theme.dock.gripHover        = { blockColor(ElementKey::DockGripHover, CssPropKey::Color),
+                                          blockColor(ElementKey::DockGripHover, CssPropKey::Background) };
+        m_theme.dock.gripActive       = { blockColor(ElementKey::DockGripActive, CssPropKey::Color),
+                                          blockColor(ElementKey::DockGripActive, CssPropKey::Background) };
+        m_theme.dock.sliderTrack      = { blockColor(ElementKey::DockSliderTrack, CssPropKey::Color),
+                                          blockColor(ElementKey::DockSliderTrack, CssPropKey::Background) };
+        m_theme.dock.sliderThumb      = { blockColor(ElementKey::DockSliderThumb, CssPropKey::Color),
+                                          blockColor(ElementKey::DockSliderThumb, CssPropKey::Background) };
+        m_theme.dock.sliderThumbHover = { blockColor(ElementKey::DockSliderThumbHover, CssPropKey::Color),
+                                          blockColor(ElementKey::DockSliderThumbHover, CssPropKey::Background) };
+        m_theme.dock.separator        = blockColor(ElementKey::DockSeparator, CssPropKey::Background);
 
         std::cout << "[Theme] loaded: bg-main=" << m_theme.main.bg.toHex()
                   << ", bg-second=" << m_theme.second.bg.toHex() << ", ws-tab-bg=" << m_theme.workspaceTab.bg.toHex()
                   << ", ws-tab-fg=" << m_theme.workspaceTab.fg.toHex() << std::endl;
 
-        return m_theme == oldTheme ? Ui::Res::Type::Changed::None : Ui::Res::Type::Changed::Theme;
+        return (m_theme == oldTheme && !isHostChanged) ? Ui::Res::Type::Changed::None : Ui::Res::Type::Changed::Theme;
     }
 };
 

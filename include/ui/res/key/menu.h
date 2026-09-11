@@ -38,6 +38,7 @@ enum class MenuKey : unsigned char {
     Order,     // sort order among siblings
     Items,     // child item array
     Tooltip,   // button tooltip
+    Anchor,    // toolbar edge a button sits on ("left" / "right")
     Width,     // button / dialog width
     Height,    // button / dialog height
     Name,      // auto-submenu entry identity (res/submenu/<key>/*.json)
@@ -67,6 +68,7 @@ enum class MenuKey : unsigned char {
     case MenuKey::Order: return "order";
     case MenuKey::Items: return "items";
     case MenuKey::Tooltip: return "tooltip";
+    case MenuKey::Anchor: return "anchor";
     case MenuKey::Width: return "width";
     case MenuKey::Height: return "height";
     case MenuKey::Name: return "name";

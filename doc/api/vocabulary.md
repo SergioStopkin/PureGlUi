@@ -201,42 +201,64 @@ const float o = Ui::Convert::parseCssNumber("0.15");   // 0.15F
 const auto  r = Ui::Convert::parseCssBorderRadius("8 4"); // TL/BR=8, TR/BL=4
 ```
 
-## Ui::Registry<T>
+## Ui::Registry<Key, T>
 
 Header: `include/ui/registry.h`
 
 Ordered, id-keyed container: an `unordered_map<id_t, T>` for O(1) identity lookup plus a `vector<id_t>` holding visual/iteration order. The caller always supplies the id on add - the container never invents identity. "Active" state is intentionally NOT modelled here; it lives on the owner.
 
 ```cpp
-template <class T>
+template <typename Key, typename T>
 class Ui::Registry final {
 public:
     // read side
-    [[nodiscard]] const T * find(id_t id) const;                 // nullptr if absent
-    [[nodiscard]] bool contains(id_t id) const;
-    [[nodiscard]] const std::vector<id_t> & order() const;
+    [[nodiscard]] const T * find(const Key & key) const;         // nullptr if absent
+    [[nodiscard]] bool contains(const Key & key) const;
+    [[nodiscard]] const std::vector<Key> & order() const;
     [[nodiscard]] std::size_t size() const;
     [[nodiscard]] bool empty() const;
 
     // mutate side
-    void add(id_t id, T value);                                  // no-op if id exists
-    void insert(std::size_t index, id_t id, T value);            // clamps index
-    void remove(id_t id);
-    void move(id_t id, std::size_t index);                       // reorder; clamps index
-    [[nodiscard]] T * edit(id_t id);                             // mutable access, nullptr if absent
+    void add(const Key & key, T value);                          // no-op if key exists
+    void insert(std::size_t index, const Key & key, T value);    // clamps index
+    void remove(const Key & key);
+    void move(const Key & key, std::size_t index);               // reorder; clamps index
+    [[nodiscard]] T * edit(const Key & key);                     // mutable access, nullptr if absent
+    [[nodiscard]] T & findOrAdd(const Key & key);                // existing, or default-constructed at the end
 };
 ```
 
-`add`/`insert` are no-ops if the id already exists. `insert`/`move` clamp an out-of-range index to the end.
+The key is a template parameter, so a registry is not limited to `id_t`. `add`/`insert` are no-ops if the key already exists. `insert`/`move` clamp an out-of-range index to the end.
 
 ```cpp
-Ui::Registry<Ui::tab_t> tabs;
+Ui::Registry<Ui::id_t, Ui::tab_t> tabs;
 tabs.add(1, myTab);
 for (const Ui::id_t id : tabs.order()) {
     const Ui::tab_t * tab = tabs.find(id);
     // render tab...
 }
 ```
+
+## Ui::Index<Key, T>
+
+Header: `include/ui/index.h`
+
+Group-by: one key to MANY values, for the acceleration structures that would otherwise be a scan inside a loop. Built once from a flat collection, then read O(1) per key - a parent-to-children index over a tree being the case it exists for.
+
+```cpp
+template <typename Key, typename T>
+class Ui::Index final {
+public:
+    void add(const Key & key, T value);
+    [[nodiscard]] const std::vector<T> & group(const Key & key) const;  // empty group if absent, never null
+    [[nodiscard]] bool contains(const Key & key) const;
+    [[nodiscard]] std::size_t size() const;                             // distinct KEYS, not values
+    [[nodiscard]] bool empty() const;
+    [[nodiscard]] const std::vector<Key> & keys() const;                // first-seen order
+};
+```
+
+Composed over `Registry` rather than reimplementing map + order, so the two stay one storage strategy: `Registry` means "one value per key, in order", `Index` means "many values per key". Keeping them separate keeps `Registry`'s meaning intact. Insertion order is preserved within a group, which is what a tree walk needs - children come out in the order the source listed them.
 
 ## Ui::ElementId
 
@@ -246,13 +268,18 @@ Element-id range starts the resource loader assigns from at load time. Each auth
 
 ```cpp
 enum class Ui::ElementId : id_t {
-    MenuBase   = 1000, // 1000-1999: menu buttons
-    ButtonBase = 2000, // 2000-2999: toolbar buttons
-    ItemBase   = 5000, // 5000-5999: menu items
+    MenuBase       = 1000,    // 1000-1999: menu buttons
+    ButtonBase     = 2000,    // 2000-2999: toolbar buttons
+    ItemBase       = 5000,    // 5000-5999: menu items
+    DockGripBase   = 90'000,  // + dock id
+    DockScrollBase = 95'000,  // + dock id
+    DockRowBase    = 100'000, // + HOST row id, open-ended
 };
 ```
 
-The `9997-9999` range (tab arrows, status text) is reserved for special elements as literals, not enumerated here.
+`9997-9999` are the framework's single-element ids, declared beside the enum: `TAB_ARROW_LEFT = 9997`, `TAB_ARROW_RIGHT = 9998`, `STATUS_TEXT_ID = 9999`.
+
+`DockRowBase` is open-ended and sits far above the rest because dock content is host-projected: the host supplies the row id and the framework only offsets it, applying the base when a row becomes an element and removing it when the intent is built, so a host id round-trips unchanged. The ranges never overlap because the id space is global: one id names one element across the whole system.
 
 ## Ui::tab_t
 
@@ -347,8 +374,14 @@ enum class Ui::IntentKind : uint8_t {
     SwitchTab,   // activate workspace/tab id
     CloseTab,    // close workspace/tab id
     CopyText,    // copy arg to the clipboard (status-bar text)
+    ActivateRow, // dock row id selected
+    ToggleRow,   // dock row id expand/collapse requested
 };
 ```
+
+Dock rows are host-projected, so both row kinds are host work: the row tree and its expanded flags live in the host's model, and it re-projects via `WindowManager::setDockRows` in response. `id` is the host's own row id, opaque to the framework - which is why it must be unique across docks.
+
+Note what is NOT here: a dock slider's value. A drag is a continuous stream rather than a discrete request, so it reaches the host through `WindowManager::setOnRowValue` instead - see [windowing.md](windowing.md).
 
 ## Ui::result_t
 

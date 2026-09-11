@@ -99,7 +99,7 @@ public:
         m_rounded.cleanup();
     }
 
-    bool onScroll(int /*x*/, int /*y*/, fpx_t /*deltaY*/) override { return false; }
+    Ui::Render::element_event_t onScroll(int /*x*/, int /*y*/, fpx_t /*deltaY*/) override { return {}; }
 
 protected:
     // Begin a render frame: clear, viewport, blend, corner underlay.

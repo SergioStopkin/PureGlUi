@@ -32,6 +32,7 @@
 #include "ui/res/store/menudisable.h"
 #include "ui/res/store/submenuentry.h"
 #include "ui/res/store/themestore.h"
+#include "ui/res/type/bound.h"
 #include "ui/res/type/button.h"
 #include "ui/res/type/changed.h"
 #include "ui/res/type/menu.h"
@@ -66,8 +67,11 @@ class MenuStore final : private Common::NonCopyable {
     const Store::LayoutStore & m_layoutStore;
     const Ui::Res::ResPath &   m_resPath;
 
-    std::vector<Ui::Res::Type::button_t>  m_buttons;
-    std::vector<Ui::Res::Type::menu_t>    m_menus;
+    std::vector<Ui::Res::Type::button_t> m_buttons;
+    std::vector<Ui::Res::Type::menu_t>   m_menus;
+    // Widest and tallest dialog any menu item declares. A dialog cannot reflow,
+    // so this is what the window has to stay big enough to show.
+    Ui::Res::Type::bound_t                m_maxDialog {};
     std::unordered_map<id_t, std::string> m_actionMap; // element id -> actionKey (menus + items + buttons)
     // Node lookup by id and by hierarchical key, both rebuilt by buildIndexes.
     // The chrome resolves a node per element per render, so these have to be hash
@@ -120,17 +124,39 @@ public:
     [[nodiscard]] const std::vector<Ui::Res::Type::button_t> & buttons() const { return m_buttons; }
     [[nodiscard]] const std::vector<Ui::Res::Type::menu_t> &   menus() const { return m_menus; }
 
+    // Size (w/h, CSS) of the largest dialog the menus declare; x/y unused
+    [[nodiscard]] const Ui::Res::Type::bound_t & maxDialog() const { return m_maxDialog; }
+
     [[nodiscard]] std::string actionKeyFor(id_t elementId) const { return lookup(m_actionMap, elementId); }
 
-    // True when this item is the active choice of its stateful action - i.e. its
-    // label (the value) equals the action's current value. Computed live.
-    [[nodiscard]] bool isActiveItem(const Ui::Res::Type::menu_t & item) const
+    // True when `label` is the current value of `actionKey`'s stateful action.
+    // Computed live - there is no cached checked flag to keep in sync.
+    [[nodiscard]] bool isActiveValue(const std::string & actionKey, const std::string & label) const
     {
-        if (item.label.empty()) {
+        if (label.empty()) {
             return false;
         }
-        auto it = m_actionState.find(item.actionKey);
-        return it != m_actionState.end() && it->second() == item.label;
+        auto it = m_actionState.find(actionKey);
+        return it != m_actionState.end() && it->second() == label;
+    }
+
+    // A menu item and a toolbar button both carry the value in their label, so
+    // both resolve their armed state the same way
+    [[nodiscard]] bool isActiveItem(const Ui::Res::Type::menu_t & item) const
+    {
+        return isActiveValue(item.actionKey, item.label);
+    }
+
+    // By element id, since the render path has the id and not the button, and
+    // copying a button_t per frame to answer a bool is not worth it
+    [[nodiscard]] bool isActiveButton(id_t elementId) const
+    {
+        for (const auto & button : m_buttons) {
+            if (button.id == elementId) {
+                return isActiveValue(button.actionKey, button.label);
+            }
+        }
+        return false;
     }
 
     // Register a host-provided value getter for a stateful (radio) action's menu
@@ -190,8 +216,10 @@ public:
     // Recursive by design: builds the nested menu_t tree bottom-up. An iterative
     // builder would hold references into item vectors that reallocate as siblings
     // append (dangling refs). Depth is capped by --menu-max-depth at each descent.
+    // Not const: it also records the largest dialog it parses, the floor the
+    // window size has to clear
     // NOLINTNEXTLINE(misc-no-recursion)
-    Ui::Res::Type::menu_t parseMenuItem(const nlohmann::json & itemJson, int depth) const
+    Ui::Res::Type::menu_t parseMenuItem(const nlohmann::json & itemJson, int depth)
     {
         using Ui::Res::Key::MenuKey;
         Ui::Res::Type::menu_t item;
@@ -253,16 +281,33 @@ public:
             item.dialog.content = Common::Sanitize::string(
             Common::Json::string(dialogJson, menuKeyName(MenuKey::Content)),
             "dialog.content");
-            item.dialog.link  = Common::Sanitize::string(Common::Json::string(dialogJson, menuKeyName(MenuKey::Link)),
+            item.dialog.link = Common::Sanitize::string(Common::Json::string(dialogJson, menuKeyName(MenuKey::Link)),
                                                         "dialog.link");
-            item.dialog.icon  = Common::Sanitize::filePath(Common::Json::string(dialogJson, menuKeyName(MenuKey::Icon)),
+            // Role name or file, same as a menu item's icon below - a dialog has
+            // no place to honour, so only the file comes back
+            item.dialog.icon = Common::Sanitize::filePath(Common::Json::string(dialogJson, menuKeyName(MenuKey::Icon)),
                                                           "dialog.icon");
+            if (!item.dialog.icon.empty() && !item.dialog.icon.ends_with(".svg")) {
+                item.dialog.icon = m_iconStore.iconDefault(item.dialog.icon).icon;
+            }
             item.dialog.file  = Common::Sanitize::filePath(Common::Json::string(dialogJson, menuKeyName(MenuKey::File)),
                                                           "dialog.file");
             item.dialog.width = Ui::Convert::parseCssNumber(
             Common::Json::string(dialogJson, menuKeyName(MenuKey::Width)));
             item.dialog.height = Ui::Convert::parseCssNumber(
             Common::Json::string(dialogJson, menuKeyName(MenuKey::Height)));
+
+            m_maxDialog.w = std::max(m_maxDialog.w, item.dialog.width);
+            m_maxDialog.h = std::max(m_maxDialog.h, item.dialog.height);
+        }
+
+        // An icon that is not a file is a role name from icon-defaults.json, so a
+        // menu can point at the role instead of repeating a filename per item.
+        // Unknown role leaves it empty, which the fallback below then fills.
+        if (!item.icon.empty() && !item.icon.ends_with(".svg")) {
+            const auto def = m_iconStore.iconDefault(item.icon);
+            item.icon      = def.icon;
+            item.iconPlace = def.place;
         }
 
         // No explicit icon? Fall back to a role default from icon-defaults.json.
@@ -295,6 +340,7 @@ public:
 
         auto oldMenus = m_menus;
         m_menus.clear();
+        m_maxDialog = {}; // recomputed by the parse below, so a removed dialog shrinks it back
         for (const auto & entry : std::filesystem::directory_iterator(dir)) {
             if (entry.path().extension() == ".json") {
                 nlohmann::json j;
@@ -442,11 +488,13 @@ public:
                                                       "button.icon");
                 btn.tooltip   = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Tooltip)),
                                                        "button.tooltip");
-                btn.width     = Common::Json::number(j, menuKeyName(MenuKey::Width), fpx_t {});
-                btn.height    = Common::Json::number(j, menuKeyName(MenuKey::Height), fpx_t {});
-                btn.order     = Common::Json::number(j, menuKeyName(MenuKey::Order), int16_t {});
-                btn.enabled   = Common::Json::boolean(j, menuKeyName(MenuKey::Enabled), true);
-                btn.visible   = Common::Json::boolean(j, menuKeyName(MenuKey::Visible), true);
+                btn.anchor    = Ui::Res::Dock::dockAnchorFromName(
+                Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Anchor)), "button.anchor"));
+                btn.width   = Common::Json::number(j, menuKeyName(MenuKey::Width), fpx_t {});
+                btn.height  = Common::Json::number(j, menuKeyName(MenuKey::Height), fpx_t {});
+                btn.order   = Common::Json::number(j, menuKeyName(MenuKey::Order), int16_t {});
+                btn.enabled = Common::Json::boolean(j, menuKeyName(MenuKey::Enabled), true);
+                btn.visible = Common::Json::boolean(j, menuKeyName(MenuKey::Visible), true);
                 m_buttons.emplace_back(btn);
             }
         }

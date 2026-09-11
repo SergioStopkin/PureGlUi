@@ -20,6 +20,7 @@
 #include "common/bit.h"
 #include "common/bytes.h"
 #include "common/cstr.h"
+#include "ui/config.h"
 #include "ui/gl/localglew.h"
 #include "ui/window/eglcontext.h"
 #include "ui/window/platform/x11include.h"
@@ -130,6 +131,14 @@ public:
             m_context->cleanup();
             m_context.reset();
         }
+        if (m_display != nullptr) {
+            for (::Cursor & cursor : m_cursors) {
+                if (cursor != 0U) {
+                    XFreeCursor(m_display, cursor);
+                    cursor = 0;
+                }
+            }
+        }
         if (m_xWindow != 0U) {
             XDestroyWindow(m_display, m_xWindow);
             m_xWindow = 0;
@@ -138,6 +147,39 @@ public:
             XCloseDisplay(m_display);
             m_display = nullptr;
         }
+    }
+
+    // WM_NORMAL_HINTS: the window manager enforces this, so the user cannot drag
+    // the window below the size the chrome and its dialogs need.
+    void setMinSize(fpx_t width, fpx_t height) override
+    {
+        if (m_display == nullptr || m_xWindow == 0U) {
+            return;
+        }
+        XSizeHints hints {};
+        hints.flags      = PMinSize;
+        hints.min_width  = roundToInt(width);
+        hints.min_height = roundToInt(height);
+        XSetWMNormalHints(m_display, m_xWindow, &hints);
+    }
+
+    // Cursors are created once per shape and cached: XCreateFontCursor round-
+    // trips to the server, and a pan or measure drag would otherwise do that
+    // on every motion event.
+    void setCursor(Ui::Window::PointerShape shape) override
+    {
+        if (m_display == nullptr || m_xWindow == 0U) {
+            return;
+        }
+
+        const auto slot = static_cast<std::size_t>(shape);
+        if (slot >= m_cursors.size()) {
+            return;
+        }
+        if (m_cursors.at(slot) == 0U) {
+            m_cursors.at(slot) = XCreateFontCursor(m_display, toFontCursor(shape));
+        }
+        XDefineCursor(m_display, m_xWindow, m_cursors.at(slot));
     }
 
     static int queryDpi(NativeDisplayHandle display)
@@ -434,6 +476,22 @@ protected:
     bool                          m_ownsDisplay = false;
 
 private:
+    // XC_* from <X11/cursorfont.h>. Separate from pointerShapeToThemeName: the
+    // core X11 API indexes the cursor font, it does not take theme names
+    [[nodiscard]] static unsigned int toFontCursor(Ui::Window::PointerShape shape)
+    {
+        switch (shape) {
+        case Ui::Window::PointerShape::Crosshair: return XC_crosshair;
+        case Ui::Window::PointerShape::ResizeH: return XC_sb_h_double_arrow;
+        case Ui::Window::PointerShape::Move: return XC_fleur;
+        case Ui::Window::PointerShape::Default: return XC_left_ptr;
+        }
+        return XC_left_ptr;
+    }
+
+    // One per PointerShape, created lazily, freed in destroy()
+    std::array<::Cursor, 4> m_cursors {};
+
     // -------- Helper structs --------
 
     struct alignas(64) X11VisualParams final {

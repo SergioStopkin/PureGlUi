@@ -22,6 +22,7 @@
 #include "ui/type.h"
 #include "ui/window/nativedisplayhandle.h"
 #include "ui/window/nativewindowhandle.h"
+#include "ui/window/pointershape.h"
 
 #include <string>
 
@@ -104,6 +105,16 @@ public:
 
     // Wire the render-request callback (the window layer points this at its render queue).
     virtual void setRenderRequest(Ui::task_fn_t fn) = 0;
+
+    // Pointer shape over this window. Optional: default no-op so a platform that
+    // sets the cursor elsewhere (Wayland does it on the pointer, per enter -
+    // see IEventOS::setCursor) and test stubs need not implement it.
+    virtual void setCursor(Ui::Window::PointerShape /*shape*/) { }
+
+    // Smallest size the window manager may resize this window to (physical px).
+    // Optional: default no-op for surfaces with no WM of their own (popups,
+    // content surfaces) and for test stubs.
+    virtual void setMinSize(fpx_t /*width*/, fpx_t /*height*/) { }
 };
 
 } // namespace Ui

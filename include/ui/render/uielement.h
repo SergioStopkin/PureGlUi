@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include "ui/render/eventkind.h"
+
 namespace Ui::Render {
 
 // Types of UI elements (used by renderers, windows, and app)
@@ -29,9 +31,52 @@ enum class UiElementType : unsigned char {
     Image,         // SVG icon image
     Tab,           // Workspace tab
     TabClose,      // Workspace tab close button (X)
-    TabArrow       // Workspace tab scroll arrow ('<' or '>')
+    TabArrow,      // Workspace tab scroll arrow ('<' or '>')
+    DockRow,       // One line of host-projected dock content
+    DockExpander,  // Expand/collapse box on a DockRow that has children
+    DockGrip,      // Resize handle on a dock's viewport-facing edge
+    DockSlider,    // Draggable track on a DockRow whose kind is Slider
+    DockScrollbar  // Scroll track + thumb, when a dock holds more rows than fit
 };
 
 inline int toInt(UiElementType type) { return static_cast<int>(type); }
+
+// What a fresh element of this type accepts. addElement() stamps it, and a
+// caller that needs something different overrides the mask on the returned
+// element - which is how an element stops being a switch case.
+//
+// These values reproduce the behaviour that was previously spread across
+// UiLayout::hitTest, UiRenderer::updateHover and PopupRenderer::onMousePress.
+// Text is the notable one: it is clickable (status bar copies on click) but
+// deliberately NOT hoverable, which used to be a `type != Text` test.
+[[nodiscard]] inline constexpr EventKind defaultAccepts(UiElementType type)
+{
+    const auto clickAndHover = static_cast<EventKind>(Common::Bit::Or(EventKind::LeftClick, EventKind::Hover));
+    switch (type) {
+    case UiElementType::MenuButton:
+    case UiElementType::ToolbarButton:
+    case UiElementType::MenuItem:
+    case UiElementType::Tab:
+    case UiElementType::TabClose:
+    case UiElementType::TabArrow:
+    case UiElementType::DockRow:
+    case UiElementType::DockExpander: return clickAndHover;
+    case UiElementType::Text: return EventKind::LeftClick;
+    // Drag only, all three, for their own reasons.
+    //
+    // Grip hover (the resize cursor) is still resolved geometrically by
+    // WindowManager, and two hover paths for one element would fight over the
+    // cursor. A press anywhere on a slider track jumps to that spot and keeps
+    // dragging, so the whole gesture is a drag with no separate click to bind.
+    // A scrollbar element spans the whole track: pressing the thumb drags it,
+    // pressing beside it pages, and only the first keeps the pointer.
+    case UiElementType::DockGrip:
+    case UiElementType::DockSlider:
+    case UiElementType::DockScrollbar: return ANY_DRAG;
+    case UiElementType::Separator:
+    case UiElementType::Image: return EventKind::None;
+    }
+    return EventKind::None;
+}
 
 } // namespace Ui::Render

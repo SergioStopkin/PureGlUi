@@ -34,6 +34,12 @@ enum class IntentKind : uint8_t {
     SwitchTab,   // activate workspace/tab id
     CloseTab,    // close workspace/tab id
     CopyText,    // copy arg to the clipboard (status-bar text)
+    // Dock rows are host-projected, so both of these are host work: the row
+    // tree and its expanded flags live in the host's model, and it re-projects
+    // via setDockRows in response. `id` is the host's own row id, opaque here -
+    // which is why it must be unique across docks.
+    ActivateRow, // row id selected
+    ToggleRow,   // row id expand/collapse requested
 };
 
 } // namespace Ui

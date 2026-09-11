@@ -33,8 +33,8 @@ namespace Ui {
 // stays active-agnostic. Scroll is the one piece of authoritative state owned
 // here - it is pure chrome concern with no domain meaning.
 class TabBar final {
-    Registry<tab_t> m_tabs;
-    std::size_t     m_scrollOffset = 0;
+    Registry<id_t, tab_t> m_tabs;
+    std::size_t           m_scrollOffset = 0;
 
 public:
     // --- read side (renderer) ---

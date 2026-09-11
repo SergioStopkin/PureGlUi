@@ -43,6 +43,8 @@ enum class ThemeKey : unsigned char {
     ClWarn,        // --cl-warn
     FontSans,      // --font-sans
     FontMono,      // --font-mono
+
+    Count, // enumerator total, never a key - what an exhaustive check counts against
 };
 
 [[nodiscard]] inline std::string themeKeyName(ThemeKey key)
@@ -63,6 +65,8 @@ enum class ThemeKey : unsigned char {
     case ThemeKey::ClWarn: return "--cl-warn";
     case ThemeKey::FontSans: return "--font-sans";
     case ThemeKey::FontMono: return "--font-mono";
+
+    case ThemeKey::Count: break;
     }
     return {};
 }

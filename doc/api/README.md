@@ -58,17 +58,34 @@ Input and execution are decoupled through a tagged intent vocabulary:
 This is why the framework is host-free: the same intent stream can be recorded,
 tested headlessly, or executed against a live shell.
 
+What feeds that flow is capability-driven, not type-driven: an element declares
+the events it accepts (`EventKind`, a mask), and a `(type, event)` table states
+what an accepted event raises (`binding_t`) and what must repaint afterwards
+(`RenderScope`). Adding an interactive element is declaring a mask and a table
+row rather than editing hit-test, hover and dispatch switches. Not everything
+becomes an intent: continuous streams (a slider drag) reach the host through a
+hook, and work the framework can finish itself (tab scroll, dock resize) sets
+`result.isDirty` instead. See [render.md](render.md).
+
 ## Host seams (all `std::function`, no host-services interface)
 
 - Content surfaces: `WindowManager::addContentSurface` / `removeContentSurface` /
   `setActiveContentSurface` / `setContentSurfaceReady` register host-owned child
   render surfaces (e.g. a 3D viewport). The framework drives
   `[main window] + content surfaces` blind through `IWindow` + `IRenderer` + `IEventApp`.
+- Dock content: `WindowManager::setDockRows(dockName, rows)` projects host rows
+  into a dock the way `TabBar` takes tabs - the framework renders and hit-tests
+  `Ui::Res::Dock::row_t` and never learns what a row means. Selection and
+  expand/collapse come back as `ActivateRow` / `ToggleRow` intents; a slider
+  row's value comes back through `setOnRowValue` instead, because a drag is a
+  stream rather than a request. Also `resetDockScroll(dockName)`.
 - Shell hooks: `setFrameTasks` / `setOnTick` (per-loop work),
   `setOnTabActivated` / `setOnTabClosed` / `setOnKeyPress` (domain reactions),
-  `setFileHandler(extension, fn)` (per-type file loaders for OpenFile).
+  `setFileHandler(extension, fn)` (per-type file loaders for OpenFile),
+  `setOnDockRowValue(fn)` (a dock slider moved).
 - WindowManager hooks: `setOnDialogClose` / `setOnElementHover` /
-  `setDoubleClickConfig` / `setDialogContentResolver`.
+  `setDoubleClickConfig` / `setDialogContentResolver` / `setOnRowValue`, plus
+  `setCursor(PointerShape)`.
 - Actions: `shell.actions().on(key, fn)` binds a domain action to an opaque
   `actionKey` that res JSON (menus/shortcuts) references.
 - Resources: `Ui::Res::ResManager` exposes persisted state via getters plus an
@@ -105,10 +122,10 @@ See [shell-actions.md](shell-actions.md) for the full host walkthrough.
 | Page | Covers |
 |------|--------|
 | [common.md](common.md) | `Common::` primitives (bit, json, sanitize, unicode, fs, system, backgroundworker) |
-| [vocabulary.md](vocabulary.md) | `Ui::` value types (type, color, config, convert, registry, tabbar, intent/result, ...) |
+| [vocabulary.md](vocabulary.md) | `Ui::` value types (type, color, config, convert, registry, index, tabbar, intent/result, ...) |
 | [interfaces.md](interfaces.md) | Seams: IRender, IEventApp, IRenderer, IChromeCommands, IWindow, IEventOS, IContext |
-| [render.md](render.md) | Render chrome (UiLayout/UiRenderer/Context/popups) + GL backend (GlRender/Rounded/Svg/Font) |
-| [windowing.md](windowing.md) | WindowManager, Connector, EglContext, events, content surfaces, platform peers, pub/sub |
+| [render.md](render.md) | Render chrome (UiLayout/UiRenderer/Context/DockColumn/popups), the input model, thumb widgets, text fitting + GL backend (GlRender/Rounded/Svg/Font) |
+| [windowing.md](windowing.md) | WindowManager, Connector, EglContext, events, pointer shapes, content surfaces, platform peers, pub/sub |
 | [resources.md](resources.md) | ResManager + sub-stores + value types + key enums + session.json v2 |
 | [shell-actions.md](shell-actions.md) | Ui::Shell, the action subsystem, IO, and building a host |
 

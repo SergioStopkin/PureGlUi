@@ -48,38 +48,42 @@ struct alignas(128) theme_t final {
     Ui::Res::Type::color_pair_t workspaceTabs; // "workspace-tabs" (tab container strip)
 
     // Interactive elements: normal {fg, bg} + hover {fg, bg} + active {fg, bg}
-    Ui::Res::Type::color_pair_t topMenuButton;             // inherits topMenu {fg, bg}
-    Ui::Res::Type::color_pair_t topMenuButtonHover;        // "top-menu-button-label:hover"
-    Ui::Res::Type::color_pair_t topMenuButtonActive;       // "top-menu-button-label:active"
-    Ui::Res::Type::color_pair_t menuItem;                  // "top-menu-item" color + transparent bg
-    Ui::Res::Type::color_pair_t menuItemHover;             // "top-menu-item:hover"
-    Ui::Res::Type::color_pair_t menuItemActive;            // "top-menu-item:active"
-    Ui::Res::Type::color_pair_t button;                    // "button" color + background
-    Ui::Res::Type::color_pair_t workspaceTab;              // "workspace-tab" color + background
-    Ui::Res::Type::color_pair_t workspaceTabHover;         // "workspace-tab:hover"
-    Ui::Res::Type::color_pair_t workspaceTabActive;        // "workspace-tab:active"
-    Ui::Res::Type::color_pair_t tabClose;                  // "workspace-tab-close" color (tint)
-    Ui::Res::Type::color_pair_t tabCloseHover;             // "workspace-tab-close:hover" color (tint)
-    Ui::Res::Type::font_t       dialogFont;                // "dialog" font
-    fpx_t                       dialogLineHeight = 1.4F;   // "dialog" line-height
-    Ui::Res::Type::color_pair_t dialog;                    // "dialog" color + background
-    Ui::Res::Type::font_t       dialogTitleFont;           // "dialog-title" font
-    Ui::Color                   dialogTitleColor;          // "dialog-title" color
-    Ui::Color                   dialogLinkColor;           // "dialog-link" color
-    Ui::Color                   dialogLinkVisited;         // "dialog-link:visited" color
-    Ui::Res::Type::color_pair_t dialogButton;              // "dialog-button" color + background
-    Ui::Res::Type::color_pair_t dialogButtonHover;         // "dialog-button:hover" color + background
-    Ui::Res::Type::color_pair_t dialogButtonActive;        // "dialog-button:active" color + background
-    Ui::Res::Type::color_pair_t dialogButtonPrimary;       // "dialog-button:primary" color + background
-    Ui::Color                   dialogScrollbarTrack;      // "dialog-scrollbar" background
-    Ui::Color                   dialogScrollbarThumb;      // "dialog-scrollbar-thumb" background
-    Ui::Color                   dialogScrollbarThumbHover; // "dialog-scrollbar-thumb:hover" background
-    Ui::Res::Type::color_pair_t dialogClose;               // "dialog-close" color (tint)
-    Ui::Res::Type::color_pair_t dialogCloseHover;          // "dialog-close:hover" color (tint) + background
-    Ui::Res::Type::color_pair_t dialogCloseActive;         // "dialog-close:active" color (tint) + background
-    Ui::Res::Type::color_pair_t tabArrow;                  // "workspace-tab-arrow" color (tint) + transparent bg
-    Ui::Res::Type::color_pair_t statusBar;                 // "status-bar"
-    Ui::Res::Type::color_pair_t statusBarActive;           // "status-bar:active"
+    Ui::Res::Type::color_pair_t topMenuButton;       // inherits topMenu {fg, bg}
+    Ui::Res::Type::color_pair_t topMenuButtonHover;  // "top-menu-button-label:hover"
+    Ui::Res::Type::color_pair_t topMenuButtonActive; // "top-menu-button-label:active"
+    Ui::Res::Type::color_pair_t menuItem;            // "top-menu-item" color + transparent bg
+    Ui::Res::Type::color_pair_t menuItemHover;       // "top-menu-item:hover"
+    Ui::Res::Type::color_pair_t menuItemActive;      // "top-menu-item:active"
+    Ui::Res::Type::color_pair_t button;              // "button" color + background
+    // HSL lightness delta marking an armed toolbar button, in percentage
+    // points. Applied through Color::edgeColor so it lightens on a dark theme
+    // and darkens on a light one, rather than needing a second colour block
+    fpx_t                       buttonActiveContrast = 12.0F; // "button" active-contrast
+    Ui::Res::Type::color_pair_t workspaceTab;                 // "workspace-tab" color + background
+    Ui::Res::Type::color_pair_t workspaceTabHover;            // "workspace-tab:hover"
+    Ui::Res::Type::color_pair_t workspaceTabActive;           // "workspace-tab:active"
+    Ui::Res::Type::color_pair_t tabClose;                     // "workspace-tab-close" color (tint)
+    Ui::Res::Type::color_pair_t tabCloseHover;                // "workspace-tab-close:hover" color (tint)
+    Ui::Res::Type::font_t       dialogFont;                   // "dialog" font
+    fpx_t                       dialogLineHeight = 1.4F;      // "dialog" line-height
+    Ui::Res::Type::color_pair_t dialog;                       // "dialog" color + background
+    Ui::Res::Type::font_t       dialogTitleFont;              // "dialog-title" font
+    Ui::Color                   dialogTitleColor;             // "dialog-title" color
+    Ui::Color                   dialogLinkColor;              // "dialog-link" color
+    Ui::Color                   dialogLinkVisited;            // "dialog-link:visited" color
+    Ui::Res::Type::color_pair_t dialogButton;                 // "dialog-button" color + background
+    Ui::Res::Type::color_pair_t dialogButtonHover;            // "dialog-button:hover" color + background
+    Ui::Res::Type::color_pair_t dialogButtonActive;           // "dialog-button:active" color + background
+    Ui::Res::Type::color_pair_t dialogButtonPrimary;          // "dialog-button:primary" color + background
+    Ui::Color                   scrollbarTrack;               // "scrollbar" background
+    Ui::Color                   scrollbarThumb;               // "scrollbar-thumb" background
+    Ui::Color                   scrollbarThumbHover;          // "scrollbar-thumb:hover" background
+    Ui::Res::Type::color_pair_t dialogClose;                  // "dialog-close" color (tint)
+    Ui::Res::Type::color_pair_t dialogCloseHover;             // "dialog-close:hover" color (tint) + background
+    Ui::Res::Type::color_pair_t dialogCloseActive;            // "dialog-close:active" color (tint) + background
+    Ui::Res::Type::color_pair_t tabArrow;                     // "workspace-tab-arrow" color (tint) + transparent bg
+    Ui::Res::Type::color_pair_t statusBar;                    // "status-bar"
+    Ui::Res::Type::color_pair_t statusBarActive;              // "status-bar:active"
 
     Ui::Res::Type::FontWeight workspaceTabActiveWeight =
     Ui::Res::Type::FontWeight::Bold; // "workspace-tab:active" font-weight

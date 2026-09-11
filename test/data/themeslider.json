@@ -1,0 +1,14 @@
+{
+  "dock-slider-track": {
+    "color": "#010203",
+    "background": "#040506"
+  },
+  "dock-slider-thumb": {
+    "color": "#070809",
+    "background": "#0a0b0c"
+  },
+  "dock-slider-thumb:hover": {
+    "color": "#0d0e0f",
+    "background": "#101112"
+  }
+}

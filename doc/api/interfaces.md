@@ -32,10 +32,12 @@ Pure-virtual methods:
   rounded-rectangle fill with per-corner radii. `colors.fg` is the fill;
   `colors.bg` is the antialiasing/compositing background. An invisible shadow
   (`{}`) is skipped.
-- `void drawText(font_handle_t font, std::string_view text, const Res::Type::bound_t &pos, const Color &color, bool centered, fpx_t minPadH)` -
-  text run inside `pos`. `centered` drives horizontal centering (with `minPadH`
-  as the minimum side padding); otherwise left-aligned. The backend owns
-  baseline placement from the font handle.
+- `void drawText(font_handle_t font, std::string_view text, const Res::Type::bound_t &pos, const Color &color, Res::Type::AlignH alignH, Res::Type::AlignV alignV, fpx_t minPadH)` -
+  text run inside `pos`, placed on both axes. `AlignH` is
+  `Left|Center|Right|CenterClamped` (the last centres while the label fits and
+  falls back to left rather than overflowing); `AlignV` is `Top|Center|Bottom`,
+  where `Center` is cap-height centred. `minPadH` is the minimum side padding.
+  The backend owns baseline placement from the font handle.
 - `void drawImage(std::string_view src, const Res::Type::bound_t &bound, const Res::Type::border_t &radii, const Color &tint, fpx_t scale, const Render::shadow_t &shadow)` -
   image (SVG or raster, inferred from `src`) scaled into `bound` with the given
   corner radii. `tint` with `a() > 0` recolors; `scale > 1` enlarges around the
@@ -70,16 +72,24 @@ avoids a shared interface base.
 This is the inheritance root of both `IRenderer` and `IWindow`: both derive from
 `IEventApp`, so any renderer or window is also a pointer-event sink.
 
+Every button is delivered, not just Left - a content surface needs middle for
+pan and right for a context menu - so chrome implementations must ignore what
+they do not handle rather than assume Left.
+
+Press, release and scroll all report a `Render::element_event_t`
+(`{type, id, event, x, y, changed}`); `changed` carries what a `bool` return
+used to mean, namely "this needs a repaint". `event` is a single `EventKind`,
+never a mask.
+
 Pure-virtual methods:
 - `bool onMouseMove(int x, int y)` - pointer moved; returns true if handled/dirty.
-- `bool onMousePress(int x, int y, int clickCount)` - pointer pressed.
-  `clickCount`: 1 = single, 2 = double, ... populated by the platform event
-  layer. No default arg (prohibited on virtuals); callers that do not care pass
-  1 explicitly.
-- `Render::click_result_t onMouseRelease(int x, int y)` - pointer released;
-  returns the click result (decoded action/hit).
+- `Render::element_event_t onMousePress(int x, int y, Window::MouseButton button, int clickCount)` -
+  pointer pressed. `clickCount`: 1 = single, 2 = double, ... populated by the
+  platform event layer. No default arg (prohibited on virtuals); callers that do
+  not care pass 1 explicitly.
+- `Render::element_event_t onMouseRelease(int x, int y, Window::MouseButton button)` - pointer released.
 - `bool onMouseLeave()` - pointer left the surface.
-- `bool onScroll(int x, int y, fpx_t deltaY)` - scroll wheel.
+- `Render::element_event_t onScroll(int x, int y, fpx_t deltaY)` - scroll wheel.
 
 Implemented by: everything in the `IRenderer` and `IWindow` hierarchies
 (`Ui::Render::UiRenderer`, the popup renderers, host content renderers; the
@@ -152,6 +162,11 @@ Pure-virtual methods:
 - `void closeTab(id_t tabId)` - close a tab (host-domain reaction).
 - `void copyText(const std::string &text)` - copy text to the clipboard
   (status-bar text click).
+- `void activateRow(id_t rowId)` - a dock row was selected (host-domain
+  reaction: the row tree is the host's model).
+- `void toggleRow(id_t rowId)` - a dock row's expand/collapse was requested. The
+  host flips its own flag and re-projects via `WindowManager::setDockRows`; the
+  framework holds no expanded state of its own.
 
 Free function (same header):
 - `inline void routeIntent(const intent_t &intent, IChromeCommands &chrome)` -

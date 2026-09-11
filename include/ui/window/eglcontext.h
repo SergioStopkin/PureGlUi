@@ -49,6 +49,11 @@
 
 namespace Ui::Window {
 
+// Flip to true to trace EGL setup: platform, version, which config each surface
+// settled on and why. Every popup builds its own context, so this repeats per
+// menu open rather than once at startup.
+constexpr bool EGL_DEBUG = false;
+
 /**
  * @brief Platform type for EGL context
  */
@@ -187,7 +192,9 @@ public:
                 std::cerr << "[EglContext] eglGetPlatformDisplayEXT not available for Wayland" << std::endl;
                 return false;
             }
-            std::cout << "[EglContext] Using Wayland platform" << std::endl;
+            if constexpr (EGL_DEBUG) {
+                std::cout << "[EglContext] Using Wayland platform" << std::endl;
+            }
 #else
             std::cerr << "[EglContext] Wayland support not compiled in" << std::endl;
             return false;
@@ -199,7 +206,9 @@ public:
             } else {
                 m_eglDisplay = eglGetDisplay(static_cast<EGLNativeDisplayType>(m_nativeDisplay));
             }
-            std::cout << "[EglContext] Using X11 platform" << std::endl;
+            if constexpr (EGL_DEBUG) {
+                std::cout << "[EglContext] Using X11 platform" << std::endl;
+            }
 #else
             std::cerr << "[EglContext] X11 support not compiled in" << std::endl;
             return false;
@@ -217,7 +226,9 @@ public:
             std::cerr << "[EglContext] eglInitialize failed" << std::endl;
             return false;
         }
-        std::cout << "[EglContext] EGL version: " << major << "." << minor << std::endl;
+        if constexpr (EGL_DEBUG) {
+            std::cout << "[EglContext] EGL version: " << major << "." << minor << std::endl;
+        }
 
         if (eglBindAPI(EGL_OPENGL_API) == 0U) {
             std::cerr << "[EglContext] eglBindAPI(EGL_OPENGL_API) failed" << std::endl;
@@ -248,6 +259,7 @@ public:
             bool             alpha;
             bool             msaa;
             std::string_view desc;
+            bool             stencil = true;
         };
 
         std::vector<ConfigAttempt> attempts;
@@ -265,6 +277,8 @@ public:
         } else {
             attempts = { { false, false, "basic" } };
         }
+        // A driver with no stencil config must still open a window
+        attempts.emplace_back(ConfigAttempt { false, false, "basic without stencil", false });
 
         for (const auto & attempt : attempts) {
             std::vector<EGLint> attribs = { EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
@@ -273,6 +287,12 @@ public:
                                             EGL_GREEN_SIZE,      8,
                                             EGL_BLUE_SIZE,       8,
                                             EGL_DEPTH_SIZE,      24 };
+            // Stencil is asked for here because every child content surface
+            // inherits this visual, and a surface cannot win one back later
+            if (attempt.stencil) {
+                attribs.emplace_back(EGL_STENCIL_SIZE);
+                attribs.emplace_back(8);
+            }
             if (attempt.alpha) {
                 attribs.emplace_back(EGL_ALPHA_SIZE);
                 attribs.emplace_back(8);
@@ -289,7 +309,9 @@ public:
             if (eglChooseConfig(m_eglDisplay, attribs.data(), &m_eglConfig, 1, &numConfigs) != 0U && numConfigs > 0) {
                 m_hasAlpha = attempt.alpha;
                 m_hasMsaa  = attempt.msaa;
-                std::cout << "[EglContext] Config: " << attempt.desc << std::endl;
+                if constexpr (EGL_DEBUG) {
+                    std::cout << "[EglContext] Config: " << attempt.desc << std::endl;
+                }
                 return true;
             }
         }
@@ -328,7 +350,10 @@ public:
             return false;
         }
 
-        std::cout << "[EglContext] Searching " << totalConfigs << " configs for visual " << targetVisualId << std::endl;
+        if constexpr (EGL_DEBUG) {
+            std::cout << "[EglContext] Searching " << totalConfigs << " configs for visual " << targetVisualId
+                      << std::endl;
+        }
 
         // Get all configs
         std::vector<EGLConfig> configs(totalConfigs);
@@ -364,8 +389,10 @@ public:
 
                 if (samples >= 4 && matchedMsaaConfig == nullptr) {
                     matchedMsaaConfig = configs[i];
-                    std::cout << "[EglContext] Found MSAA config for visual " << targetVisualId
-                              << " (samples=" << samples << ")" << std::endl;
+                    if constexpr (EGL_DEBUG) {
+                        std::cout << "[EglContext] Found MSAA config for visual " << targetVisualId
+                                  << " (samples=" << samples << ")" << std::endl;
+                    }
                 }
 
                 if (matchedConfig == nullptr) {
@@ -387,22 +414,25 @@ public:
             m_eglConfig = matchedConfig;
             m_hasMsaa   = false;
         } else {
-            std::cout << "[EglContext] No config found for visual " << targetVisualId
-                      << " (will use software corner blending)" << std::endl;
+            if constexpr (EGL_DEBUG) {
+                std::cout << "[EglContext] No config found for visual " << targetVisualId
+                          << " (will use software corner blending)" << std::endl;
+            }
             return false;
         }
 
         m_hasAlpha = true; // We're specifically looking for 32-bit ARGB visuals
 
-        // Log config details
-        EGLint depth   = 0;
-        EGLint alpha   = 0;
-        EGLint samples = 0;
-        eglGetConfigAttrib(m_eglDisplay, m_eglConfig, EGL_BUFFER_SIZE, &depth);
-        eglGetConfigAttrib(m_eglDisplay, m_eglConfig, EGL_ALPHA_SIZE, &alpha);
-        eglGetConfigAttrib(m_eglDisplay, m_eglConfig, EGL_SAMPLES, &samples);
-        std::cout << "[EglContext] Selected config: buffer=" << depth << " alpha=" << alpha << " samples=" << samples
-                  << std::endl;
+        if constexpr (EGL_DEBUG) {
+            EGLint depth   = 0;
+            EGLint alpha   = 0;
+            EGLint samples = 0;
+            eglGetConfigAttrib(m_eglDisplay, m_eglConfig, EGL_BUFFER_SIZE, &depth);
+            eglGetConfigAttrib(m_eglDisplay, m_eglConfig, EGL_ALPHA_SIZE, &alpha);
+            eglGetConfigAttrib(m_eglDisplay, m_eglConfig, EGL_SAMPLES, &samples);
+            std::cout << "[EglContext] Selected config: buffer=" << depth << " alpha=" << alpha
+                      << " samples=" << samples << std::endl;
+        }
 
         return true;
 #else
@@ -462,7 +492,9 @@ public:
             // express it. Sanctioned reinterpret_cast exception.
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             nativeWindow = reinterpret_cast<EGLNativeWindowType>(m_wlEglWindow);
-            std::cout << "[EglContext] Created wl_egl_window " << width << "x" << height << std::endl;
+            if constexpr (EGL_DEBUG) {
+                std::cout << "[EglContext] Created wl_egl_window " << width << "x" << height << std::endl;
+            }
 #else
             std::cerr << "[EglContext] Wayland support not compiled in" << std::endl;
             return false;
@@ -536,7 +568,9 @@ public:
 
         m_eglContext = eglCreateContext(m_eglDisplay, m_eglConfig, EGL_NO_CONTEXT, contextAttribs.data());
         if (m_eglContext == EGL_NO_CONTEXT) {
-            std::cout << "[EglContext] Compatibility profile failed, trying default" << std::endl;
+            if constexpr (EGL_DEBUG) {
+                std::cout << "[EglContext] Compatibility profile failed, trying default" << std::endl;
+            }
             m_eglContext = eglCreateContext(m_eglDisplay, m_eglConfig, EGL_NO_CONTEXT, nullptr);
         }
 
@@ -546,7 +580,9 @@ public:
             return false;
         }
 
-        std::cout << "[EglContext] Context created" << std::endl;
+        if constexpr (EGL_DEBUG) {
+            std::cout << "[EglContext] Context created" << std::endl;
+        }
         return true;
 #else
         return false;

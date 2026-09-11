@@ -60,6 +60,12 @@
 static thread_local bool s_svg_upload_premultiplied = false;
 
 namespace Ui::Gl {
+
+// Flip to true to report each SVG the first time it is rasterized, with the
+// size and content bounds it resolved to. Useful when an icon renders at the
+// wrong scale or comes out blank.
+constexpr bool SVG_DEBUG = false;
+
 /**
  * @brief SVG renderer with OpenGL texture caching
  *
@@ -739,9 +745,11 @@ public:
         // Notify waiters with the loaded document
         prom.set_value(sdoc);
 
-        if (s_loggedLoadedSvgs_.insert(path).second) {
-            std::cout << "[SvgRenderer] Loaded SVG: " << path << " -> " << w << "x" << h << " content=[" << cb.u0 << ","
-                      << cb.v0 << "," << cb.u1 << "," << cb.v1 << "]" << std::endl;
+        if constexpr (SVG_DEBUG) {
+            if (s_loggedLoadedSvgs_.insert(path).second) {
+                std::cout << "[SvgRenderer] Loaded SVG: " << path << " -> " << w << "x" << h << " content=[" << cb.u0
+                          << "," << cb.v0 << "," << cb.u1 << "," << cb.v1 << "]" << std::endl;
+            }
         }
 
         // Clean up future entry
@@ -886,9 +894,11 @@ public:
 
         prom.set_value(sdoc);
 
-        if (s_loggedLoadedSvgs_.insert(id).second) {
-            std::cout << "[SvgRenderer] Loaded SVG from string: " << id << " -> " << w << "x" << h << " content=["
-                      << cb.u0 << "," << cb.v0 << "," << cb.u1 << "," << cb.v1 << "]" << std::endl;
+        if constexpr (SVG_DEBUG) {
+            if (s_loggedLoadedSvgs_.insert(id).second) {
+                std::cout << "[SvgRenderer] Loaded SVG from string: " << id << " -> " << w << "x" << h << " content=["
+                          << cb.u0 << "," << cb.v0 << "," << cb.u1 << "," << cb.v1 << "]" << std::endl;
+            }
         }
 
         {

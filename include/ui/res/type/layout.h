@@ -54,8 +54,14 @@ struct alignas(128) layout_t final {
     Ui::Res::Type::bound_t  dialogIcon { 16, 16, 20, 20 };
     Ui::Res::Type::border_t dialogCloseBorder;
     Ui::Res::Type::border_t dialogButtonBorder;
-    Ui::Res::Type::border_t dialogScrollbarBorder;
-    Ui::Res::Type::border_t dialogScrollbarHoverBorder;
+    Ui::Res::Type::border_t scrollbarBorder;
+    Ui::Res::Type::border_t scrollbarHoverBorder;
+    // Slider parts are sized apart because they are shaped apart: the track is a
+    // range and the thumb is a position on it, so a radius that suits one leaves
+    // the other reading as a swollen piece of the bar.
+    Ui::Res::Type::border_t sliderTrackBorder;
+    Ui::Res::Type::border_t sliderThumbBorder;
+    Ui::Res::Type::border_t sliderThumbHoverBorder;
 
     // Containers + strings
     std::vector<Ui::Res::Dock::dock_config_t>
@@ -82,6 +88,11 @@ struct alignas(128) layout_t final {
     fpx_t tabMinWidth {};              // workspace-tab min-width (shrinking)
     fpx_t tabCloseMargin {};           // workspace-tab-close style
     fpx_t tabCloseRight {};
+    // Chrome floor only - the size at which toolbars, tabs and status stay
+    // usable with no dialog open. What a dialog needs is added on top of this
+    // by ResManager, so a bigger dialog cannot make itself unreachable.
+    fpx_t windowMinWidth {};
+    fpx_t windowMinHeight {};
     fpx_t tabCloseIconSize {};
     fpx_t tabArrowWidth {}; // workspace-tab-arrow dimensions
     fpx_t tabArrowHeight {};
@@ -97,12 +108,20 @@ struct alignas(128) layout_t final {
     fpx_t dialogButtonPad {};
     fpx_t dialogButtonMinW {};
     fpx_t dialogButtonShift {};
-    fpx_t dialogScrollbarW {}; // dialog scrollbar
-    fpx_t dialogScrollbarRight {};
-    fpx_t dialogScrollbarMinThumb {};
-    fpx_t dialogScrollbarHoverW {}; // dialog scrollbar hover
-    fpx_t dialogScrollbarHoverRight {};
-    fpx_t dialogScrollbarHoverMinThumb {};
+    fpx_t scrollbarW {}; // scrollbar, shared by the dialog and the docks
+    fpx_t scrollbarRight {};
+    fpx_t scrollbarMinThumb {};
+    fpx_t scrollbarHoverW {}; // scrollbar hover - also the hit width in both states
+    fpx_t scrollbarHoverRight {};
+    fpx_t scrollbarHoverMinThumb {};
+    // The dock slider. Only its THICKNESS is here - the track's length is the
+    // row's right column, which layout cannot state without knowing the dock's
+    // width. The thumb has both, since neither of its sides follows the row.
+    fpx_t sliderTrackH {};
+    fpx_t sliderThumbW {};
+    fpx_t sliderThumbH {};
+    fpx_t sliderThumbHoverW {};
+    fpx_t sliderThumbHoverH {};
 
     bool operator==(const layout_t &) const = default;
 };

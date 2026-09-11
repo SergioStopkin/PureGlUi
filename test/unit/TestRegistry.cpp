@@ -22,10 +22,12 @@
  *        insertion order, reorder, and removal independent of any rendering.
  */
 
+#include "ui/index.h"
 #include "ui/registry.h"
 #include "ui/tab.h"
 
 #include <gtest/gtest.h>
+#include <vector>
 
 // Note: do not `using Ui::id_t` - it clashes with POSIX ::id_t from <sys/types.h>.
 using Ui::Registry;
@@ -33,7 +35,7 @@ using Ui::Registry;
 namespace {
 
 // Collect the ids in visual order for terse comparisons.
-std::vector<Ui::id_t> ids(const Registry<int> & reg) { return reg.order(); }
+std::vector<Ui::id_t> ids(const Registry<Ui::id_t, int> & reg) { return reg.order(); }
 
 } // namespace
 
@@ -43,7 +45,7 @@ std::vector<Ui::id_t> ids(const Registry<int> & reg) { return reg.order(); }
 
 TEST(Registry, EmptyByDefault)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     EXPECT_TRUE(reg.empty());
     EXPECT_EQ(reg.size(), 0U);
     EXPECT_FALSE(reg.contains(1));
@@ -52,7 +54,7 @@ TEST(Registry, EmptyByDefault)
 
 TEST(Registry, AddThenFind)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(10, 100);
     reg.add(20, 200);
 
@@ -65,7 +67,7 @@ TEST(Registry, AddThenFind)
 
 TEST(Registry, AddPreservesInsertionOrder)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(3, 0);
     reg.add(1, 0);
     reg.add(2, 0);
@@ -74,7 +76,7 @@ TEST(Registry, AddPreservesInsertionOrder)
 
 TEST(Registry, DuplicateAddIgnored)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(5, 100);
     reg.add(5, 999); // same id - ignored, no duplicate in order
     EXPECT_EQ(reg.size(), 1U);
@@ -88,7 +90,7 @@ TEST(Registry, DuplicateAddIgnored)
 
 TEST(Registry, RemoveDropsFromMapAndOrder)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(1, 0);
     reg.add(2, 0);
     reg.add(3, 0);
@@ -100,7 +102,7 @@ TEST(Registry, RemoveDropsFromMapAndOrder)
 
 TEST(Registry, RemoveMissingIsNoop)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(1, 0);
     reg.remove(99);
     EXPECT_EQ(reg.size(), 1U);
@@ -109,7 +111,7 @@ TEST(Registry, RemoveMissingIsNoop)
 
 TEST(Registry, InsertAtIndex)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(1, 0);
     reg.add(3, 0);
     reg.insert(1, 2, 0); // between 1 and 3
@@ -118,7 +120,7 @@ TEST(Registry, InsertAtIndex)
 
 TEST(Registry, InsertIndexClampedToEnd)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(1, 0);
     reg.insert(99, 2, 0); // out-of-range index clamps to append
     EXPECT_EQ(ids(reg), (std::vector<Ui::id_t> { 1, 2 }));
@@ -126,7 +128,7 @@ TEST(Registry, InsertIndexClampedToEnd)
 
 TEST(Registry, MoveReorders)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(1, 0);
     reg.add(2, 0);
     reg.add(3, 0);
@@ -138,7 +140,7 @@ TEST(Registry, MoveReorders)
 
 TEST(Registry, MoveMissingIsNoop)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(1, 0);
     reg.add(2, 0);
     reg.move(99, 0);
@@ -147,7 +149,7 @@ TEST(Registry, MoveMissingIsNoop)
 
 TEST(Registry, EditMutatesInPlace)
 {
-    Registry<int> reg;
+    Registry<Ui::id_t, int> reg;
     reg.add(1, 100);
     int * value = reg.edit(1);
     ASSERT_NE(value, nullptr);
@@ -162,7 +164,7 @@ TEST(Registry, EditMutatesInPlace)
 
 TEST(Registry, HoldsTabViewModels)
 {
-    Registry<Ui::tab_t> tabs;
+    Registry<Ui::id_t, Ui::tab_t> tabs;
     tabs.add(7, Ui::tab_t { 7, "Model A", true, true, false, 0 });
     tabs.add(8, Ui::tab_t { 8, "new 1", false, false, false, 0 });
 
@@ -178,4 +180,68 @@ TEST(Registry, HoldsTabViewModels)
     EXPECT_TRUE(tabs.find(8)->isActive);
 
     EXPECT_EQ(tabs.order(), (std::vector<Ui::id_t> { 7, 8 }));
+}
+
+// ============================================================================
+// String keys - the reason the key is a template parameter. Numeric ids are
+// reassigned when resources reload; a key_t survives that.
+// ============================================================================
+
+TEST(Registry, HoldsStringKeys)
+{
+    Registry<Ui::key_t, int> reg;
+    reg.add("view:displayMode:shaded", 1);
+    reg.add("view:displayMode:realistic", 2);
+
+    ASSERT_NE(reg.find("view:displayMode:shaded"), nullptr);
+    EXPECT_EQ(*reg.find("view:displayMode:shaded"), 1);
+    EXPECT_EQ(reg.find("view:missing"), nullptr);
+    EXPECT_TRUE(reg.contains("view:displayMode:realistic"));
+    EXPECT_EQ(reg.order(), (std::vector<Ui::key_t> { "view:displayMode:shaded", "view:displayMode:realistic" }));
+}
+
+TEST(Registry, FindOrAddCreatesOnceAndJoinsOrder)
+{
+    Registry<Ui::id_t, std::vector<int>> reg;
+    reg.findOrAdd(5).emplace_back(1);
+    reg.findOrAdd(5).emplace_back(2); // same key: appends, does not replace
+
+    ASSERT_NE(reg.find(5), nullptr);
+    EXPECT_EQ(*reg.find(5), (std::vector<int> { 1, 2 }));
+    EXPECT_EQ(reg.order(), (std::vector<Ui::id_t> { 5 })); // joined the order exactly once
+}
+
+// ============================================================================
+// Ui::Index - group-by over Registry
+// ============================================================================
+
+TEST(Index, GroupsValuesByKeyInInsertionOrder)
+{
+    Ui::Index<Ui::id_t, Ui::id_t> children;
+    children.add(1, 10);
+    children.add(2, 20);
+    children.add(1, 11);
+
+    EXPECT_EQ(children.group(1), (std::vector<Ui::id_t> { 10, 11 }));
+    EXPECT_EQ(children.group(2), (std::vector<Ui::id_t> { 20 }));
+    EXPECT_EQ(children.size(), 2U); // distinct keys, not values
+    EXPECT_EQ(children.keys(), (std::vector<Ui::id_t> { 1, 2 }));
+}
+
+// The ergonomic contract: a caller walks group() without first checking
+// whether the key exists.
+TEST(Index, AbsentKeyYieldsEmptyGroup)
+{
+    Ui::Index<Ui::id_t, Ui::id_t> children;
+    children.add(1, 10);
+
+    EXPECT_TRUE(children.group(999).empty());
+    EXPECT_FALSE(children.contains(999));
+
+    std::size_t walked = 0;
+    for (const Ui::id_t child : children.group(999)) {
+        (void)child;
+        ++walked;
+    }
+    EXPECT_EQ(walked, 0U);
 }

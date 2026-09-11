@@ -5,11 +5,11 @@
     "--cl-second": "#000000",
     "--cl-shadow": "#6f7276",
     "--shadow-opacity": "0.24",
-    "--cl-model": "#ff9933",
+    "--cl-model": "#cc9900",
     "--cl-error": "#ff00ff",
     "--cl-load": "#99cc00",
     "--cl-info": "#c6d9ec",
-    "--cl-warn": "#ff9933",
+    "--cl-warn": "#ffcc33",
     "--bg-main": "#45474a",
     "--bg-second": "#b0b2b5",
     "--font-sans": "Nunito",
@@ -165,13 +165,13 @@
     "color": "var(--cl-main)",
     "background": "var(--bg-main) lighter(8.0)"
   },
-  "dialog-scrollbar": {
+  "scrollbar": {
     "background": "var(--bg-second) darker(16.0)"
   },
-  "dialog-scrollbar-thumb": {
+  "scrollbar-thumb": {
     "background": "var(--bg-main) lighter(16.0)"
   },
-  "dialog-scrollbar-thumb:hover": {
+  "scrollbar-thumb:hover": {
     "background": "var(--bg-main) lighter(8.0)"
   },
   "dialog-close": {

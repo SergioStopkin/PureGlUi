@@ -53,6 +53,17 @@ public:
     virtual void setChildWindowLookup(Ui::Window::child_id_fn_t lookup) = 0;
 
     /**
+     * @brief Pointer shape, for platforms that own the cursor on the pointer
+     * rather than the window.
+     *
+     * Optional, default no-op. Wayland implements this instead of
+     * IWindow::setCursor: the compositor requires the client to re-set the
+     * cursor on every pointer enter, so the shape has to be remembered by
+     * whoever handles that event.
+     */
+    virtual void setCursor(Ui::Window::PointerShape /*shape*/) { }
+
+    /**
      * @brief Register a popup-type window for event routing (menu, submenu, dialog)
      */
     virtual void addPopupWindow(Ui::Window::NativeWindowHandle handle) = 0;

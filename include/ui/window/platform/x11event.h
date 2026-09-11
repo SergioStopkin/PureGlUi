@@ -217,6 +217,7 @@ private:
                                                              xev.xbutton.x,
                                                              xev.xbutton.y,
                                                              xev.xbutton.button);
+                event.mouse.modifiers  = convertX11Modifiers(xev.xbutton.state);
             }
             break;
 

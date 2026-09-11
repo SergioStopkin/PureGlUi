@@ -18,6 +18,8 @@
 #pragma once
 
 #include "ui/type.h"
+#include "ui/window/keymodifier.h"
+#include "ui/window/mousebutton.h"
 #include "ui/window/nativewindowhandle.h"
 
 #include <array>
@@ -43,35 +45,11 @@ enum class EventType : unsigned char {
 };
 
 /**
- * @brief Mouse button identifiers
- */
-enum class MouseButton : unsigned char { Left = 1, Middle = 2, Right = 3 };
-
-inline int toInt(MouseButton b) { return static_cast<int>(b); }
-
-inline MouseButton toMouseButton(int v) { return static_cast<MouseButton>(v); }
-
-/**
- * @brief Keyboard modifier flags
- */
-enum class KeyModifier : uint32_t { None = 0, Shift = 1U << 0U, Control = 1U << 1U, Alt = 1U << 2U, Meta = 1U << 3U };
-
-inline uint32_t toUint(KeyModifier m) { return static_cast<uint32_t>(m); }
-
-inline KeyModifier toKeyModifier(uint32_t v) { return static_cast<KeyModifier>(v); }
-
-inline KeyModifier operator|(KeyModifier a, KeyModifier b) { return toKeyModifier(toUint(a) | toUint(b)); }
-
-inline KeyModifier operator&(KeyModifier a, KeyModifier b) { return toKeyModifier(toUint(a) & toUint(b)); }
-
-inline bool hasModifier(KeyModifier modifiers, KeyModifier flag) { return (toUint(modifiers) & toUint(flag)) != 0; }
-
-/**
  * @brief Platform-agnostic window event
  */
 struct alignas(128) Event final {
     // Mouse event data
-    struct alignas(16) {
+    struct alignas(32) {
         int         x      = 0;
         int         y      = 0;
         MouseButton button = MouseButton::Left;
@@ -80,6 +58,9 @@ struct alignas(128) Event final {
         // the rest of the codebase can read this on first press of a gesture
         // to react to double-clicks without timing logic of its own.
         int clickCount = 1;
+        // Modifiers held at press time. Same enum the key payload uses, so a
+        // Ctrl+click and a Ctrl+key test the same way.
+        KeyModifier modifiers = KeyModifier::None;
     } mouse;
 
     // Keyboard event data

@@ -5,11 +5,11 @@
     "--cl-second": "#515356",
     "--cl-shadow": "#9e9ea8",
     "--shadow-opacity": "0.24",
-    "--cl-model": "#ff9933",
+    "--cl-model": "#cc9900",
     "--cl-error": "#ff00ff",
     "--cl-load": "#99cc00",
-    "--cl-info": "#336699",
-    "--cl-warn": "#ff9933",
+    "--cl-info": "#6699cc",
+    "--cl-warn": "#cc9900",
     "--bg-main": "#b0b2b5",
     "--bg-second": "#e1e1ea",
     "--font-sans": "Nunito",
@@ -165,13 +165,13 @@
     "color": "var(--bg-main)",
     "background": "var(--cl-main) lighter(8.0)"
   },
-  "dialog-scrollbar": {
+  "scrollbar": {
     "background": "var(--bg-second) darker(16.0)"
   },
-  "dialog-scrollbar-thumb": {
+  "scrollbar-thumb": {
     "background": "var(--cl-main) lighter(32.0)"
   },
-  "dialog-scrollbar-thumb:hover": {
+  "scrollbar-thumb:hover": {
     "background": "var(--cl-main) lighter(16.0)"
   },
   "dialog-close": {

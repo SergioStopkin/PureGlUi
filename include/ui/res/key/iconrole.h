@@ -29,6 +29,8 @@ enum class IconRoleKey : unsigned char {
     WindowIcon,         // main-window icon
     WindowIconSymbolic, // monochrome/symbolic main-window icon (optional)
     Warning,            // warning marker (no-handler dialog etc.)
+    RowCollapsed,       // dock row expander, children hidden (optional)
+    RowExpanded,        // dock row expander, children shown (optional)
 };
 
 [[nodiscard]] inline std::string iconRoleKeyName(IconRoleKey role)
@@ -37,6 +39,8 @@ enum class IconRoleKey : unsigned char {
     case IconRoleKey::WindowIcon: return "windowIcon";
     case IconRoleKey::WindowIconSymbolic: return "windowIconSymbolic";
     case IconRoleKey::Warning: return "warning";
+    case IconRoleKey::RowCollapsed: return "rowCollapsed";
+    case IconRoleKey::RowExpanded: return "rowExpanded";
     }
     return {};
 }

@@ -32,8 +32,8 @@
 #include "recordingchrome.h"
 #include "ui/intent.h"
 #include "ui/interface/ichromecommands.h"
-#include "ui/render/clickresult.h"
 #include "ui/render/context.h"
+#include "ui/render/elementevent.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
 #include "ui/type.h"
@@ -61,10 +61,11 @@ protected:
     // single source), matching how Shell reads m_openMenuId.
     void click(Ui::Render::UiElementType type, Ui::id_t id)
     {
-        Ui::Render::Context        context(resManager);
-        Ui::Render::click_result_t hit;
+        Ui::Render::Context         context(resManager);
+        Ui::Render::element_event_t hit;
         hit.type                  = type;
         hit.id                    = id;
+        hit.event                 = Ui::Render::EventKind::LeftClick;
         const Ui::result_t result = context.mapClick(hit, chrome.openMenuId);
         for (const Ui::intent_t & intent : result.intents) {
             Ui::routeIntent(intent, chrome);
@@ -221,7 +222,8 @@ TEST_F(ChromeLifecycleTest, FullFlowMenuBarClickToItemAction)
     }
     ASSERT_NE(button, nullptr);
     const Ui::Render::UiElement * barHit = layout.hitTest(button->bound.x + button->bound.w / 2.0F,
-                                                          button->bound.y + button->bound.h / 2.0F);
+                                                          button->bound.y + button->bound.h / 2.0F,
+                                                          Ui::Render::EventKind::LeftClick);
     ASSERT_NE(barHit, nullptr);
     ASSERT_EQ(barHit->id, parent->id);
 

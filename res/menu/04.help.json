@@ -9,7 +9,7 @@
         "type": "InfoLink",
         "title": "DialogWikiPageTitle",
         "content": "DialogWikiPageContent",
-        "icon": "2139.svg",
+        "icon": "info",
         "link": "DialogWikiPageLink"
       }
     },
@@ -23,7 +23,7 @@
         "type": "Info",
         "title": "DialogSystemInfoTitle",
         "content": "DialogSystemInfoContent",
-        "icon": "2139.svg"
+        "icon": "info"
       }
     },
     {
@@ -36,7 +36,7 @@
         "type": "Info",
         "title": "DialogDonateTitle",
         "content": "DialogDonateContent",
-        "icon": "2139.svg"
+        "icon": "info"
       }
     },
     {
@@ -50,7 +50,7 @@
             "type": "Info",
             "title": "DialogVersionTitle",
             "content": "DialogVersionContent",
-            "icon": "2139.svg"
+            "icon": "info"
           }
         },
         {
@@ -60,7 +60,7 @@
             "type": "Info",
             "title": "DialogAuthorsTitle",
             "content": "DialogAuthorsContent",
-            "icon": "2139.svg"
+            "icon": "info"
           }
         },
         {
@@ -69,7 +69,7 @@
           "dialog": {
             "type": "Info",
             "title": "DialogLicenseTitle",
-            "icon": "2139.svg",
+            "icon": "info",
             "file": "COPYING",
             "width": "600px",
             "height": "400px"

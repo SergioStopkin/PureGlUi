@@ -18,6 +18,7 @@
 #pragma once
 
 #include "common/unicode.h"
+#include "ui/config.h"
 #include "ui/window/windowbase.h"
 
 // Include cairo/librsvg BEFORE <windows.h> - glib symbols conflict with
@@ -195,6 +196,29 @@ public:
     [[nodiscard]] bool isValid() const override { return m_hwnd != nullptr; }
 
     [[nodiscard]] NativeWindowHandle nativeHandle() const override { return m_hwnd; }
+
+    // SetCursor alone is undone by the next WM_SETCURSOR, so the class cursor
+    // is what actually sticks; SetCursor makes it take effect before the
+    // pointer next moves. LoadCursorW on a system IDC_ needs no unloading.
+    void setCursor(Ui::Window::PointerShape shape) override
+    {
+        if (m_hwnd == nullptr) {
+            return;
+        }
+        HCURSOR cursor = LoadCursorW(nullptr, toIdcCursor(shape));
+        if (cursor == nullptr) {
+            return;
+        }
+        SetClassLongPtrW(m_hwnd, GCLP_HCURSOR, asClassCursor(cursor));
+        SetCursor(cursor);
+    }
+
+    // Stored, not pushed: Win32 asks for the floor per resize (WM_GETMINMAXINFO)
+    void setMinSize(fpx_t width, fpx_t height) override
+    {
+        m_minWidth  = width;
+        m_minHeight = height;
+    }
 
     void destroy() override
     {
@@ -504,6 +528,19 @@ public:
                 self->m_bound.y = static_cast<fpx_t>(static_cast<short>(HIWORD(lParam)));
             }
             break;
+        case WM_GETMINMAXINFO:
+            // Win32 has no min-size property: the floor is answered per resize.
+            // The stored size is the CLIENT floor, so the frame is added here -
+            // AdjustWindowRect gives the outer size Win32 actually constrains.
+            if (self != nullptr && (self->m_minWidth > 0 || self->m_minHeight > 0)) {
+                RECT frame { 0, 0, roundToInt(self->m_minWidth), roundToInt(self->m_minHeight) };
+                AdjustWindowRect(&frame, static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_STYLE)), FALSE);
+                auto * info            = asMinMaxInfo(lParam);
+                info->ptMinTrackSize.x = frame.right - frame.left;
+                info->ptMinTrackSize.y = frame.bottom - frame.top;
+                return 0;
+            }
+            break;
         case WM_CLOSE:
             PostMessageW(hwnd, WM_APP_CLOSE, 0, 0);
             return 0; // Don't let DefWindowProc call DestroyWindow yet
@@ -530,6 +567,32 @@ private:
     {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return reinterpret_cast<LONG_PTR>(self);
+    }
+
+    // WM_GETMINMAXINFO passes its MINMAXINFO through LPARAM; an integer-to-
+    // pointer conversion static_cast cannot express (same sanctioned exception
+    // as asUserData).
+    static MINMAXINFO * asMinMaxInfo(LPARAM lParam)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, performance-no-int-to-ptr)
+        return reinterpret_cast<MINMAXINFO *>(lParam);
+    }
+
+    static LONG_PTR asClassCursor(HCURSOR cursor)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return reinterpret_cast<LONG_PTR>(cursor);
+    }
+
+    [[nodiscard]] static const wchar_t * toIdcCursor(Ui::Window::PointerShape shape)
+    {
+        switch (shape) {
+        case Ui::Window::PointerShape::Crosshair: return IDC_CROSS;
+        case Ui::Window::PointerShape::ResizeH: return IDC_SIZEWE;
+        case Ui::Window::PointerShape::Move: return IDC_SIZEALL;
+        case Ui::Window::PointerShape::Default: return IDC_ARROW;
+        }
+        return IDC_ARROW;
     }
 
     static Win32Window * fromUserData(LONG_PTR userData)
@@ -630,6 +693,8 @@ private:
     HGLRC m_hglrc      = nullptr;
     HICON m_hIconBig   = nullptr;
     HICON m_hIconSmall = nullptr;
+    fpx_t m_minWidth   = 0; // client floor, answered on WM_GETMINMAXINFO
+    fpx_t m_minHeight  = 0;
 };
 
 } // namespace Ui::Window::Platform

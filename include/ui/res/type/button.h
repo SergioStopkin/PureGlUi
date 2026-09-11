@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "ui/res/dock/anchor.h"
 #include "ui/res/type/colorpair.h"
 #include "ui/type.h"
 
@@ -36,7 +37,11 @@ struct alignas(128) button_t final {
     bool                        enabled = true;
     bool                        visible = true;
     std::string                 icon;
-    Ui::key_t                   key; // authored hierarchical identity (forward-looking; "" = none)
+    // Which toolbar edge this button sits on. DockAnchor rather than a third
+    // Left/Right enum - it already means "screen edge" and carries the JSON
+    // name mapping, even though it is named for the dock that first needed it
+    Ui::Res::Dock::DockAnchor anchor = Ui::Res::Dock::DockAnchor::Left;
+    Ui::key_t                 key; // authored hierarchical identity (forward-looking; "" = none)
 
     bool operator==(const button_t &) const = default;
 };

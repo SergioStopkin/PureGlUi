@@ -43,7 +43,8 @@ public:
                   std::string_view /*text*/,
                   const Ui::Res::Type::bound_t & /*pos*/,
                   const Ui::Color & /*color*/,
-                  bool /*centered*/,
+                  Ui::Res::Type::AlignH /*alignH*/,
+                  Ui::Res::Type::AlignV /*alignV*/,
                   Ui::fpx_t /*minPadH*/) override
     {
     }
@@ -52,13 +53,15 @@ public:
                    const Ui::Res::Type::border_t & /*radii*/,
                    const Ui::Color & /*tint*/,
                    Ui::fpx_t /*scale*/,
-                   const Ui::Render::shadow_t & /*shadow*/) override
+                   const Ui::Render::shadow_t & /*shadow*/,
+                   bool /*isFilled*/) override
     {
     }
     void warmImage(std::string_view /*src*/,
                    const Ui::Res::Type::bound_t & /*bound*/,
                    const Ui::Color & /*tint*/,
-                   Ui::fpx_t /*scale*/) override
+                   Ui::fpx_t /*scale*/,
+                   bool /*isFilled*/) override
     {
     }
     void drawTriangle(Ui::fpx_t /*x0*/,

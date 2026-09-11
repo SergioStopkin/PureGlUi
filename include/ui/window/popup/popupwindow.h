@@ -42,6 +42,11 @@ using Ui::Window::NativeDisplayHandle;
 using Ui::Window::NativeWindow;
 using Ui::Window::NativeWindowHandle;
 
+// Flip to true to trace how a popup surface is created: visual/config choice,
+// the ARGB-vs-corner-blending decision, and the native window it ends up with.
+// Every menu open prints the whole block, so this is loud in normal use.
+constexpr bool POPUP_DEBUG = false;
+
 /**
  * @brief Popup window for dropdowns and context menus
  *
@@ -93,8 +98,10 @@ private:
         m_display     = m_parent->nativeDisplay();
         m_ownsDisplay = false;
 
-        std::cout << "[PopupWindow] X11 create at (" << m_bound.x << "," << m_bound.y << ") size " << m_bound.w << "x"
-                  << m_bound.h << std::endl;
+        if constexpr (POPUP_DEBUG) {
+            std::cout << "[PopupWindow] X11 create at (" << m_bound.x << "," << m_bound.y << ") size " << m_bound.w
+                      << "x" << m_bound.h << std::endl;
+        }
 
         const int      screen = DefaultScreen(m_display);
         const ::Window root   = RootWindow(m_display, screen);
@@ -122,7 +129,9 @@ private:
                 if (!cache.hasCompositor && g_config.isCompositing) {
                     cache.hasCompositor = true;
                 }
-                std::cout << "[PopupWindow] Compositor present=" << cache.hasCompositor << std::endl;
+                if constexpr (POPUP_DEBUG) {
+                    std::cout << "[PopupWindow] Compositor present=" << cache.hasCompositor << std::endl;
+                }
             }
 
             // Try to find a 32-bit ARGB visual
@@ -132,7 +141,9 @@ private:
             }
 
             if (argbVid != 0) {
-                std::cout << "[PopupWindow] Found 32-bit ARGB visual (id=" << argbVid << ")" << std::endl;
+                if constexpr (POPUP_DEBUG) {
+                    std::cout << "[PopupWindow] Found 32-bit ARGB visual (id=" << argbVid << ")" << std::endl;
+                }
 
                 m_context = std::make_unique<Ui::Window::EglContext>();
                 if (!m_context->init(m_display)) {
@@ -146,7 +157,10 @@ private:
                     if (vi != nullptr && vi->depth >= 32) {
                         m_hasAlpha = true;
                         m_msaa     = m_context->hasMsaa();
-                        std::cout << "[PopupWindow] Using EGL 32-bit visual (depth=" << vi->depth << ")" << std::endl;
+                        if constexpr (POPUP_DEBUG) {
+                            std::cout << "[PopupWindow] Using EGL 32-bit visual (depth=" << vi->depth << ")"
+                                      << std::endl;
+                        }
                     } else {
                         if (vi != nullptr) {
                             XFree(vi);
@@ -155,7 +169,9 @@ private:
                         m_context.reset();
                     }
                 } else {
-                    std::cout << "[PopupWindow] Falling back to opaque with corner blending" << std::endl;
+                    if constexpr (POPUP_DEBUG) {
+                        std::cout << "[PopupWindow] Falling back to opaque with corner blending" << std::endl;
+                    }
                     m_context.reset();
                 }
             }
@@ -207,8 +223,10 @@ private:
         }
 
         m_hasCompositor = cache.hasCompositor;
-        std::cout << "[PopupWindow] Visual depth=" << vi->depth << " hasAlpha=" << m_hasAlpha
-                  << " msaa=" << (m_msaa ? "yes" : "no") << std::endl;
+        if constexpr (POPUP_DEBUG) {
+            std::cout << "[PopupWindow] Visual depth=" << vi->depth << " hasAlpha=" << m_hasAlpha
+                      << " msaa=" << (m_msaa ? "yes" : "no") << std::endl;
+        }
 
         // Create colormap for the visual
         const Colormap cmap = XCreateColormap(m_display, root, vi->visual, AllocNone);
@@ -232,7 +250,9 @@ private:
         ::Window       winParent    = parentHandle;
         if (vi->depth >= 32 && parentHandle != root) {
             winParent = root;
-            std::cout << "[PopupWindow] Using root as parent for ARGB visual" << std::endl;
+            if constexpr (POPUP_DEBUG) {
+                std::cout << "[PopupWindow] Using root as parent for ARGB visual" << std::endl;
+            }
         }
         // A non-root parent makes this an X11 child window, so the server moves
         // it with the parent automatically - no manual move/resize tracking.
@@ -322,8 +342,10 @@ private:
         // EGL can render to an unmapped window; swapBuffers buffers the
         // content which becomes visible once the window is mapped.
 
-        std::cout << "[PopupWindow] X11 popup created with alpha=" << m_hasAlpha << " compositor=" << m_hasCompositor
-                  << std::endl;
+        if constexpr (POPUP_DEBUG) {
+            std::cout << "[PopupWindow] X11 popup created with alpha=" << m_hasAlpha
+                      << " compositor=" << m_hasCompositor << std::endl;
+        }
         return true;
     }
 
@@ -352,11 +374,15 @@ private:
                                                &numVisuals);
 
         if (visuals == nullptr || numVisuals == 0) {
-            std::cout << "[PopupWindow] No 32-bit TrueColor visuals found" << std::endl;
+            if constexpr (POPUP_DEBUG) {
+                std::cout << "[PopupWindow] No 32-bit TrueColor visuals found" << std::endl;
+            }
             return 0;
         }
 
-        std::cout << "[PopupWindow] Found " << numVisuals << " 32-bit TrueColor visuals" << std::endl;
+        if constexpr (POPUP_DEBUG) {
+            std::cout << "[PopupWindow] Found " << numVisuals << " 32-bit TrueColor visuals" << std::endl;
+        }
 
         // Find a visual with ARGB format
         VisualID result = 0;
@@ -365,9 +391,11 @@ private:
 
             // Check for proper RGBA masks (8 bits per component)
             if (vi->bits_per_rgb == 8 && vi->red_mask != 0 && vi->green_mask != 0 && vi->blue_mask != 0) {
-                std::cout << "[PopupWindow] Visual " << vi->visualid << ": red=0x" << std::hex << vi->red_mask
-                          << " green=0x" << vi->green_mask << " blue=0x" << vi->blue_mask << std::dec
-                          << " bits_per_rgb=" << vi->bits_per_rgb << std::endl;
+                if constexpr (POPUP_DEBUG) {
+                    std::cout << "[PopupWindow] Visual " << vi->visualid << ": red=0x" << std::hex << vi->red_mask
+                              << " green=0x" << vi->green_mask << " blue=0x" << vi->blue_mask << std::dec
+                              << " bits_per_rgb=" << vi->bits_per_rgb << std::endl;
+                }
 
                 result = vi->visualid;
                 break;
@@ -408,8 +436,10 @@ private:
         m_ownsDisplay = false;
         m_isWayland   = true;
 
-        std::cout << "[PopupWindow] Wayland create at (" << m_bound.x << "," << m_bound.y << ") size " << m_bound.w
-                  << "x" << m_bound.h << std::endl;
+        if constexpr (POPUP_DEBUG) {
+            std::cout << "[PopupWindow] Wayland create at (" << m_bound.x << "," << m_bound.y << ") size " << m_bound.w
+                      << "x" << m_bound.h << std::endl;
+        }
 
         // Create surface for popup (use inherited m_surface)
         m_surface = wl_compositor_create_surface(m_parent->wlCompositor());
@@ -518,8 +548,10 @@ private:
         wl_surface_commit(m_surface);
         wl_display_flush(m_display);
 
-        std::cout << "[PopupWindow] Wayland popup created with alpha=" << m_hasAlpha
-                  << " msaa=" << (m_msaa ? "yes" : "no") << std::endl;
+        if constexpr (POPUP_DEBUG) {
+            std::cout << "[PopupWindow] Wayland popup created with alpha=" << m_hasAlpha
+                      << " msaa=" << (m_msaa ? "yes" : "no") << std::endl;
+        }
         return true;
     }
 
@@ -775,8 +807,10 @@ public:
         auto bg    = m_bgColor.toGLRGB();
         glClearColor(bg.at(0), bg.at(1), bg.at(2), 1.0F);
 
-        std::cout << "[PopupWindow] Win32 popup created at (" << screenX << "," << screenY << ") size " << m_bound.w
-                  << "x" << m_bound.h << std::endl;
+        if constexpr (POPUP_DEBUG) {
+            std::cout << "[PopupWindow] Win32 popup created at (" << screenX << "," << screenY << ") size " << m_bound.w
+                      << "x" << m_bound.h << std::endl;
+        }
         return true;
     }
 #endif // _WIN32
@@ -807,8 +841,10 @@ public:
         auto bg    = m_bgColor.toGLRGB();
         glClearColor(bg.at(0), bg.at(1), bg.at(2), 1.0F);
 
-        std::cout << "[PopupWindow] macOS popup created at (" << screenX << "," << screenY << ") size " << m_bound.w
-                  << "x" << m_bound.h << std::endl;
+        if constexpr (POPUP_DEBUG) {
+            std::cout << "[PopupWindow] macOS popup created at (" << screenX << "," << screenY << ") size " << m_bound.w
+                      << "x" << m_bound.h << std::endl;
+        }
         return true;
     }
 #endif // __APPLE__

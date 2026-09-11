@@ -19,7 +19,7 @@
 
 #include "common/noncopyable.h"
 #include "ui/interface/irenderer.h"
-#include "ui/render/clickresult.h"
+#include "ui/render/elementevent.h"
 #include "ui/res/type/changed.h"
 #include "ui/type.h"
 
@@ -160,21 +160,28 @@ public:
         return false;
     }
 
-    bool onMousePress(int x, int y, int clickCount) override
-    {
-        if (m_renderer.has_value() && m_renderer->onMousePress(x, y, clickCount)) {
-            m_window.requestRender();
-            return true;
-        }
-        return false;
-    }
-
-    Ui::Render::click_result_t onMouseRelease(int x, int y) override
+    Ui::Render::element_event_t onMousePress(int                     x,
+                                             int                     y,
+                                             Ui::Window::MouseButton button,
+                                             int                     clickCount,
+                                             Ui::Window::KeyModifier modifiers) override
     {
         if (!m_renderer.has_value()) {
             return {};
         }
-        Ui::Render::click_result_t result = m_renderer->onMouseRelease(x, y);
+        Ui::Render::element_event_t result = m_renderer->onMousePress(x, y, button, clickCount, modifiers);
+        if (result.changed) {
+            m_window.requestRender();
+        }
+        return result;
+    }
+
+    Ui::Render::element_event_t onMouseRelease(int x, int y, Ui::Window::MouseButton button) override
+    {
+        if (!m_renderer.has_value()) {
+            return {};
+        }
+        Ui::Render::element_event_t result = m_renderer->onMouseRelease(x, y, button);
         if (result.changed) {
             m_window.requestRender();
         }
@@ -190,13 +197,16 @@ public:
         return false;
     }
 
-    bool onScroll(int x, int y, Ui::fpx_t deltaY) override
+    Ui::Render::element_event_t onScroll(int x, int y, Ui::fpx_t deltaY) override
     {
-        if (m_renderer.has_value() && m_renderer->onScroll(x, y, deltaY)) {
-            m_window.requestRender();
-            return true;
+        if (!m_renderer.has_value()) {
+            return {};
         }
-        return false;
+        Ui::Render::element_event_t result = m_renderer->onScroll(x, y, deltaY);
+        if (result.changed) {
+            m_window.requestRender();
+        }
+        return result;
     }
 };
 

@@ -56,7 +56,8 @@ public:
                   std::string_view,
                   const Ui::Res::Type::bound_t &,
                   const Ui::Color &,
-                  bool,
+                  Ui::Res::Type::AlignH,
+                  Ui::Res::Type::AlignV,
                   Ui::fpx_t) override
     {
         ++texts;
@@ -66,11 +67,12 @@ public:
                    const Ui::Res::Type::border_t &,
                    const Ui::Color &,
                    Ui::fpx_t,
-                   const Ui::Render::shadow_t &) override
+                   const Ui::Render::shadow_t &,
+                   bool) override
     {
         ++images;
     }
-    void warmImage(std::string_view, const Ui::Res::Type::bound_t &, const Ui::Color &, Ui::fpx_t) override { }
+    void warmImage(std::string_view, const Ui::Res::Type::bound_t &, const Ui::Color &, Ui::fpx_t, bool) override { }
     void drawTriangle(Ui::fpx_t, Ui::fpx_t, Ui::fpx_t, Ui::fpx_t, Ui::fpx_t, Ui::fpx_t, const Ui::Color &) override
     {
         ++tris;
@@ -138,8 +140,14 @@ TEST(RenderInterface, DispatchesThroughBase)
 
     render.beginFrame(800, 600);
     render.fillRect({}, {}, {}, {});
-    render.drawText(render.createFont({}), "hello", {}, Ui::Color {}, true, 0);
-    render.drawImage("icon.svg", {}, {}, Ui::Color {}, 1.0F, {});
+    render.drawText(render.createFont({}),
+                    "hello",
+                    {},
+                    Ui::Color {},
+                    Ui::Res::Type::AlignH::CenterClamped,
+                    Ui::Res::Type::AlignV::Center,
+                    0);
+    render.drawImage("icon.svg", {}, {}, Ui::Color {}, 1.0F, {}, false);
     render.drawTriangle(0, 0, 4, 2, 0, 4, Ui::Color {});
     render.endFrame();
 

@@ -27,6 +27,7 @@
 // scope - hence the explicit scope below, so "Bye!" really is the last line.
 #include "ui/shell.h"
 
+#include <exception>
 #include <iostream>
 
 int main()
@@ -34,9 +35,13 @@ int main()
     std::cout << "Hello!" << std::endl;
 
     int exitCode = 1;
-    {
+    try {
         Ui::Shell shell;
         exitCode = shell.runApp();
+    } catch (const std::exception & error) {
+        // Leaving main is undefined behaviour, so the last frame that can still
+        // report the failure is this one
+        std::cerr << "[main] " << error.what() << std::endl;
     }
 
     std::cout << "Bye!" << std::endl;

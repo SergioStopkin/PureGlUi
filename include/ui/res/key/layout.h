@@ -37,6 +37,8 @@ enum class LayoutKey : unsigned char {
     ButtonIconActiveScale,     // --button-icon-active-scale
     FallbackCharWidth,         // --fallback-char-width
     MenuMaxDepth,              // --menu-max-depth
+
+    Count, // enumerator total, never a variable - what an exhaustive check counts against
 };
 
 [[nodiscard]] inline std::string layoutKeyName(LayoutKey key)
@@ -51,6 +53,8 @@ enum class LayoutKey : unsigned char {
     case LayoutKey::ButtonIconActiveScale: return "--button-icon-active-scale";
     case LayoutKey::FallbackCharWidth: return "--fallback-char-width";
     case LayoutKey::MenuMaxDepth: return "--menu-max-depth";
+
+    case LayoutKey::Count: break;
     }
     return {};
 }

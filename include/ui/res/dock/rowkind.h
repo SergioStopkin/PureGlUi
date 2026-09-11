@@ -17,16 +17,18 @@
 
 #pragma once
 
-#include "ui/render/uielement.h"
-#include "ui/type.h"
+namespace Ui::Res::Dock {
 
-namespace Ui::Render {
-
-// Result of a mouse release event (what was clicked)
-struct alignas(16) click_result_t final {
-    UiElementType type    = UiElementType::MenuButton;
-    id_t          id      = INVALID_ID;
-    bool          changed = false;
+// How a dock row presents itself. Text covers every row that is read rather
+// than manipulated - tree nodes, key/value properties, group headers - and is
+// the default, so a host that never sliders anything ignores this entirely.
+//
+// An explicit kind rather than inferring "slider" from a sentinel value: a
+// slider legitimately sits at any ratio including zero, so no value is free to
+// mean "not a slider".
+enum class RowKind : unsigned char {
+    Text,
+    Slider,
 };
 
-} // namespace Ui::Render
+} // namespace Ui::Res::Dock

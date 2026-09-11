@@ -216,6 +216,17 @@ public:
         }
     }
 
+    // The compositor enforces this on interactive resize. Its protocol takes
+    // window-local (logical) size, so the physical floor is scaled back down.
+    void setMinSize(fpx_t width, fpx_t height) override
+    {
+        if (m_xdgToplevel == nullptr) {
+            return;
+        }
+        xdg_toplevel_set_min_size(m_xdgToplevel, roundToInt(toCss(width)), roundToInt(toCss(height)));
+        wl_surface_commit(m_surface);
+    }
+
     void screenPosition(int & screenX, int & screenY) const override
     {
         // Wayland doesn't expose absolute screen position to clients

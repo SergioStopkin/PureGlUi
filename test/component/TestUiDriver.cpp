@@ -92,10 +92,11 @@ TEST_F(UiDriverTest, ActivateMenuButtonById_TogglesPopup)
     const Ui::Res::Type::menu_t * opener = popupMenu();
     ASSERT_NE(opener, nullptr) << "expected at least one popup-opening top menu";
 
-    Ui::Render::Context        context(resManager);
-    Ui::Render::click_result_t click;
-    click.type = Ui::Render::UiElementType::MenuButton;
-    click.id   = opener->id;
+    Ui::Render::Context         context(resManager);
+    Ui::Render::element_event_t click;
+    click.type  = Ui::Render::UiElementType::MenuButton;
+    click.id    = opener->id;
+    click.event = Ui::Render::EventKind::LeftClick;
 
     // Closed -> click opens the popup for this id.
     const Ui::result_t opened = context.mapClick(click, Ui::INVALID_ID);
@@ -160,13 +161,30 @@ TEST_F(UiDriverTest, HitTestCoordinateResolvesToElementId)
     const Ui::fpx_t centerX = target->bound.x + target->bound.w / 2.0F;
     const Ui::fpx_t centerY = target->bound.y + target->bound.h / 2.0F;
 
-    const Ui::Render::UiElement * hit = layout.hitTest(centerX, centerY);
+    const Ui::Render::UiElement * hit = layout.hitTest(centerX, centerY, Ui::Render::EventKind::LeftClick);
     ASSERT_NE(hit, nullptr);
     EXPECT_EQ(hit->id, target->id);
     EXPECT_EQ(hit->type, target->type);
 
     // A coordinate far outside every element hits nothing.
-    EXPECT_EQ(layout.hitTest(100000.0F, 100000.0F), nullptr);
+    EXPECT_EQ(layout.hitTest(100000.0F, 100000.0F, Ui::Render::EventKind::LeftClick), nullptr);
+
+    // An element is only a target for what it accepts: the status text is
+    // clickable (copy) but not hoverable, so the same point resolves
+    // differently per event kind.
+    const Ui::Render::UiElement * statusText = nullptr;
+    for (const auto & el : layout.elements()) {
+        if (el.type == Ui::Render::UiElementType::Text) {
+            statusText = &el;
+            break;
+        }
+    }
+    if (statusText != nullptr) {
+        const Ui::fpx_t textX = statusText->bound.x + statusText->bound.w / 2.0F;
+        const Ui::fpx_t textY = statusText->bound.y + statusText->bound.h / 2.0F;
+        EXPECT_NE(layout.hitTest(textX, textY, Ui::Render::EventKind::LeftClick), nullptr);
+        EXPECT_EQ(layout.hitTest(textX, textY, Ui::Render::EventKind::Hover), nullptr);
+    }
 }
 
 // -- Popup geometry: coordinate hit-test inside a built popup ---------------

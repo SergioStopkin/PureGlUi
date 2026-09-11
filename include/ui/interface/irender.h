@@ -19,6 +19,8 @@
 
 #include "ui/color.h"
 #include "ui/render/shadow.h"
+#include "ui/res/type/alignh.h"
+#include "ui/res/type/alignv.h"
 #include "ui/res/type/border.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/colorpair.h"
@@ -55,30 +57,39 @@ public:
                           const Res::Type::color_pair_t & colors,
                           const Render::shadow_t &        shadow) = 0;
 
-    // Text run inside pos. centered drives horizontal centering (with minPadH
-    // as the minimum side padding); otherwise left-aligned. The backend owns
-    // baseline placement from the font handle.
+    // Text run inside pos, placed on both axes. minPadH is the minimum side
+    // padding, used by Left/Right and by CenterClamped as its fallback edge.
+    // The backend owns baseline placement from the font handle.
     virtual void drawText(font_handle_t              font,
                           std::string_view           text,
                           const Res::Type::bound_t & pos,
                           const Color &              color,
-                          bool                       centered,
+                          Res::Type::AlignH          alignH,
+                          Res::Type::AlignV          alignV,
                           fpx_t                      minPadH) = 0;
 
     // Image (SVG or raster, inferred from src) scaled into bound with the given
     // corner radii. tint with a() > 0 recolors; scale > 1 enlarges around the
     // center (icon hover/active). An invisible shadow ({}) is skipped.
+    // isFilled: an outline-authored SVG (fill="none") is drawn as a solid shape.
+    // False keeps it as authored - the look popup chrome already gets, since it
+    // loads the plain document.
     virtual void drawImage(std::string_view            src,
                            const Res::Type::bound_t &  bound,
                            const Res::Type::border_t & radii,
                            const Color &               tint,
                            fpx_t                       scale,
-                           const Render::shadow_t &    shadow) = 0;
+                           const Render::shadow_t &    shadow,
+                           bool                        isFilled) = 0;
 
     // Pre-warm an image into the sink's cache at the given scale so a later
     // drawImage at active scale is hitch-free (icon hover/active). Same args as
     // the eventual drawImage minus the radii/shadow the warm pass does not need.
-    virtual void warmImage(std::string_view src, const Res::Type::bound_t & bound, const Color & tint, fpx_t scale) = 0;
+    virtual void warmImage(std::string_view           src,
+                           const Res::Type::bound_t & bound,
+                           const Color &              tint,
+                           fpx_t                      scale,
+                           bool                       isFilled) = 0;
 
     // Flat-color triangle, vertices in CSS px. Used for the tab loading-bar
     // arrow tip - the one shape that is not a rounded rect.

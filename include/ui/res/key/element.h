@@ -31,6 +31,7 @@ namespace Ui::Res::Key {
 // ThemeKey.
 enum class ElementKey : unsigned char {
     Root, // :root variable block
+    Host, // host block - values the framework parses but never interprets
 
     TopMenu,                  // top-menu
     TopMenuDropdown,          // top-menu-dropdown
@@ -51,6 +52,7 @@ enum class ElementKey : unsigned char {
     StatusBar,       // status-bar
     StatusBarActive, // status-bar:active
 
+    Window,                 // window
     Workspace,              // workspace
     WorkspaceTabs,          // workspace-tabs
     WorkspaceTab,           // workspace-tab
@@ -63,36 +65,46 @@ enum class ElementKey : unsigned char {
     Button,       // button
     ThemePreview, // theme-preview
 
-    Dialog,                    // dialog
-    DialogTitle,               // dialog-title
-    DialogText,                // dialog-text
-    DialogIcon,                // dialog-icon
-    DialogClose,               // dialog-close
-    DialogCloseHover,          // dialog-close:hover
-    DialogCloseActive,         // dialog-close:active
-    DialogButton,              // dialog-button
-    DialogButtonHover,         // dialog-button:hover
-    DialogButtonActive,        // dialog-button:active
-    DialogButtonPrimary,       // dialog-button:primary
-    DialogLink,                // dialog-link
-    DialogLinkVisited,         // dialog-link:visited
-    DialogScrollbar,           // dialog-scrollbar
-    DialogScrollbarHover,      // dialog-scrollbar:hover
-    DialogScrollbarThumb,      // dialog-scrollbar-thumb
-    DialogScrollbarThumbHover, // dialog-scrollbar-thumb:hover
+    Dialog,              // dialog
+    DialogTitle,         // dialog-title
+    DialogText,          // dialog-text
+    DialogIcon,          // dialog-icon
+    DialogClose,         // dialog-close
+    DialogCloseHover,    // dialog-close:hover
+    DialogCloseActive,   // dialog-close:active
+    DialogButton,        // dialog-button
+    DialogButtonHover,   // dialog-button:hover
+    DialogButtonActive,  // dialog-button:active
+    DialogButtonPrimary, // dialog-button:primary
+    DialogLink,          // dialog-link
+    DialogLinkVisited,   // dialog-link:visited
+    Scrollbar,           // scrollbar - shared by the dialog and the docks
+    ScrollbarHover,      // scrollbar:hover
+    ScrollbarThumb,      // scrollbar-thumb
+    ScrollbarThumbHover, // scrollbar-thumb:hover
 
     Dock,           // dock
     DockDefaults,   // dock-defaults
     DockGrip,       // dock-grip
     DockGripHover,  // dock-grip:hover
     DockGripActive, // dock-grip:active
-    DockSeparator,  // dock-separator
+    // Slider parts, named the way scrollbar-thumb is. The state suffix is a
+    // POINTER state here: the filled portion is not a state of anything, so it
+    // shares the thumb's colour - both mark the value, and a slider that coloured
+    // them apart would read as two different indicators.
+    DockSliderTrack,      // dock-slider-track
+    DockSliderThumb,      // dock-slider-thumb
+    DockSliderThumbHover, // dock-slider-thumb:hover
+    DockSeparator,        // dock-separator
+
+    Count, // enumerator total, never a selector - what an exhaustive check counts against
 };
 
 [[nodiscard]] inline std::string elementKeyName(ElementKey key)
 {
     switch (key) {
     case ElementKey::Root: return ":root";
+    case ElementKey::Host: return "host";
 
     case ElementKey::TopMenu: return "top-menu";
     case ElementKey::TopMenuDropdown: return "top-menu-dropdown";
@@ -113,6 +125,7 @@ enum class ElementKey : unsigned char {
     case ElementKey::StatusBar: return "status-bar";
     case ElementKey::StatusBarActive: return "status-bar:active";
 
+    case ElementKey::Window: return "window";
     case ElementKey::Workspace: return "workspace";
     case ElementKey::WorkspaceTabs: return "workspace-tabs";
     case ElementKey::WorkspaceTab: return "workspace-tab";
@@ -138,17 +151,24 @@ enum class ElementKey : unsigned char {
     case ElementKey::DialogButtonPrimary: return "dialog-button:primary";
     case ElementKey::DialogLink: return "dialog-link";
     case ElementKey::DialogLinkVisited: return "dialog-link:visited";
-    case ElementKey::DialogScrollbar: return "dialog-scrollbar";
-    case ElementKey::DialogScrollbarHover: return "dialog-scrollbar:hover";
-    case ElementKey::DialogScrollbarThumb: return "dialog-scrollbar-thumb";
-    case ElementKey::DialogScrollbarThumbHover: return "dialog-scrollbar-thumb:hover";
+    case ElementKey::Scrollbar: return "scrollbar";
+    case ElementKey::ScrollbarHover: return "scrollbar:hover";
+    case ElementKey::ScrollbarThumb: return "scrollbar-thumb";
+    case ElementKey::ScrollbarThumbHover: return "scrollbar-thumb:hover";
 
     case ElementKey::Dock: return "dock";
     case ElementKey::DockDefaults: return "dock-defaults";
     case ElementKey::DockGrip: return "dock-grip";
     case ElementKey::DockGripHover: return "dock-grip:hover";
     case ElementKey::DockGripActive: return "dock-grip:active";
+    case ElementKey::DockSliderTrack: return "dock-slider-track";
+    case ElementKey::DockSliderThumb: return "dock-slider-thumb";
+    case ElementKey::DockSliderThumbHover: return "dock-slider-thumb:hover";
     case ElementKey::DockSeparator: return "dock-separator";
+
+    // Falls through to the same empty string an out-of-range value gets, and
+    // still costs a case, so -Wswitch keeps catching a real key with no spelling
+    case ElementKey::Count: break;
     }
     return {};
 }

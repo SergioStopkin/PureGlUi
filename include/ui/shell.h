@@ -23,6 +23,7 @@
 #include "sig.h"
 #include "ui/action/actionmap.h"
 #include "ui/action/registry.h"
+#include "ui/elementid.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/gl/svgrenderer.h"
@@ -31,6 +32,8 @@
 #include "ui/interface/ichromecommands.h"
 #include "ui/pubsub/subscribeid.h"
 #include "ui/render/context.h"
+#include "ui/render/elementevent.h"
+#include "ui/render/renderscope.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
@@ -55,6 +58,11 @@
 #include <vector>
 
 namespace Ui {
+
+// Flip to true to trace the chrome orchestration: every click and key as it is
+// classified, menu hover, and the popup lifecycle with its geometry. One line
+// or more per input event, so this is loud under any real use.
+constexpr bool SHELL_DEBUG = false;
 
 /**
  * @brief The runnable framework core - owns the fw object graph.
@@ -104,6 +112,17 @@ public:
     // the host runs the domain side (workspaces, content surfaces, mouse-rotation toggle).
     void setOnTabActivated(std::function<void(id_t)> fn) { m_onTabActivated = std::move(fn); }
     void setOnTabClosed(std::function<void(id_t)> fn) { m_onTabClosed = std::move(fn); }
+
+    // Dock rows the host projected via WindowManager::setDockRows. rowId is the
+    // host's own row id, so it must be unique across docks - the framework
+    // carries it opaquely and cannot tell two docks' rows apart.
+    void setOnDockRowActivated(std::function<void(id_t)> fn) { m_onDockRowActivated = std::move(fn); }
+
+    // A slider row being dragged: (row id, 0..1). Forwarded straight to
+    // WindowManager, which owns the drag, rather than kept here - there is no
+    // shell-level decision to make on the way through.
+    void setOnDockRowValue(std::function<void(id_t, fpx_t)> fn) { m_windowManager.setOnRowValue(std::move(fn)); }
+    void setOnDockRowToggled(std::function<void(id_t)> fn) { m_onDockRowToggled = std::move(fn); }
     void setOnKeyPress(Ui::predicate_fn_t fn) { m_onKeyPress = std::move(fn); }
 
     // Register a loader for a file extension (lowercase, no dot, e.g. "step").
@@ -401,8 +420,10 @@ public:
             m_resManager.setSessionWindowGeometry(frameX, frameY, static_cast<int>(newW), static_cast<int>(newH));
 
             if (newW != m_windowWidth || newH != m_windowHeight) {
-                std::cout << "[Shell] Resize event: " << newW << "x" << newH << " (current: " << m_windowWidth << "x"
-                          << m_windowHeight << ")" << std::endl;
+                if constexpr (SHELL_DEBUG) {
+                    std::cout << "[Shell] Resize event: " << newW << "x" << newH << " (current: " << m_windowWidth
+                              << "x" << m_windowHeight << ")" << std::endl;
+                }
                 m_windowWidth  = newW;
                 m_windowHeight = newH;
 
@@ -447,20 +468,28 @@ public:
                         const int menuBarHeight = toPhysFloor(m_resManager.layout().topMenu.height);
                         if (mainY >= 0 && mainY < menuBarHeight) {
                             if (mainX < menusTotalWidthPhysical()) {
-                                const bool hitMenuItem = m_windowManager.onMousePress(mainX,
-                                                                                      mainY,
-                                                                                      event.mouse.clickCount);
+                                const bool hitMenuItem = m_windowManager
+                                                         .onMousePress(mainX,
+                                                                       mainY,
+                                                                       event.mouse.button,
+                                                                       event.mouse.clickCount,
+                                                                       event.mouse.modifiers)
+                                                         .isHit();
                                 m_windowManager.requestMainRender();
                                 if (hitMenuItem) {
                                     shouldClosePopup = false;
-                                    std::cout << "[Shell] Clicked menu item, switching popup" << std::endl;
-                                } else {
-                                    std::cout << "[Shell] Clicked menu bar between buttons - closing popup"
+                                }
+                                if constexpr (SHELL_DEBUG) {
+                                    std::cout << (hitMenuItem ? "[Shell] Clicked menu item, switching popup"
+                                                              : "[Shell] Clicked menu bar between buttons - closing "
+                                                                "popup")
                                               << std::endl;
                                 }
                             } else {
-                                std::cout << "[Shell] Clicked menu bar empty space after menus (x=" << mainX << " > "
-                                          << menusTotalWidthPhysical() << ") - closing popup" << std::endl;
+                                if constexpr (SHELL_DEBUG) {
+                                    std::cout << "[Shell] Clicked menu bar empty space after menus (x=" << mainX
+                                              << " > " << menusTotalWidthPhysical() << ") - closing popup" << std::endl;
+                                }
                             }
                         } else {
                             if (event.mouse.x >= 0 && event.mouse.x < m_windowManager.popupWindow()->bound().w
@@ -471,11 +500,17 @@ public:
                     }
 
                     if (shouldClosePopup) {
-                        std::cout << "[Shell] Closing popup (clicked outside menu and popup area)" << std::endl;
+                        if constexpr (SHELL_DEBUG) {
+                            std::cout << "[Shell] Closing popup (clicked outside menu and popup area)" << std::endl;
+                        }
                         destroyPopup();
                         // Forward click to main window
                         if (event.mouse.button == Ui::Window::MouseButton::Left) {
-                            m_windowManager.onMousePress(mainX, mainY, event.mouse.clickCount);
+                            m_windowManager.onMousePress(mainX,
+                                                         mainY,
+                                                         event.mouse.button,
+                                                         event.mouse.clickCount,
+                                                         event.mouse.modifiers);
                             m_windowManager.requestMainRender();
                         }
                     }
@@ -484,22 +519,30 @@ public:
             }
 
             // Non-popup press -- close popup if clicking outside of it
-            std::cout << "[Shell] MouseButtonPress event received at (" << event.mouse.x << "," << event.mouse.y << ")"
-                      << std::endl;
+            if constexpr (SHELL_DEBUG) {
+                std::cout << "[Shell] MouseButtonPress event received at (" << event.mouse.x << "," << event.mouse.y
+                          << ") clickCount=" << event.mouse.clickCount << std::endl;
+            }
             if (m_windowManager.hasPopup()) {
                 bool      closePopup    = true;
                 const int menuBarHeight = toPhysFloor(m_resManager.layout().topMenu.height);
                 if (event.mouse.y >= 0 && event.mouse.y < menuBarHeight) {
                     if (event.mouse.x < menusTotalWidthPhysical()) {
-                        std::cout << "[Shell] Click on menu button while popup open - deferring to click handler"
-                                  << std::endl;
+                        if constexpr (SHELL_DEBUG) {
+                            std::cout << "[Shell] Click on menu button while popup open - deferring to click handler"
+                                      << std::endl;
+                        }
                         closePopup = false;
                     } else {
-                        std::cout << "[Shell] Click in menu bar empty space (after menus at x=" << event.mouse.x
-                                  << " > " << menusTotalWidthPhysical() << ") - closing popup" << std::endl;
+                        if constexpr (SHELL_DEBUG) {
+                            std::cout << "[Shell] Click in menu bar empty space (after menus at x=" << event.mouse.x
+                                      << " > " << menusTotalWidthPhysical() << ") - closing popup" << std::endl;
+                        }
                     }
                 } else {
-                    std::cout << "[Shell] Closing popup (clicked outside)" << std::endl;
+                    if constexpr (SHELL_DEBUG) {
+                        std::cout << "[Shell] Closing popup (clicked outside)" << std::endl;
+                    }
                 }
                 if (closePopup) {
                     destroyPopup();
@@ -529,8 +572,10 @@ public:
                                 dispatchClick(result);
                             }
                         } else {
-                            std::cout << "[Shell] Popup MouseButtonRelease outside visual region - closing popup"
-                                      << std::endl;
+                            if constexpr (SHELL_DEBUG) {
+                                std::cout << "[Shell] Popup MouseButtonRelease outside visual region - closing popup"
+                                          << std::endl;
+                            }
                             destroyPopup();
                         }
                         return;
@@ -610,7 +655,9 @@ public:
         // Hover handler for menu switching.
         m_windowManager.setOnElementHover([this](Ui::Render::UiElementType type, id_t id) {
             (void)type;
-            std::cout << "[Shell] Menu button hover: id=" << id << std::endl;
+            if constexpr (SHELL_DEBUG) {
+                std::cout << "[Shell] Menu button hover: id=" << id << std::endl;
+            }
             handleMenuHover(id);
         });
 
@@ -639,7 +686,9 @@ public:
                 destroyPopup();
             }
 
-            std::cout << "[Shell] Dialog closed with result: " << static_cast<int>(action) << std::endl;
+            if constexpr (SHELL_DEBUG) {
+                std::cout << "[Shell] Dialog closed with result: " << static_cast<int>(action) << std::endl;
+            }
         });
     }
 
@@ -742,6 +791,8 @@ private:
     // Domain hooks (host-provided; empty on a standalone shell).
     std::function<void(id_t)> m_onTabActivated;
     std::function<void(id_t)> m_onTabClosed;
+    std::function<void(id_t)> m_onDockRowActivated;
+    std::function<void(id_t)> m_onDockRowToggled;
     Ui::predicate_fn_t        m_onKeyPress;
 
     // Per-extension file loaders (host-registered; empty on a standalone shell,
@@ -884,7 +935,9 @@ private:
             return;
         }
 
-        std::cout << "[Shell] Key pressed: " << keyStr << std::endl;
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] Key pressed: " << keyStr << std::endl;
+        }
 
         // Dialog keyboard navigation (Escape, Return, Left, Right)
         if (m_windowManager.hasDialog()) {
@@ -910,7 +963,9 @@ private:
         // Normalize key string to match the format in shortcuts map (lowercase, no spaces)
         const std::string normalizedKey = normalizeKeyString(keyStr);
 
-        std::cout << "[Shell] Normalized key: " << normalizedKey << std::endl;
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] Normalized key: " << normalizedKey << std::endl;
+        }
 
         // Resolve the shortcut to intents via the Context facade, then execute.
         const Ui::result_t result = m_context.mapKey(normalizedKey);
@@ -953,7 +1008,9 @@ private:
         // a click is required to open the first menu. Just remember hovered id.
         if (m_openMenuId == Ui::INVALID_ID && !m_menuSwitchPending) {
             if (m_hoveredMenuId != menuId) {
-                std::cout << "[Shell] Hovered menu (no popup open): " << menuId << std::endl;
+                if constexpr (SHELL_DEBUG) {
+                    std::cout << "[Shell] Hovered menu (no popup open): " << menuId << std::endl;
+                }
                 m_hoveredMenuId = menuId;
             }
             return;
@@ -979,7 +1036,9 @@ private:
             destroyPopup(true); // Destroy old popup, triggers requestContentRefresh
             m_menuSwitchPending = true;
             m_windowManager.subscribe().defer([this, menuId]() {
-                std::cout << "[Shell] Committing deferred menu switch to: " << menuId << std::endl;
+                if constexpr (SHELL_DEBUG) {
+                    std::cout << "[Shell] Committing deferred menu switch to: " << menuId << std::endl;
+                }
                 createMenuPopup(menuId);
                 m_menuSwitchPending = false;
                 m_menuJustActivated = true;
@@ -998,7 +1057,9 @@ private:
         m_openMenuId = menuId;
         m_resManager.setActiveMenu(menuId);
         m_windowManager.requestContentRefresh(); // Rebuild layout with active menu highlight next frame
-        std::cout << "[Shell] Creating popup for menu: " << menuId << std::endl;
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] Creating popup for menu: " << menuId << std::endl;
+        }
 
         // Find the menu
         const auto & menus = m_resManager.menus();
@@ -1037,8 +1098,10 @@ private:
         // Y = bottom of menu button (button height in CSS pixels)
         const fpx_t buttonYCss = buttonH;
 
-        std::cout << "[Shell] Popup position: menuId=" << menuId << " X=" << buttonXCss << " Y=" << buttonYCss
-                  << std::endl;
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] Popup position: menuId=" << menuId << " X=" << buttonXCss << " Y=" << buttonYCss
+                      << std::endl;
+        }
 
         // Use toPhysRound so position and size stay divisible by g_config.scale - i.e.
         // integer NS points on macOS (bsf=2). Fractional physical px produce a
@@ -1053,7 +1116,10 @@ private:
         const fpx_t contentCssH = menu.popupHeight;
         const fpx_t popupHeight = toPhysRound(contentCssH);
 
-        std::cout << "[Shell] Popup height calc: contentCssH=" << contentCssH << " scaled=" << popupHeight << std::endl;
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] Popup height calc: contentCssH=" << contentCssH << " scaled=" << popupHeight
+                      << std::endl;
+        }
 
         const Ui::Res::Type::border_t popupRadii = m_resManager.layout().topMenuDropdown.border.scaled(g_config.scale);
 
@@ -1069,7 +1135,9 @@ private:
             return;
         }
 
-        std::cout << "[Shell] Popup size: " << popupWidth << "x" << popupHeight << std::endl;
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] Popup size: " << popupWidth << "x" << popupHeight << std::endl;
+        }
 
         // Initialize renderer with corner capture (renders main window, captures corners)
         m_windowManager.initPopupRenderer();
@@ -1096,29 +1164,73 @@ private:
         // (popup creation switches to popup context)
         m_windowManager.mainWindow().makeCurrent();
 
-        std::cout << "[Shell] Popup renderer initialized successfully" << std::endl;
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] Popup renderer initialized successfully" << std::endl;
+        }
     }
 
     // Map a resolved main-UI click to intents via the Context facade and execute
-    // them. TabArrow scroll is fw-internal (no host action), so it is handled
-    // here directly rather than as an intent.
-    void dispatchClick(const Ui::Render::click_result_t & click)
+    // them, unless the element is chrome the framework services itself.
+    void dispatchClick(const Ui::Render::element_event_t & click)
     {
-        std::cout << "[Shell] Click: type=" << Ui::Render::toInt(click.type) << " id=" << click.id << std::endl;
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] Click: type=" << Ui::Render::toInt(click.type) << " id=" << click.id << std::endl;
+        }
 
-        if (click.type == Ui::Render::UiElementType::TabArrow) {
-            if (click.id == Ui::Render::TAB_ARROW_LEFT) {
-                m_resManager.tabBar().scrollLeft();
-            } else {
-                m_resManager.tabBar().scrollRight();
-            }
-            m_windowManager.requestContentRefresh();
+        Ui::Render::RenderScope scope = Ui::Render::RenderScope::None;
+        if (handleInternalChrome(click, scope)) {
+            applyScope(scope);
             return;
         }
 
         const Ui::result_t result = m_context.mapClick(click, m_openMenuId);
         for (const Ui::intent_t & intent : result.intents) {
             execute(intent);
+        }
+        applyScope(Ui::Render::Context::scopeFor(click));
+    }
+
+    // The mirror of defaultBinding returning false: that says an element raises
+    // no intent, this says what happens instead. Only the shell can do this work
+    // - Context and WindowManager both hold a const ResManager &
+    [[nodiscard]] bool handleInternalChrome(const Ui::Render::element_event_t & click,
+                                            Ui::Render::RenderScope &           outScope)
+    {
+        switch (click.type) {
+        case Ui::Render::UiElementType::TabArrow:
+            if (click.id == Ui::TAB_ARROW_LEFT) {
+                m_resManager.tabBar().scrollLeft();
+            } else {
+                m_resManager.tabBar().scrollRight();
+            }
+            outScope = Ui::Render::RenderScope::Layout;
+            return true;
+        case Ui::Render::UiElementType::MenuButton:
+        case Ui::Render::UiElementType::ToolbarButton:
+        case Ui::Render::UiElementType::MenuItem:
+        case Ui::Render::UiElementType::Separator:
+        case Ui::Render::UiElementType::Text:
+        case Ui::Render::UiElementType::Image:
+        case Ui::Render::UiElementType::Tab:
+        case Ui::Render::UiElementType::TabClose:
+        case Ui::Render::UiElementType::DockRow:
+        case Ui::Render::UiElementType::DockExpander:
+        case Ui::Render::UiElementType::DockGrip:
+        case Ui::Render::UiElementType::DockSlider:
+        case Ui::Render::UiElementType::DockScrollbar: return false;
+        }
+        return false;
+    }
+
+    // Turn a declared repaint class into the matching request. An intent may
+    // already have asked for a repaint of its own; both paths are idempotent
+    // (a queue insert and a dirty flag), so the overlap is free.
+    void applyScope(Ui::Render::RenderScope scope)
+    {
+        switch (scope) {
+        case Ui::Render::RenderScope::Layout: m_windowManager.requestContentRefresh(); break;
+        case Ui::Render::RenderScope::Chrome: m_windowManager.requestMainRender(); break;
+        case Ui::Render::RenderScope::None: break;
         }
     }
 
@@ -1173,6 +1285,20 @@ private:
         }
     }
 
+    void activateRow(id_t rowId) override
+    {
+        if (m_onDockRowActivated) {
+            m_onDockRowActivated(rowId);
+        }
+    }
+
+    void toggleRow(id_t rowId) override
+    {
+        if (m_onDockRowToggled) {
+            m_onDockRowToggled(rowId);
+        }
+    }
+
     void copyText(const std::string & text) override
     {
         if (m_windowManager.copyToClipboard(text)) {
@@ -1182,7 +1308,9 @@ private:
 
     void handleResize()
     {
-        std::cout << "[Shell] handleResize(): " << m_windowWidth << "x" << m_windowHeight << std::endl;
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] handleResize(): " << m_windowWidth << "x" << m_windowHeight << std::endl;
+        }
 
         // Update window dimensions (so mainWindow().bound() returns new size)
         m_windowManager.onMainWindowResize(m_windowWidth, m_windowHeight);

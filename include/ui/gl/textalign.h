@@ -17,6 +17,9 @@
 
 #pragma once
 
+#include "ui/gl/fonttypes.h"
+#include "ui/res/type/alignh.h"
+#include "ui/res/type/alignv.h"
 #include "ui/res/type/bound.h"
 #include "ui/type.h"
 
@@ -51,6 +54,36 @@ startXCenterClamped(const Ui::Res::Type::bound_t & box, fpx_t textWidthCss, fpx_
     const fpx_t centered = (box.x + (box.w - textWidthCss) / 2.0F) * scale;
     const fpx_t minX     = (box.x + minPaddingHCss) * scale;
     return centered < minX ? minX : centered;
+}
+
+// Pick by alignment rather than by function name, so a caller can carry the
+// alignment as data (from res JSON) instead of branching at every draw site.
+[[nodiscard]] inline fpx_t startX(Ui::Res::Type::AlignH          align,
+                                  const Ui::Res::Type::bound_t & box,
+                                  fpx_t                          textWidthCss,
+                                  fpx_t                          paddingHCss,
+                                  fpx_t                          scale)
+{
+    switch (align) {
+    case Ui::Res::Type::AlignH::Center: return startXCenter(box, textWidthCss, scale);
+    case Ui::Res::Type::AlignH::Right: return startXRight(box, textWidthCss, paddingHCss, scale);
+    case Ui::Res::Type::AlignH::CenterClamped: return startXCenterClamped(box, textWidthCss, paddingHCss, scale);
+    case Ui::Res::Type::AlignH::Left: return startXLeft(box, paddingHCss, scale);
+    }
+    return startXLeft(box, paddingHCss, scale);
+}
+
+[[nodiscard]] inline fpx_t baselineY(Ui::Res::Type::AlignV          align,
+                                     const Ui::Gl::font_metrics_t & metrics,
+                                     const Ui::Res::Type::bound_t & box,
+                                     fpx_t                          scale)
+{
+    switch (align) {
+    case Ui::Res::Type::AlignV::Top: return metrics.baselineTop(box.y, scale);
+    case Ui::Res::Type::AlignV::Bottom: return metrics.baselineBottom(box.y, box.h, scale);
+    case Ui::Res::Type::AlignV::Center: return metrics.baselineCap(box.y, box.h, scale);
+    }
+    return metrics.baselineCap(box.y, box.h, scale);
 }
 
 } // namespace Ui::Gl::TextAlign

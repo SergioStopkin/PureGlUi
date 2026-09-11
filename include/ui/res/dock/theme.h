@@ -31,7 +31,17 @@ struct alignas(128) dock_theme_t final {
     Ui::Res::Type::color_pair_t grip;       // resize handle strip (idle)
     Ui::Res::Type::color_pair_t gripHover;  // hover over the strip
     Ui::Res::Type::color_pair_t gripActive; // mid-drag
-    Ui::Color                   separator;  // 1px line between content and viewport
+    // Slider rows. Its own pairs rather than reusing the grip's: the grip is a
+    // strip at the dock edge with a separator beside it, so it reads at
+    // near-background colours that a bar inside the dock body would not.
+    //
+    // Two pairs for three drawn pieces, because the filled portion and the thumb
+    // are one idea - where the value is - and only the track is the other. The
+    // thumb pair carries both.
+    Ui::Res::Type::color_pair_t sliderTrack;      // the bar behind the value
+    Ui::Res::Type::color_pair_t sliderThumb;      // grip, and the track filled up to it
+    Ui::Res::Type::color_pair_t sliderThumbHover; // grip under the pointer
+    Ui::Color                   separator;        // 1px line between content and viewport
 
     bool operator==(const dock_theme_t &) const = default;
 };

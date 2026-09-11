@@ -235,6 +235,20 @@ Visual primitives:
 - `theme_preview_t` (`themepreview.h`) - theme-swatch geometry (border, width,
   height, right offset, splitAngle) for the themes submenu.
 
+Text placement (read from a block's `text-align` / `vertical-align`, so the JSON
+spelling matches the CSS property it mirrors):
+
+- `AlignH` enum + `alignHFromName` (`alignh.h`) - `Left`, `Center`, `Right`,
+  `CenterClamped`. The last centres while there is room and falls back to
+  left-aligned rather than overflowing the left edge - what a tab or a menu
+  button needs when its label outgrows the box.
+- `AlignV` enum + `alignVFromName` (`alignv.h`) - `Top`, `Center`, `Bottom`.
+  `Center` is cap-height centred rather than line-box centred: text looks centred
+  to the eye when its capitals are, not when its ascender/descender bounds are
+  (see `font_metrics_t::baselineCap`).
+
+Both are parameters of `IRender::drawText`, replacing the old `bool centered`.
+
 Aggregate value blocks:
 
 - `layout_t` (`layout.h`) - the full layout block: region_t members (topMenu,
@@ -242,12 +256,27 @@ Aggregate value blocks:
   theme-preview geometry, hover/active border radii, dialog/tab metrics, the
   `docks` config vector, icon filenames, and scalar `:root` vars
   (`menuMaxDepth`, `windowWidth`/`windowHeight`, icon shadow/scale, etc.).
+  Scrollbar metrics are named `scrollbar*` rather than `dialogScrollbar*`: the
+  block is shared by the dialog and the docks. `scrollbarHoverW` doubles as the
+  HIT width in both states. Slider metrics are `sliderTrackH`, `sliderThumbW/H`
+  and `sliderThumbHoverW/H` - only the track's THICKNESS is stated, because its
+  length is the row's right column, which layout cannot know without the dock's
+  width; the thumb states both sides since neither follows the row.
+  `windowMinWidth`/`windowMinHeight` are the CHROME floor only - the size at
+  which toolbars, tabs and status stay usable with no dialog open. What a dialog
+  needs is added on top by `ResManager`, so a bigger dialog cannot make itself
+  unreachable.
 - `popup_t` (`popup.h`) - cached dropdown metrics: itemHeight, item padding,
   separator height/margins.
 - `theme_t` (`theme.h`) - the full resolved theme: per-element `font_t`s,
   `color_pair_t`s for every region and interactive state (menu, buttons, tabs,
   dialog, scrollbar, status bar), standalone colors (shadow, model, error, info,
   warn, disabled/separator/shortcut), and the embedded `Dock::dock_theme_t`.
+  Note `colorError` is also the FALLBACK any unresolved block colour takes: an
+  absent block, an absent property and a mistyped value all resolve to it alike,
+  so a misspelled key paints the element in the theme's error colour rather than
+  leaving it unset. A test asking "is this block defined?" must compare against
+  `colorError`, not against alpha.
 - `input_t` (`input.h`) - scroll + key-animation tunables from `res/input.json`
   (scrollNatural/Speed/Smooth/SnapThreshold, keyAnimationDelay).
 
@@ -298,6 +327,20 @@ Domains present:
   view, paths, files, docks.
 - `SessionKey` (`session.h`) - session.json v2 keys: version, lastUpdate, x, y,
   width, height, theme, themeMode, lastOpenDir, active, open, name, memoryX.
+- `ElementKey` (`element.h`) - CSS block SELECTORS shared by layout.json and the
+  theme files, so both stores key off one spelling.
+- `CssPropKey` (`cssprop.h`) - CSS PROPERTY names read from a block.
+- `LayoutKey` (`layout.h`) / `ThemeKey` (`theme.h`) - the per-store `:root`
+  custom-property variables (`--kebab`), plus the theme's top-level `name`.
+
+`ElementKey`, `CssPropKey`, `LayoutKey` and `ThemeKey` each end in a `Count`
+sentinel - the enumerator total, never a selector - so an exhaustive check counts
+against the enum instead of a hand-kept number. Each mapper carries a
+`case ...::Count: break;` that falls through to the same empty string an
+out-of-range value gets, which keeps `-Wswitch` catching a real key that has no
+spelling. The two guarantees are worth separating: a missing spelling is a
+compile error (the switches have no `default:`), while a spelling shared by two
+keys is invisible to the compiler and is what the sentinel-checked test catches.
 
 ## Dock (Ui::Res::Dock)
 
@@ -312,11 +355,38 @@ Headers under `include/ui/res/dock/`.
   configured here - first launch is always collapsed.
 - `dock_layout_t` (`layout.h`) - shared dimensional/interaction tunables from
   layout.json applied to every dock: gripWidth, gripRadius, clickThreshold,
-  gripIcon. No min/max bounds (floor 0, ceiling is dynamic viewport space).
+  gripIcon, plus the row metrics `rowIndentRatio` / `rowExpanderRatio` /
+  `rowKeyRatio`. Those three are fractions OF ROW HEIGHT, so the tree stays
+  proportional at any DPI or font size instead of needing a px value per scale.
+  No min/max width bounds (floor 0, ceiling is dynamic viewport space).
 - `dock_state_t` (`state.h`) - runtime mutable, session-persisted per-dock
   state: `width` (0 = collapsed) and `memoryX` (double-click restore size).
 - `dock_theme_t` (`theme.h`) - shared visual style: background, grip/gripHover/
-  gripActive color pairs, separator color. Embedded in `theme_t`.
+  gripActive color pairs, the slider pairs `sliderTrack` / `sliderThumb` /
+  `sliderThumbHover`, and the separator color. Embedded in `theme_t`. The slider
+  gets its own pairs rather than reusing the grip's because the grip is a strip
+  at the dock edge with a separator beside it, so it reads at near-background
+  colours a bar inside the dock body would not. Two pairs for three drawn pieces:
+  the filled portion and the thumb are one idea - where the value is - and the
+  thumb pair carries both.
+- `row_t` (`row.h`) - one line of dock content, projected by the host the way it
+  projects workspaces into `Ui::TabBar`: `{id, label, value, icon, depth,
+  hasChildren, isExpanded, isSelected, RowKind kind, fpx_t ratio}`. Deliberately
+  one type for both dock kinds - a tree row indents by `depth` and draws a
+  chevron from `hasChildren` with `value` empty; a property row sits at depth 0
+  with a non-empty right-aligned `value`; a group is a property row with
+  children, so groups collapse for free. `id` is the host's own identifier,
+  echoed back untouched in the row intents and opaque to the framework, and
+  `INVALID_ID` marks a row that renders but never reports. `label` and `value`
+  are LITERAL display text, not locale keys - the host resolves any lookup before
+  projecting, exactly as `tab_t::label` does.
+- `RowKind` enum (`rowkind.h`) - `Text` (every row that is read rather than
+  manipulated: tree nodes, key/value properties, group headers) or `Slider`. An
+  explicit kind rather than inferring "slider" from a sentinel value, because a
+  slider legitimately sits at any ratio including zero, so no value is free to
+  mean "not a slider". `ratio` is 0..1 and ignored unless `kind` is `Slider`; the
+  framework knows only the fraction, and a host that wants the mapped number
+  drawn alongside puts it in `value`.
 
 ## session.json v2
 

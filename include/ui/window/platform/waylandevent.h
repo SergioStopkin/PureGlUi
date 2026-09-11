@@ -116,6 +116,17 @@ public:
     // Wayland it stays unset (findChildWindowId returns INVALID_ID), as before.
     void setChildWindowLookup(Ui::Window::child_id_fn_t lookup) override { m_childWindowLookup = std::move(lookup); }
 
+    // The compositor makes the client re-set the cursor on every pointer enter,
+    // so the shape is state here rather than a one-shot call. Applying it now
+    // covers the pointer already being inside; pointerEnter covers the rest.
+    void setCursor(Ui::Window::PointerShape shape) override
+    {
+        m_pointerShape = shape;
+        if (m_pointer != nullptr && m_focusSurface != nullptr) {
+            applyCursor(m_pointer, m_pointerSerial);
+        }
+    }
+
     /**
      * @brief Register the popup window for event routing
      */
@@ -306,15 +317,16 @@ public:
     }
 
 private:
-    wl_seat *         m_seat          = nullptr;
-    wl_pointer *      m_pointer       = nullptr;
-    wl_keyboard *     m_keyboard      = nullptr;
-    wl_cursor_theme * m_cursorTheme   = nullptr;
-    wl_surface *      m_cursorSurface = nullptr;
-    wl_cursor *       m_defaultCursor = nullptr;
-    uint32_t          m_pointerSerial = 0;
-    wl_surface *      m_focusSurface  = nullptr;
-    wl_surface *      m_mainSurface   = nullptr;
+    wl_seat *                m_seat          = nullptr;
+    wl_pointer *             m_pointer       = nullptr;
+    wl_keyboard *            m_keyboard      = nullptr;
+    Ui::Window::PointerShape m_pointerShape  = Ui::Window::PointerShape::Default;
+    wl_cursor_theme *        m_cursorTheme   = nullptr;
+    wl_surface *             m_cursorSurface = nullptr;
+    wl_cursor *              m_defaultCursor = nullptr;
+    uint32_t                 m_pointerSerial = 0;
+    wl_surface *             m_focusSurface  = nullptr;
+    wl_surface *             m_mainSurface   = nullptr;
 
     // Clipboard selection (wl_data_source). m_clipboardText outlives copyToClipboard
     // because the source's send callback fires asynchronously when a client pastes.
@@ -464,14 +476,36 @@ private:
         self->m_mouseY = toPhysFloor(wl_fixed_to_int(sy));
 
         // Set cursor - Wayland requires the client to set it on every enter
-        if (self->m_defaultCursor && self->m_cursorSurface) {
-            wl_cursor_image * image = self->m_defaultCursor->images[0];
-            wl_buffer *       buf   = wl_cursor_image_get_buffer(image);
-            wl_surface_attach(self->m_cursorSurface, buf, 0, 0);
-            wl_surface_damage(self->m_cursorSurface, 0, 0, image->width, image->height);
-            wl_surface_commit(self->m_cursorSurface);
-            wl_pointer_set_cursor(pointer, serial, self->m_cursorSurface, image->hotspot_x, image->hotspot_y);
+        self->applyCursor(pointer, serial);
+    }
+
+    // Resolve the current shape against the theme and hand it to the pointer.
+    // Falls back to the cursor loaded at init when the theme has no such name,
+    // so an exotic shape cannot leave the pointer invisible.
+    void applyCursor(wl_pointer * pointer, uint32_t serial)
+    {
+        if (m_cursorSurface == nullptr) {
+            return;
         }
+
+        wl_cursor * cursor = m_defaultCursor;
+        if (m_cursorTheme != nullptr) {
+            wl_cursor * named = wl_cursor_theme_get_cursor(m_cursorTheme,
+                                                           Ui::Window::pointerShapeToThemeName(m_pointerShape));
+            if (named != nullptr) {
+                cursor = named;
+            }
+        }
+        if (cursor == nullptr || cursor->image_count == 0) {
+            return;
+        }
+
+        wl_cursor_image * image = cursor->images[0];
+        wl_buffer *       buf   = wl_cursor_image_get_buffer(image);
+        wl_surface_attach(m_cursorSurface, buf, 0, 0);
+        wl_surface_damage(m_cursorSurface, 0, 0, image->width, image->height);
+        wl_surface_commit(m_cursorSurface);
+        wl_pointer_set_cursor(pointer, serial, m_cursorSurface, image->hotspot_x, image->hotspot_y);
     }
 
     static void pointerLeave(void * data, wl_pointer * /*pointer*/, uint32_t /*serial*/, wl_surface * surface)
@@ -524,13 +558,15 @@ private:
         case BTN_LEFT: event.mouse.button = MouseButton::Left; break;
         case BTN_RIGHT: event.mouse.button = MouseButton::Right; break;
         case BTN_MIDDLE: event.mouse.button = MouseButton::Middle; break;
-        default: event.mouse.button = MouseButton::Left; break;
+        // Side/extra buttons have no MouseButton - labelled Left they clicked chrome
+        default: return;
         }
 
         // Wayland has no native double-click signal; reconstruct via the
         // shared counter (time is ms since some reference epoch).
         if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
             event.mouse.clickCount = self->m_clickCounter.next(time, self->m_mouseX, self->m_mouseY, button);
+            event.mouse.modifiers  = self->modifiers();
         }
 
         event.sourceWindow = self->m_focusSurface;

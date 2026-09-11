@@ -198,6 +198,7 @@ private:
             event.mouse.y          = HIWORD(msg.lParam);
             event.mouse.button     = MouseButton::Left;
             event.mouse.clickCount = m_clickCounter.next(msg.time, event.mouse.x, event.mouse.y, WM_LBUTTONDOWN);
+            event.mouse.modifiers  = convertWin32Modifiers();
             acquireCapture(msg.hwnd, 0x1U);
             break;
 
@@ -215,6 +216,7 @@ private:
             event.mouse.y          = HIWORD(msg.lParam);
             event.mouse.button     = MouseButton::Right;
             event.mouse.clickCount = m_clickCounter.next(msg.time, event.mouse.x, event.mouse.y, WM_RBUTTONDOWN);
+            event.mouse.modifiers  = convertWin32Modifiers();
             acquireCapture(msg.hwnd, 0x2U);
             break;
 
@@ -232,6 +234,7 @@ private:
             event.mouse.y          = HIWORD(msg.lParam);
             event.mouse.button     = MouseButton::Middle;
             event.mouse.clickCount = m_clickCounter.next(msg.time, event.mouse.x, event.mouse.y, WM_MBUTTONDOWN);
+            event.mouse.modifiers  = convertWin32Modifiers();
             acquireCapture(msg.hwnd, 0x4U);
             break;
 

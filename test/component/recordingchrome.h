@@ -53,6 +53,8 @@ public:
     void switchTab(Ui::id_t tabId) override { log.emplace_back("switchTab(" + std::to_string(tabId) + ")"); }
     void closeTab(Ui::id_t tabId) override { log.emplace_back("closeTab(" + std::to_string(tabId) + ")"); }
     void copyText(const std::string & text) override { log.emplace_back("copyText(" + text + ")"); }
+    void activateRow(Ui::id_t rowId) override { log.emplace_back("activateRow(" + std::to_string(rowId) + ")"); }
+    void toggleRow(Ui::id_t rowId) override { log.emplace_back("toggleRow(" + std::to_string(rowId) + ")"); }
 };
 
 } // namespace PureGlUi

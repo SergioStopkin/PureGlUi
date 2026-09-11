@@ -22,6 +22,7 @@
 #include "common/unicode.h"
 #include "ui/color.h"
 #include "ui/config.h"
+#include "ui/elementid.h"
 #include "ui/gl/fontrenderer.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
@@ -29,6 +30,8 @@
 #include "ui/gl/textalign.h"
 #include "ui/interface/irender.h"
 #include "ui/interface/irenderer.h"
+#include "ui/render/elementstyle.h"
+#include "ui/render/truncate.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/bound.h"
@@ -78,8 +81,9 @@ public:
         Ui::font_handle_t      hFont = 0;
         Ui::Color              color;
         Ui::Res::Type::bound_t pos;
-        bool                   centered = false;
-        fpx_t                  minPadH  = 0; // minimum horizontal padding (CSS px)
+        Ui::Res::Type::AlignH  alignH  = Ui::Res::Type::AlignH::Left;
+        Ui::Res::Type::AlignV  alignV  = Ui::Res::Type::AlignV::Center;
+        fpx_t                  minPadH = 0; // minimum horizontal padding (CSS px)
     };
 
     struct alignas(128) ImageOp final {
@@ -87,10 +91,11 @@ public:
         Ui::Res::Type::bound_t  pos;
         Ui::Res::Type::border_t radius;
         Ui::Color               tint;
-        bool                    isSvg   = false;
-        bool                    tinted  = false;
-        bool                    hovered = false;
-        bool                    active  = false;
+        bool                    isSvg    = false;
+        bool                    tinted   = false;
+        bool                    hovered  = false;
+        bool                    active   = false;
+        bool                    isFilled = false; // true draws outline art as a solid shape
     };
 
     struct alignas(64) progress_t final {
@@ -134,10 +139,16 @@ public:
                        m_render.get(),
                        m_resManager.statusText());
 
+        // Before the state re-apply below, so contributed elements can pick up
+        // hover/active too
+        if (m_extraElementsHook) {
+            m_extraElementsHook(m_layout);
+        }
+
         // Re-apply hover/active state after layout rebuild (elements are recreated fresh)
         if (m_mouseX >= 0 && m_mouseY >= 0) {
             if (m_mouseDown) {
-                UiElement * hit = m_layout.hitTest(m_mouseX, m_mouseY);
+                UiElement * hit = m_layout.hitTest(m_mouseX, m_mouseY, EventKind::LeftClick);
                 if (hit != nullptr) {
                     hit->state = UiElementState::Active;
                 }
@@ -213,6 +224,19 @@ public:
     // WindowManager, rendered alongside the UiElement-driven UI.
     void setExtraOpsHook(std::function<void(UiRenderer &)> hook) { m_extraOpsHook = std::move(hook); }
 
+    // Contributors of elements the layout does not build itself, run right after
+    // build() so their elements land on top. The counterpart to the ops hook:
+    // that one draws dock chrome, this one makes it hit-testable.
+    void setExtraElementsHook(std::function<void(UiLayout &)> hook) { m_extraElementsHook = std::move(hook); }
+
+    // Topmost element accepting this event at this point, or null. Lets the
+    // coordinator resolve a capture target from the declared masks instead of
+    // testing each widget's geometry by hand.
+    [[nodiscard]] UiElement * hitTest(fpx_t cssX, fpx_t cssY, EventKind event)
+    {
+        return m_layout.hitTest(cssX, cssY, event);
+    }
+
     // Public op-emitter helpers for hook users (e.g. DockColumn::render).
     // Plain colored rect with optional rounded corners; no shadow.
     //
@@ -235,17 +259,62 @@ public:
         m_bgOps.emplace_back(op);
     }
 
+    // Text in a rect, left-aligned on the rect's baseline-capped centre, or
+    // centred when `isCentered`. The rect is the clip/layout box, not the glyph
+    // extent - a caller laying out rows passes the row rect and lets the text
+    // sit inside it.
+    void appendText(const Ui::Res::Type::bound_t & rect,
+                    const std::string &            text,
+                    Ui::font_handle_t              font,
+                    const Ui::Color &              color,
+                    Ui::Res::Type::AlignH          alignH  = Ui::Res::Type::AlignH::Left,
+                    Ui::Res::Type::AlignV          alignV  = Ui::Res::Type::AlignV::Center,
+                    fpx_t                          minPadH = 0)
+    {
+        if (text.empty() || font == 0) {
+            return;
+        }
+        TextOp op;
+        op.text    = text;
+        op.hFont   = font;
+        op.color   = color;
+        op.pos     = rect;
+        op.alignH  = alignH;
+        op.alignV  = alignV;
+        op.minPadH = minPadH;
+        m_textOps.emplace_back(op);
+    }
+
+    // Fonts a hook user can lay text out with. The item font is the row font;
+    // bold marks an active row the way it marks an active tab.
+    [[nodiscard]] Ui::font_handle_t itemFont() const { return m_layout.itemFont(); }
+    [[nodiscard]] Ui::font_handle_t itemFontBold() const { return m_layout.itemFontBold(); }
+
+    // So a hook user can right-align or truncate before emitting
+    [[nodiscard]] fpx_t textWidth(Ui::font_handle_t font, const std::string & text) const
+    {
+        return m_render->textWidth(font, Common::Unicode::fromUtf8(text));
+    }
+
+    // Nothing clips a draw op, so text that must stay inside its box is cut here
+    [[nodiscard]] std::string truncate(Ui::font_handle_t font, const std::string & text, fpx_t maxW) const
+    {
+        return Ui::Render::truncateText(text, maxW, m_render.get(), font);
+    }
+
     // Tinted SVG positioned in a rect. Caller computes the rect (SVG aspect
     // ratio is the caller's problem - for the dock grip we hand-pick a
     // centered sub-rect inside the grip strip).
-    void appendImage(const Ui::Res::Type::bound_t & rect, const std::string & svgPath, Ui::Color tint)
+    void
+    appendImage(const Ui::Res::Type::bound_t & rect, const std::string & svgPath, Ui::Color tint, bool isFilled = false)
     {
         ImageOp op;
-        op.src    = svgPath;
-        op.pos    = rect;
-        op.tint   = tint;
-        op.tinted = true;
-        op.isSvg  = true;
+        op.src      = svgPath;
+        op.pos      = rect;
+        op.tint     = tint;
+        op.tinted   = true;
+        op.isSvg    = true;
+        op.isFilled = isFilled;
         m_imageOps.emplace_back(op);
     }
 
@@ -289,8 +358,18 @@ public:
         return anyChanged;
     }
 
-    bool onMousePress(int x, int y, int /*clickCount*/) override
+    // Chrome activates on Left only. Middle and Right now reach here because
+    // the dispatcher stopped filtering them - they belong to content surfaces
+    element_event_t onMousePress(int                     x,
+                                 int                     y,
+                                 Ui::Window::MouseButton button,
+                                 int /*clickCount*/,
+                                 Ui::Window::KeyModifier /*modifiers*/) override
     {
+        if (button != Ui::Window::MouseButton::Left) {
+            return {};
+        }
+
         const auto cssX = toCss(x);
         const auto cssY = toCss(y);
 
@@ -299,20 +378,32 @@ public:
         m_mouseY    = cssY;
 
         // Set active state
-        UiElement * hit = m_layout.hitTest(cssX, cssY);
+        UiElement * hit = m_layout.hitTest(cssX, cssY, EventKind::LeftClick);
         for (auto & el : m_layout.elements()) {
             if (el.state == UiElementState::Active) {
                 el.state = UiElementState::None;
             }
         }
+
+        element_event_t result;
+        result.x = cssX;
+        result.y = cssY;
         if (hit != nullptr) {
-            hit->state = UiElementState::Active;
+            hit->state     = UiElementState::Active;
+            result.type    = hit->type;
+            result.id      = hit->id;
+            result.event   = EventKind::LeftClick;
+            result.changed = true;
         }
-        return hit != nullptr;
+        return result;
     }
 
-    click_result_t onMouseRelease(int x, int y) override
+    element_event_t onMouseRelease(int x, int y, Ui::Window::MouseButton button) override
     {
+        if (button != Ui::Window::MouseButton::Left) {
+            return {};
+        }
+
         const auto cssX = toCss(x);
         const auto cssY = toCss(y);
 
@@ -320,11 +411,14 @@ public:
         m_mouseX    = cssX;
         m_mouseY    = cssY;
 
-        click_result_t result;
+        element_event_t result;
+        result.x = cssX;
+        result.y = cssY;
         for (auto & el : m_layout.elements()) {
             if (el.state == UiElementState::Active && el.bound.contains(cssX, cssY) && el.id != INVALID_ID) {
-                result.type = el.type;
-                result.id   = el.id;
+                result.type  = el.type;
+                result.id    = el.id;
+                result.event = EventKind::LeftClick;
             }
             if (el.state == UiElementState::Active) {
                 el.state       = UiElementState::None;
@@ -355,12 +449,12 @@ public:
         return changed;
     }
 
-    bool onScroll(int x, int y, fpx_t deltaY) override
+    element_event_t onScroll(int x, int y, fpx_t deltaY) override
     {
         (void)x;
         (void)y;
         (void)deltaY;
-        return false;
+        return {};
     }
 
     // Callbacks for hover
@@ -375,7 +469,7 @@ private:
                 continue;
             }
             const bool wasHovered = (el.state == UiElementState::Hovered);
-            const bool isHovered  = el.bound.contains(cssX, cssY) && el.type != UiElementType::Text;
+            const bool isHovered  = el.bound.contains(cssX, cssY) && acceptsEvent(el.accepts, EventKind::Hover);
             el.state              = isHovered ? UiElementState::Hovered : UiElementState::None;
             if (isHovered != wasHovered) {
                 anyChanged = true;
@@ -426,20 +520,16 @@ private:
         addBgOp({ 0, cssH - layout.statusBar.height, cssW, layout.statusBar.height }, theme.statusBar.bg);
 
         // ---- Interactive elements ----
-        const auto & menus     = m_resManager.menus();
-        const auto & buttons   = m_resManager.buttons();
-        const auto & tabBar    = m_resManager.tabBar();
-        const auto & localeMgr = m_resManager.localeManager();
+        const auto & tabBar = m_resManager.tabBar();
 
         for (const auto & el : m_layout.elements()) {
-            // Resolve colors from ResManager based on element type + state
-            const Ui::Res::Type::color_pair_t cp = resolveColors(el, theme);
+            element_style_t style = resolveStyle(el, theme);
 
             // Draw background (if visible and not inherited from parent)
-            if (cp.bg.a() > 0 && !cp.bg.isInherit()) {
+            if (style.colors.bg.a() > 0 && !style.colors.bg.isInherit()) {
                 BGOp op;
                 op.bound     = el.bound;
-                op.colors.fg = cp.bg;
+                op.colors.fg = style.colors.bg;
                 if (el.type == UiElementType::Tab) {
                     op.radius    = layout.workspaceTab.border;
                     op.colors.bg = theme.workspaceTabs.bg;
@@ -474,36 +564,32 @@ private:
                 m_progressOps.push_back({ el.bound, layout.workspaceTab.border, sectorW, totalSectors, progress });
             }
 
-            // Resolve font for this element type
-            const Ui::font_handle_t elFont = resolveFont(el);
-
-            // Resolve text from managers
-            std::string text = resolveText(el, menus, buttons, tabBar, localeMgr, layout);
-
             // Draw text (if present)
-            if (!text.empty() && elFont != 0) {
-                const fpx_t pH = resolvePadH(el, layout);
-                const fpx_t pV = resolvePadV(el, layout);
+            if (!style.text.empty() && style.font != 0) {
+                const fpx_t pH = style.padH;
                 TextOp      op;
-                op.text     = std::move(text);
-                op.hFont    = elFont;
-                op.color    = cp.fg;
-                op.centered = (el.type == UiElementType::MenuButton || el.type == UiElementType::Tab);
-                if (op.centered) {
+                op.text  = std::move(style.text);
+                op.hFont = style.font;
+                op.color = style.colors.fg;
+
+                // A menu button and a tab centre while their label fits and
+                // fall back to left-aligned when it does not, so a long file
+                // name does not spill out of the left edge
+                const bool isCentered = (el.type == UiElementType::MenuButton || el.type == UiElementType::Tab);
+                op.alignH             = isCentered ? Ui::Res::Type::AlignH::CenterClamped : Ui::Res::Type::AlignH::Left;
+                if (isCentered) {
                     op.pos     = { el.bound.x, el.bound.y, el.bound.w, el.bound.h };
                     op.minPadH = pH;
                 } else {
-                    op.pos = { el.bound.x + pH, el.bound.y + pV, el.bound.w - pH * 2, el.bound.h - pV * 2 };
+                    op.pos = { el.bound.x + pH, el.bound.y, el.bound.w - pH * 2, el.bound.h };
                 }
                 m_textOps.emplace_back(op);
             }
 
-            // Resolve image from managers (toolbar buttons and icon menus)
-            const std::string imageSrc = resolveImageSrc(el, buttons, menus);
-
             // Draw image (if present)
-            if (!imageSrc.empty()) {
-                ImageOp op;
+            if (!style.imageSrc.empty()) {
+                const std::string & imageSrc = style.imageSrc;
+                ImageOp             op;
                 op.src            = imageSrc;
                 op.isSvg          = isSvgFile(imageSrc);
                 const fpx_t imgSz = (el.type == UiElementType::TabClose) ? layout.tabCloseIconSize
@@ -528,11 +614,12 @@ private:
                 const fpx_t imgY = el.bound.y + (el.bound.h - imgH) / 2.0F;
                 op.pos           = { imgX, imgY, imgW, imgH };
                 if (el.type == UiElementType::TabArrow) {
-                    op.tinted = true;
-                    op.tint   = theme.tabArrow.fg;
+                    op.tinted   = true;
+                    op.tint     = theme.tabArrow.fg;
+                    op.isFilled = true;
                 } else if (el.type == UiElementType::TabClose) {
                     op.tinted = true;
-                    op.tint   = cp.fg;
+                    op.tint   = style.colors.fg;
                 }
                 // A disabled element's icon is flat-tinted with the same colour
                 // disabled menu text uses, so buttons and menu items read as one
@@ -549,6 +636,64 @@ private:
                 m_imageOps.emplace_back(op);
             }
         }
+
+        appendToolbarTooltip(theme, m_resManager.buttons(), m_resManager.localeManager());
+    }
+
+    // Tooltip for whichever toolbar button is hovered. Emitted after every
+    // element so it overlays them, and as raw ops rather than a UiElement -
+    // a tooltip is decoration and must not be hit-testable.
+    void appendToolbarTooltip(const Ui::Res::Type::theme_t &               theme,
+                              const std::vector<Ui::Res::Type::button_t> & buttons,
+                              const Ui::Res::LocaleManager &               localeMgr)
+    {
+        const Ui::font_handle_t font = m_layout.statusBarFont();
+        if (font == 0) {
+            return;
+        }
+
+        const UiElement * hovered = nullptr;
+        for (const auto & el : m_layout.elements()) {
+            if (el.type == UiElementType::ToolbarButton && el.state == UiElementState::Hovered) {
+                hovered = &el;
+                break;
+            }
+        }
+        if (hovered == nullptr) {
+            return;
+        }
+
+        std::string tip;
+        bool        isRight = false;
+        for (const auto & button : buttons) {
+            if (button.id == hovered->id) {
+                tip     = localeMgr.get(button.tooltip);
+                isRight = (button.anchor == Ui::Res::Dock::DockAnchor::Right);
+                break;
+            }
+        }
+        if (tip.empty()) {
+            return;
+        }
+
+        // Sized like a one-row popup, since it borrows the dropdown surface
+        const Ui::Res::Type::popup_t & popup = m_resManager.popup();
+
+        const std::wstring wide = Common::Unicode::fromUtf8(tip);
+        const fpx_t        padH = popup.itemPaddingH;
+        const fpx_t        tipW = m_render->textWidth(font, wide) + (padH * 2.0F);
+        const fpx_t        tipH = popup.itemHeight;
+        const fpx_t        tipY = hovered->bound.y + ((hovered->bound.h - tipH) / 2.0F);
+        const fpx_t        tipX = isRight ? hovered->bound.x - tipW - padH : hovered->bound.x + hovered->bound.w + padH;
+
+        addBgOp({ tipX, tipY, tipW, tipH }, theme.dropdown.bg);
+
+        TextOp op;
+        op.text  = tip;
+        op.hFont = font;
+        op.color = theme.dropdown.fg;
+        op.pos   = { tipX + padH, tipY, tipW - (padH * 2.0F), tipH };
+        m_textOps.emplace_back(op);
     }
 
     // Resolve color pair for an element from ResManager theme
@@ -605,127 +750,107 @@ private:
             if (el.state == UiElementState::Disabled) {
                 return { theme.menuItemDisabledColor, theme.button.bg };
             }
+            // Armed tool: shifted away from the button background, derived via
+            // the same theme-aware helper edges use, so darkening does not
+            // vanish on a dark theme and no theme needs a new key
+            if (m_resManager.isActiveButton(el.id)) {
+                return { theme.button.fg,
+                         theme.button.bg.edgeColor(theme.buttonActiveContrast, m_resManager.isThemeDark()) };
+            }
             return theme.button;
         case UiElementType::Text:
             if (el.state == UiElementState::Active) {
                 return theme.statusBarActive;
             }
             return theme.statusBar;
-        default: return {};
+        // Painted by their owner (DockColumn) or not at all, so this must paint
+        // nothing: Ui::Color's default is debug magenta, which the bg gate below
+        // would happily draw under every dock element
+        default: return { Ui::Color::Inherit(), Ui::Color::Inherit() };
         }
     }
 
-    // Resolve font handle for an element from UiLayout cached handles
-    [[nodiscard]] Ui::font_handle_t resolveFont(const UiElement & el) const
+    // Colors stay in their own method: a TabClose bg needs its parent's alone, and
+    // a full parent resolve would re-truncate that tab's label per close button
+    [[nodiscard]] element_style_t resolveStyle(const UiElement & el, const Ui::Res::Type::theme_t & theme) const
     {
-        switch (el.type) {
-        case UiElementType::MenuButton: return m_layout.menuFont();
-        case UiElementType::Tab: {
-            const Ui::tab_t * tab         = m_resManager.tabBar().find(el.id);
-            const bool        isActiveTab = (tab != nullptr && tab->isActive);
-            return isActiveTab ? m_layout.itemFontBold() : m_layout.itemFont();
-        }
-        case UiElementType::TabClose:
-        case UiElementType::TabArrow: return 0;
-        case UiElementType::Text: return m_layout.statusBarFont();
-        default: return 0;
-        }
-    }
+        const auto & layout    = m_resManager.layout();
+        const auto & localeMgr = m_resManager.localeManager();
 
-    // Resolve horizontal padding for an element from layout
-    static fpx_t resolvePadH(const UiElement & el, const Ui::Res::Type::layout_t & layout)
-    {
-        switch (el.type) {
-        case UiElementType::MenuButton: return layout.menuButtonPadH;
-        case UiElementType::Tab: return layout.workspaceTab.padding;
-        default: return 0;
-        }
-    }
+        element_style_t style;
+        style.colors = resolveColors(el, theme);
 
-    // Resolve vertical padding for an element from layout
-    static fpx_t resolvePadV(const UiElement & /* el */, const Ui::Res::Type::layout_t & /* layout */) { return 0; }
-
-    // Resolve display text for an element from managers
-    [[nodiscard]] std::string resolveText(const UiElement &                            el,
-                                          const std::vector<Ui::Res::Type::menu_t> &   menus,
-                                          const std::vector<Ui::Res::Type::button_t> & buttons,
-                                          const Ui::TabBar &                           tabBar,
-                                          const Ui::Res::LocaleManager &               localeMgr,
-                                          const Ui::Res::Type::layout_t &              layout) const
-    {
         switch (el.type) {
-        case UiElementType::MenuButton: {
-            for (const auto & menu : menus) {
-                if (menu.id == el.id) {
-                    if (!menu.icon.empty()) {
-                        return {};
-                    }
-                    return localeMgr.get(menu.label);
+        case UiElementType::MenuButton:
+            style.font = m_layout.menuFont();
+            style.padH = layout.menuButtonPadH;
+            for (const auto & menu : m_resManager.menus()) {
+                if (menu.id != el.id) {
+                    continue;
                 }
-            }
-            return {};
-        }
-        case UiElementType::ToolbarButton: {
-            for (const auto & btn : buttons) {
-                if (btn.id == el.id) {
-                    return localeMgr.get(btn.label);
+                // An icon menu draws the theme icon, not the icon under its own key
+                if (menu.icon.empty()) {
+                    style.text = localeMgr.get(menu.label);
+                } else {
+                    style.imageSrc = m_resManager.resPath().icon(m_resManager.themeIcon());
                 }
+                break;
             }
-            return {};
-        }
+            return style;
+        case UiElementType::ToolbarButton:
+            for (const auto & button : m_resManager.buttons()) {
+                if (button.id != el.id) {
+                    continue;
+                }
+                style.text = localeMgr.get(button.label);
+                if (!button.icon.empty()) {
+                    // A bare name is a bundled icon; anything with a separator
+                    // is a path the res data supplied outright
+                    style.imageSrc = (button.icon.find('/') == std::string::npos)
+                                   ? m_resManager.resPath().icon(button.icon)
+                                   : button.icon;
+                }
+                break;
+            }
+            return style;
         case UiElementType::Tab: {
-            const Ui::tab_t * tab = tabBar.find(el.id);
+            style.padH            = layout.workspaceTab.padding;
+            const Ui::tab_t * tab = m_resManager.tabBar().find(el.id);
             if (tab == nullptr) {
-                return {};
+                return style;
             }
-            auto        tabFont  = tab->isActive ? m_layout.itemFontBold() : m_layout.itemFont();
+            style.font           = tab->isActive ? m_layout.itemFontBold() : m_layout.itemFont();
             const fpx_t textMaxW = el.bound.w - layout.workspaceTab.padding * 2 - layout.workspaceTab.height;
-            return UiLayout::truncateFileName(tab->label, textMaxW, m_render.get(), tabFont);
+            style.text           = Ui::Render::truncateFileName(tab->label, textMaxW, m_render.get(), style.font);
+            return style;
         }
-        case UiElementType::TabClose:
-        case UiElementType::TabArrow: return {};
-        case UiElementType::Text: return m_resManager.statusText();
-        default: return {};
-        }
-    }
-
-    // Resolve image source for an element from managers
-    [[nodiscard]] std::string resolveImageSrc(const UiElement &                            el,
-                                              const std::vector<Ui::Res::Type::button_t> & buttons,
-                                              const std::vector<Ui::Res::Type::menu_t> &   menus) const
-    {
-        if (el.type == UiElementType::MenuButton) {
-            for (const auto & menu : menus) {
-                if (menu.id == el.id && !menu.icon.empty()) {
-                    return m_resManager.resPath().icon(m_resManager.themeIcon());
-                }
-            }
-            return {};
-        }
-        if (el.type == UiElementType::TabClose) {
+        case UiElementType::TabClose: {
             const std::string & icon = m_resManager.tabCloseIcon();
             if (!icon.empty()) {
-                return m_resManager.resPath().icon(icon);
+                style.imageSrc = m_resManager.resPath().icon(icon);
             }
-            return {};
+            return style;
         }
-        if (el.type == UiElementType::TabArrow) {
+        case UiElementType::TabArrow: {
             const std::string & icon = (el.id == TAB_ARROW_LEFT) ? m_resManager.tabArrowLeft()
                                                                  : m_resManager.tabArrowRight();
-            return m_resManager.resPath().icon(icon);
+            style.imageSrc           = m_resManager.resPath().icon(icon);
+            return style;
         }
-        if (el.type != UiElementType::ToolbarButton) {
-            return {};
+        case UiElementType::Text:
+            style.font = m_layout.statusBarFont();
+            style.text = m_resManager.statusText();
+            return style;
+        case UiElementType::MenuItem:
+        case UiElementType::Separator:
+        case UiElementType::Image:
+        case UiElementType::DockRow:
+        case UiElementType::DockExpander:
+        case UiElementType::DockGrip:
+        case UiElementType::DockSlider:
+        case UiElementType::DockScrollbar: return style;
         }
-        for (const auto & btn : buttons) {
-            if (btn.id == el.id && !btn.icon.empty()) {
-                if (btn.icon.find('/') == std::string::npos) {
-                    return m_resManager.resPath().icon(btn.icon);
-                }
-                return btn.icon;
-            }
-        }
-        return {};
+        return style;
     }
 
     // Add a simple background op (for region backgrounds)
@@ -782,19 +907,19 @@ private:
             // Transparent tint (a == 0) signals "not tinted" to the backend;
             // Ui::Color{} defaults to opaque, which would force the tinted path.
             const Ui::Color tint = op.tinted ? op.tint : Ui::Color::TransparentBlack();
-            m_render->drawImage(op.src, op.pos, op.radius, tint, scale, shadow);
+            m_render->drawImage(op.src, op.pos, op.radius, tint, scale, shadow, op.isFilled);
             // Keep the pressed-size variant warm: the press effect draws the
             // icon at iconActiveScale (res JSON --button-icon-active-scale),
             // which is its own size-keyed texture-cache entry - warming here
             // means the first click never rasterizes mid-frame. A map hit once
             // cached.
             if (!op.active) {
-                m_render->warmImage(op.src, op.pos, tint, m_resManager.layout().iconActiveScale);
+                m_render->warmImage(op.src, op.pos, tint, m_resManager.layout().iconActiveScale, op.isFilled);
             }
         }
 
         for (const auto & op : m_textOps) {
-            m_render->drawText(op.hFont, op.text, op.pos, op.color, op.centered, op.minPadH);
+            m_render->drawText(op.hFont, op.text, op.pos, op.color, op.alignH, op.alignV, op.minPadH);
         }
     }
 
@@ -862,6 +987,7 @@ private:
     // Extra-ops hook fires after generateDrawOps() and before the ops are
     // flushed, so callers can append BG/Image ops into the same frame (docks).
     std::function<void(UiRenderer &)> m_extraOpsHook;
+    std::function<void(UiLayout &)>   m_extraElementsHook;
 
     // Mouse state
     fpx_t m_mouseX        = -1;

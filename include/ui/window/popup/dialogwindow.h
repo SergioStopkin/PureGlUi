@@ -51,16 +51,14 @@ public:
      */
     bool open(NativeWindow &                  parentWindow,
               const Ui::Res::ResManager &     resManager,
-              const Ui::Res::Type::dialog_t & dialog)
+              const Ui::Res::Type::dialog_t & dialog,
+              const Ui::Res::Type::bound_t &  area)
     {
         const auto & dlg     = resManager.layout().dialog;
         const fpx_t  dialogW = toPhys(dialog.width > 0 ? dialog.width : dlg.width);
         const fpx_t  dialogH = toPhys(dialog.height > 0 ? dialog.height : dlg.height);
 
-        const auto & layout   = resManager.layout();
-        const fpx_t  uiTop    = toPhys(layout.topMenu.height) + toPhys(layout.workspaceTab.height);
-        const fpx_t  uiBottom = toPhys(layout.statusBar.height);
-        const auto   pos      = centeredPosition(parentWindow.bound(), dialogW, dialogH, uiTop, uiBottom);
+        const auto pos = centeredPosition(area, dialogW, dialogH);
 
         setPosition(pos.x, pos.y);
         setBackground(resManager.theme().dialog.bg);
@@ -84,9 +82,9 @@ public:
         return true;
     }
 
-    void recenter(const Ui::Res::Type::bound_t & parentBound, fpx_t uiTop, fpx_t uiBottom)
+    void recenter(const Ui::Res::Type::bound_t & area)
     {
-        const auto pos = centeredPosition(parentBound, m_bound.w, m_bound.h, uiTop, uiBottom);
+        const auto pos = centeredPosition(area, m_bound.w, m_bound.h);
         if (g_config.isCompositing) {
             setPosition(pos.x, pos.y);
         } else {
@@ -95,14 +93,13 @@ public:
     }
 
 private:
-    // Compute centered position snapped to integer pixels
-    // to avoid sub-pixel composite texture misalignment on XWayland
-    static Ui::Res::Type::bound_t
-    centeredPosition(const Ui::Res::Type::bound_t & parent, fpx_t dialogW, fpx_t dialogH, fpx_t uiTop, fpx_t uiBottom)
+    // Centred in the area the coordinator hands over - the space inside the
+    // chrome, less the dialog margin - not the raw window. Snapped to integer
+    // pixels: sub-pixel positions misalign the composite texture on XWayland.
+    static Ui::Res::Type::bound_t centeredPosition(const Ui::Res::Type::bound_t & area, fpx_t dialogW, fpx_t dialogH)
     {
-        const fpx_t contentH = parent.h - uiTop - uiBottom;
-        return { std::round((parent.w - dialogW) / 2.0F),
-                 std::round(uiTop + (contentH - dialogH) / 2.0F),
+        return { std::round(area.x + (area.w - dialogW) / 2.0F),
+                 std::round(area.y + (area.h - dialogH) / 2.0F),
                  dialogW,
                  dialogH };
     }

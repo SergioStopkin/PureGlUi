@@ -53,6 +53,20 @@ struct alignas(32) font_metrics_t final {
         const fpx_t capHeight = (ascent + x_height) / 2.0F;
         return std::floor((cssY + (cssH + capHeight) / 2.0F) * scale);
     }
+
+    // Baseline Y for text sitting against the top of the box: the ascender
+    // touches the top edge. Padding is the caller's, not baked in here
+    [[nodiscard]] fpx_t baselineTop(fpx_t cssY, fpx_t scale) const
+    {
+        return std::floor((cssY + static_cast<fpx_t>(ascent)) * scale);
+    }
+
+    // Baseline Y for text sitting against the bottom: the descender touches
+    // the bottom edge
+    [[nodiscard]] fpx_t baselineBottom(fpx_t cssY, fpx_t cssH, fpx_t scale) const
+    {
+        return std::floor((cssY + cssH - static_cast<fpx_t>(descent)) * scale);
+    }
 };
 
 // Native font style enum

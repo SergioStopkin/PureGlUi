@@ -39,6 +39,7 @@
 #include "ui/res/store/menustore.h"
 #include "ui/res/store/shortcutstore.h"
 #include "ui/res/store/themestore.h"
+#include "ui/res/type/bound.h"
 #include "ui/res/type/button.h"
 #include "ui/res/type/changed.h"
 #include "ui/res/type/icondefault.h"
@@ -51,6 +52,7 @@
 #include "ui/type.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <exception>
 #include <filesystem>
@@ -65,6 +67,10 @@
 #include <vector>
 
 namespace Ui::Res {
+
+// Flip to true to report every session write. One line per persisted change -
+// each dock drag, tab switch and theme toggle - so this is loud in normal use.
+constexpr bool SESSION_DEBUG = false;
 
 class ResManager final {
     // One persisted user setting exposed to the host. Each setting registers a
@@ -81,12 +87,14 @@ class ResManager final {
         bool              isJsonValue = false; // value is JSON text and owns the whole section
     };
 
+    // Declared widest-alignment first, then pointer-sized, then scalars: a store
+    // aligns to a cache line, so a small member wedged between two of them costs
+    // a line of padding each time. Order inside the stores is also a dependency -
+    // m_menuStore and m_dockStore bind references to the ones above them.
     Store::LayoutStore     m_layoutStore; // res/layout.json: layout_t + popup_t (logical sub-store)
     Store::ThemeStore      m_themeStore;  // res/submenu/theme/*: theme_t + name/mode + preview (sub-store)
     Ui::Res::Type::input_t m_input;
     Ui::Res::LocaleManager m_localeManager;
-    id_t                   m_activeMenuId = Ui::INVALID_ID;
-    std::string            m_statusText;
     Store::IconStore       m_iconStore;     // res/icon-defaults.json (logical sub-store)
     Store::DialogStore     m_dialogStore;   // res/dialog.json (logical sub-store)
     Store::ShortcutStore   m_shortcutStore; // res/shortcut.json (logical sub-store)
@@ -96,14 +104,9 @@ class ResManager final {
     // stores (declared above) + resPath, so it is declared after them.
     Store::MenuStore m_menuStore { m_localeManager, m_iconStore, m_themeStore, m_layoutStore, m_resPath };
     Store::DockStore m_dockStore { m_layoutStore }; // session per-dock state (reads layout dock config)
-    std::string      m_lastOpenDir;
-    // Persisted main-window geometry. width/height <= 0 means "not set yet" -
-    // WindowManager falls back to layout.windowWidth/Height on first launch.
-    // x/y default to 0 (top-left), only meaningful once width/height are set.
-    int m_sessionWindowX      = 0;
-    int m_sessionWindowY      = 0;
-    int m_sessionWindowWidth  = 0;
-    int m_sessionWindowHeight = 0;
+
+    std::string m_statusText;
+    std::string m_lastOpenDir;
     // Persisted open-files list (paths, in tab order) plus the active file path.
     // A host restores these on startup so the user sees the same tabs in the same
     // order as when they quit. Active is keyed by path (not id) because tab ids
@@ -117,12 +120,21 @@ class ResManager final {
     // supplies title + file-type filters; empty filters => any file.
     std::string                        m_openFileTitle;
     std::vector<Ui::Io::file_filter_t> m_openFileFilters;
-    Ui::Res::Type::Changed             m_changed = Ui::Res::Type::Changed::None;
     std::vector<persisted_setting_t>   m_persistedSettings;
     // Host hook invoked whenever a persisted setting changes. The fw owns no
     // session concept; a host wires this to its own session save.
     Ui::task_fn_t m_onPersistChange = [] {};
-    bool          m_isRestoring     = false; // true while deserializeSession applies values
+    id_t          m_activeMenuId    = Ui::INVALID_ID;
+
+    // Persisted main-window geometry. width/height <= 0 means "not set yet" -
+    // WindowManager falls back to layout.windowWidth/Height on first launch.
+    // x/y default to 0 (top-left), only meaningful once width/height are set.
+    int                    m_sessionWindowX      = 0;
+    int                    m_sessionWindowY      = 0;
+    int                    m_sessionWindowWidth  = 0;
+    int                    m_sessionWindowHeight = 0;
+    Ui::Res::Type::Changed m_changed             = Ui::Res::Type::Changed::None;
+    bool                   m_isRestoring         = false; // true while deserializeSession applies values
 
     // Accumulate a Changed flag into the pending reload mask. Sub-store loads
     // and runtime setters funnel their Changed return through here.
@@ -201,6 +213,24 @@ public:
     const std::string & tabArrowRight() const { return m_layoutStore.layout().tabArrowIconRight; }
     const std::unordered_map<std::string, std::string> & shortcuts() const { return m_shortcutStore.shortcuts(); }
 
+    // Smallest the main window may be (CSS): the authored chrome floor, raised to
+    // what the largest dialog needs. A dialog is fixed-size and centred inside the
+    // chrome, so fitting it costs its own size plus the bars it sits between and
+    // its margin. Derived rather than authored twice: a bigger dialog raises the
+    // floor by itself. x/y unused.
+    [[nodiscard]] Ui::Res::Type::bound_t minWindowSize() const
+    {
+        const auto & layout    = m_layoutStore.layout();
+        const auto & maxDialog = m_menuStore.maxDialog();
+        const fpx_t  margin    = layout.dialog.margin * 2.0F;
+        const fpx_t  sides     = layout.leftToolbar.width + layout.rightToolbar.width + margin;
+        const fpx_t  bands     = layout.topMenu.height + layout.workspaceTab.height + layout.statusBar.height + margin;
+        return { 0,
+                 0,
+                 std::max(layout.windowMinWidth, maxDialog.w + sides),
+                 std::max(layout.windowMinHeight, maxDialog.h + bands) };
+    }
+
     // Resolved icon default for a role from icon-defaults.json. Returns an empty
     // icon when the role is unknown - call sites should treat that as "no marker".
     // The string overload serves data-driven roles (menu JSON etc.); fw code uses
@@ -220,6 +250,8 @@ public:
     // items whose action carries no state are never active. Computed live; no
     // cache, no group, no hardcoded names.
     [[nodiscard]] bool isActiveItem(const Ui::Res::Type::menu_t & item) const { return m_menuStore.isActiveItem(item); }
+
+    [[nodiscard]] bool isActiveButton(id_t elementId) const { return m_menuStore.isActiveButton(elementId); }
 
     // Theme preview colors for a given theme key: {dark, light} where each
     // variant is {cl-main, bg-main}. Returns zero-init pair if absent.
@@ -303,6 +335,13 @@ public:
     }
 
     [[nodiscard]] const std::string & themeName() const { return m_themeStore.themeName(); }
+
+    // Host-owned theme values, read from each theme file's "host" block as it is
+    // parsed. See ThemeStore::registerThemeParam - call before the first load.
+    void registerThemeParam(std::string key, Ui::action_fn_t apply)
+    {
+        m_themeStore.registerThemeParam(std::move(key), std::move(apply));
+    }
 
     // Register a host-provided value getter for a stateful (radio) action's
     // menu highlight. The fw computes the active item as item.label == provider()
@@ -528,8 +567,12 @@ public:
     }
 
     // Write the session blob. Writes a sibling temp file and renames it over the
-    // target, so a crash - or a second save racing this one - can never leave a
-    // half-written session.json behind; rename is atomic within one filesystem.
+    // target, so a crash can never leave a half-written session.json behind;
+    // rename is atomic within one filesystem.
+    //
+    // Two saves racing each other still both land, and the LAST rename wins - not
+    // necessarily the newest blob. A caller that cares which one survives has to
+    // order its own writes; this only guarantees each is whole.
     bool saveSession() const { return writeSession(sessionPath(), serializeSession()); }
 
     // The write half of saveSession as a free-standing step, for a host that builds
@@ -541,8 +584,14 @@ public:
             if (target.has_parent_path()) {
                 std::filesystem::create_directories(target.parent_path());
             }
-            std::filesystem::path temp = target;
-            temp += ".tmp";
+            // Unique per write, never one shared name. Two saves in flight stage
+            // into the same file otherwise, and the first rename to land takes it
+            // out from under the second - which then fails with a missing source.
+            // Surviving a crash never needed the name to be shared; surviving a
+            // concurrent save needs it not to be.
+            static std::atomic<uint64_t> sequence { 0 };
+            std::filesystem::path        temp = target;
+            temp += ".tmp." + std::to_string(sequence.fetch_add(1));
             {
                 std::ofstream file(temp, std::ios::trunc);
                 if (!file) {
@@ -552,7 +601,9 @@ public:
                 file << blob;
             }
             std::filesystem::rename(temp, target);
-            std::cout << "[ResManager] Saved session to " << sessionPath << std::endl;
+            if constexpr (SESSION_DEBUG) {
+                std::cout << "[ResManager] Saved session to " << sessionPath << std::endl;
+            }
             return true;
         } catch (const std::exception & e) {
             std::cerr << "[ResManager] Failed to save session: " << e.what() << std::endl;

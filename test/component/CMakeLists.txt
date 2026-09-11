@@ -6,6 +6,11 @@ add_executable(
     TestSvgIntrinsic.cpp
     TestFontBaseline.cpp
     TestDockColumn.cpp
+    TestDockRowLayout.cpp
+    TestDockScrollbar.cpp
+    TestDockSlider.cpp
+    TestIconFill.cpp
+    TestWindowGeometry.cpp
     TestGlSmoke.cpp
     TestUiDriver.cpp
     TestChromeLifecycle.cpp

@@ -83,8 +83,6 @@ public:
 
     void beginFrame(Ui::fpx_t width, Ui::fpx_t height) override
     {
-        glFinish();
-
         m_width  = width;
         m_height = height;
         m_scale  = g_config.scale;
@@ -125,10 +123,11 @@ public:
                   std::string_view               text,
                   const Ui::Res::Type::bound_t & pos,
                   const Ui::Color &              color,
-                  bool                           centered,
+                  Ui::Res::Type::AlignH          alignH,
+                  Ui::Res::Type::AlignV          alignV,
                   Ui::fpx_t                      minPadH) override
     {
-        m_textBatch.emplace_back(text_item { font, std::string(text), pos, color, centered, minPadH });
+        m_textBatch.emplace_back(text_item { font, std::string(text), pos, color, alignH, alignV, minPadH });
     }
 
     void drawImage(std::string_view               src,
@@ -136,10 +135,11 @@ public:
                    const Ui::Res::Type::border_t & /*radii*/,
                    const Ui::Color &            tint,
                    Ui::fpx_t                    scale,
-                   const Ui::Render::shadow_t & shadow) override
+                   const Ui::Render::shadow_t & shadow,
+                   bool                         isFilled) override
     {
         const bool        isTinted = tint.a() > 0;
-        const std::string key      = resolveImageKey(src, isTinted);
+        const std::string key      = resolveImageKey(src, isTinted && isFilled);
         if (key.empty()) {
             return;
         }
@@ -184,9 +184,10 @@ public:
     void warmImage(std::string_view               src,
                    const Ui::Res::Type::bound_t & bound,
                    const Ui::Color &              tint,
-                   Ui::fpx_t                      scale) override
+                   Ui::fpx_t                      scale,
+                   bool                           isFilled) override
     {
-        const std::string key = resolveImageKey(src, tint.a() > 0);
+        const std::string key = resolveImageKey(src, tint.a() > 0 && isFilled);
         if (key.empty()) {
             return;
         }
@@ -256,8 +257,9 @@ private:
         std::string            text;
         Ui::Res::Type::bound_t pos;
         Ui::Color              color;
-        bool                   centered = false;
-        Ui::fpx_t              minPadH  = 0;
+        Ui::Res::Type::AlignH  alignH  = Ui::Res::Type::AlignH::Left;
+        Ui::Res::Type::AlignV  alignV  = Ui::Res::Type::AlignV::Center;
+        Ui::fpx_t              minPadH = 0;
     };
 
     static bool isSvgFile(std::string_view src) { return src.size() >= 4 && src.substr(src.size() - 4) == ".svg"; }
@@ -388,7 +390,7 @@ private:
             const std::wstring wtext = Common::Unicode::fromUtf8(item.text);
             const float        textW = Ui::Gl::FontRenderer::measureTextWidth(*fr, wtext);
 
-            const auto baseline = fr->metrics.baselineCap(item.pos.y, item.pos.h, m_scale);
+            const auto baseline = Ui::Gl::TextAlign::baselineY(item.alignV, fr->metrics, item.pos, m_scale);
 
             if constexpr (Ui::Gl::LOG_TEXT_LAYOUT) {
                 static std::set<std::string> loggedTexts;
@@ -401,9 +403,7 @@ private:
             }
 
             const Ui::fpx_t textWCss = textW / m_scale;
-            const Ui::fpx_t xCursor  = item.centered
-                                     ? Ui::Gl::TextAlign::startXCenterClamped(item.pos, textWCss, item.minPadH, m_scale)
-                                     : Ui::Gl::TextAlign::startXLeft(item.pos, 0.0F, m_scale);
+            const Ui::fpx_t xCursor = Ui::Gl::TextAlign::startX(item.alignH, item.pos, textWCss, item.minPadH, m_scale);
 
             m_vertexBuffer.clear();
             Ui::Gl::FontRenderer::appendTextVerts(m_vertexBuffer, *fr, wtext, xCursor, baseline);

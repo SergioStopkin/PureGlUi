@@ -18,6 +18,7 @@
 #pragma once
 
 #include "common/bit.h"
+#include "ui/config.h"
 #include "ui/gl/localglew.h"
 #include "ui/res/type/border.h"
 #include "ui/window/platform/macosevent.h"
@@ -261,6 +262,16 @@ public:
     // and embedded subviews (resolves up to m_parentNsWindow).
     [[nodiscard]] NativeWindowHandle nativeHandle() const override { return m_glView; }
 
+    // Cocoa resets the cursor whenever the pointer crosses a tracking area, so
+    // set() is only reliably sticky via the window's own cursor rectangles.
+    // set() is enough for the drag-style shapes this is used for.
+    void setCursor(Ui::Window::PointerShape shape) override
+    {
+        @autoreleasepool {
+            [toNsCursor(shape) set];
+        }
+    }
+
     void destroy() override
     {
         @autoreleasepool {
@@ -503,6 +514,15 @@ public:
         (void)title;
     }
 
+    // AppKit enforces this on the live resize. contentMinSize is in POINTS, so
+    // the physical floor is scaled back down - same conversion the frame uses.
+    void setMinSize(fpx_t width, fpx_t height) override
+    {
+        if (m_nsWindow) {
+            [m_nsWindow setContentMinSize:NSMakeSize(toCss(width), toCss(height))];
+        }
+    }
+
     // NSApp drives the app-wide Dock / menu bar icon; window-level icons do not exist on macOS.
     // The symbolic variant (used on X11 for small-tray rendering) is ignored.
     void setWindowIcon(const std::string& mainIconPath, const std::string& /*symbolicIconPath*/) override
@@ -703,6 +723,23 @@ public:
     }
 
 private:
+    // Cocoa has no "move" cursor; the closed hand is what it uses for dragging
+    // content, which is what Move means here
+    [[nodiscard]] static NSCursor* toNsCursor(Ui::Window::PointerShape shape)
+    {
+        switch (shape) {
+        case Ui::Window::PointerShape::Crosshair:
+            return [NSCursor crosshairCursor];
+        case Ui::Window::PointerShape::ResizeH:
+            return [NSCursor resizeLeftRightCursor];
+        case Ui::Window::PointerShape::Move:
+            return [NSCursor closedHandCursor];
+        case Ui::Window::PointerShape::Default:
+            return [NSCursor arrowCursor];
+        }
+        return [NSCursor arrowCursor];
+    }
+
     NSWindow* m_nsWindow = nullptr;
     NSOpenGLView* m_glView = nullptr;
     id<NSObject> m_closeObserver = nullptr;

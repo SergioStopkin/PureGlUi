@@ -17,6 +17,10 @@
     "--close-icon": "E24E.svg",
     "--dock-grip-icon": "22EE.svg"
   },
+  "window": {
+    "min-width": "480px",
+    "min-height": "320px"
+  },
   "top-menu": {
     "height": "var(--top-menu-height)",
     "margin": "0",
@@ -115,6 +119,7 @@
   "dialog": {
     "width": "360px",
     "height": "300px",
+    "margin": "12px",
     "padding": "16px",
     "border-radius": "16px"
   },
@@ -146,22 +151,39 @@
     "border-radius": "16px",
     "shift": "3px"
   },
-  "dialog-scrollbar": {
+  "scrollbar": {
     "width": "4px",
     "right": "-8px",
     "border-radius": "2px",
     "min-thumb-height": "16px"
   },
-  "dialog-scrollbar:hover": {
+  "scrollbar:hover": {
     "width": "6px",
     "right": "-9px",
     "border-radius": "3px",
     "min-thumb-height": "16px"
   },
+  "dock-slider-track": {
+    "height": "6px",
+    "border-radius": "3px"
+  },
+  "dock-slider-thumb": {
+    "width": "18px",
+    "height": "14px",
+    "border-radius": "7px"
+  },
+  "dock-slider-thumb:hover": {
+    "width": "18px",
+    "height": "18px",
+    "border-radius": "9px"
+  },
   "dock-defaults": {
     "grip-width": "6px",
     "border-radius": "6px",
     "click-threshold": "2px",
-    "grip-icon": "var(--dock-grip-icon)"
+    "grip-icon": "var(--dock-grip-icon)",
+    "row-indent": "0.6",
+    "row-expander-size": "0.5",
+    "row-key-ratio": "0.5"
   }
 }

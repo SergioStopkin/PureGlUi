@@ -93,15 +93,25 @@ private:
 // IRenderer stub - never rendered here, just fills the pairing slot.
 class FakeRenderer final : public Ui::IRenderer {
 public:
-    bool                       render() override { return true; }
-    void                       resize(Ui::fpx_t /*width*/, Ui::fpx_t /*height*/) override { }
-    void                       apply(Ui::Res::Type::Changed /*changed*/) override { }
-    void                       cleanup() override { }
-    bool                       onMouseMove(int /*x*/, int /*y*/) override { return false; }
-    bool                       onMousePress(int /*x*/, int /*y*/, int /*clickCount*/) override { return false; }
-    Ui::Render::click_result_t onMouseRelease(int /*x*/, int /*y*/) override { return {}; }
-    bool                       onMouseLeave() override { return false; }
-    bool                       onScroll(int /*x*/, int /*y*/, Ui::fpx_t /*deltaY*/) override { return false; }
+    bool                        render() override { return true; }
+    void                        resize(Ui::fpx_t /*width*/, Ui::fpx_t /*height*/) override { }
+    void                        apply(Ui::Res::Type::Changed /*changed*/) override { }
+    void                        cleanup() override { }
+    bool                        onMouseMove(int /*x*/, int /*y*/) override { return false; }
+    Ui::Render::element_event_t onMousePress(int /*x*/,
+                                             int /*y*/,
+                                             Ui::Window::MouseButton /*button*/,
+                                             int /*clickCount*/,
+                                             Ui::Window::KeyModifier /*modifiers*/) override
+    {
+        return {};
+    }
+    Ui::Render::element_event_t onMouseRelease(int /*x*/, int /*y*/, Ui::Window::MouseButton /*button*/) override
+    {
+        return {};
+    }
+    bool                        onMouseLeave() override { return false; }
+    Ui::Render::element_event_t onScroll(int /*x*/, int /*y*/, Ui::fpx_t /*deltaY*/) override { return {}; }
 };
 
 class ContentSurfaceTest : public ::testing::Test {

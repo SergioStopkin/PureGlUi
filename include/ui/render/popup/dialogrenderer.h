@@ -20,6 +20,7 @@
 #include "common/unicode.h"
 #include "ui/gl/textalign.h"
 #include "ui/render/popup/popuprendererbase.h"
+#include "ui/render/scrollbar.h"
 #include "ui/render/uielementstate.h"
 #include "ui/res/type/dialog.h"
 #include "ui/type.h"
@@ -170,16 +171,10 @@ public:
         const fpx_t cssY = toCss(y);
 
         // Scrollbar thumb drag
-        if (m_draggingThumb) {
-            const fpx_t deltaY = cssY - m_dragStartY;
-            const fpx_t thumbH = m_thumbBound.h;
-            const fpx_t travel = m_trackBound.h - thumbH;
-            if (travel > 0) {
-                const fpx_t maxScroll = m_contentHeight - m_viewportHeight;
-                const fpx_t value     = std::clamp(m_dragStartScroll + deltaY / travel * maxScroll, 0.0F, maxScroll);
-                m_scrollOffset        = value;
-                m_scrollTarget        = value;
-            }
+        if (m_scrollBar.isDragging()) {
+            const fpx_t value = m_scrollBar.valueAt(cssY);
+            m_scrollOffset    = value;
+            m_scrollTarget    = value;
             return true;
         }
 
@@ -200,16 +195,10 @@ public:
             changed = true;
         }
 
-        if (m_contentHeight > m_viewportHeight) {
-            const bool wasScrollbarHovered = m_scrollbarHovered;
-            const bool wasThumbHovered     = m_thumbHovered;
-            m_scrollbarHovered             = m_trackBound.contains(cssX, cssY);
-            m_thumbHovered                 = m_thumbBound.contains(cssX, cssY);
-            if (m_scrollbarHovered != wasScrollbarHovered || m_thumbHovered != wasThumbHovered) {
-                std::cout << "[Dialog] scrollbar hover=" << m_scrollbarHovered << " thumb hover=" << m_thumbHovered
-                          << " offset=" << m_scrollOffset << " target=" << m_scrollTarget << std::endl;
-                changed = true;
-            }
+        if (m_contentHeight > m_viewportHeight && m_scrollBar.onMouseMove(cssX, cssY, m_scrollOffset)) {
+            std::cout << "[Dialog] scrollbar hover=" << m_scrollBar.isHovered() << " offset=" << m_scrollOffset
+                      << " target=" << m_scrollTarget << std::endl;
+            changed = true;
         }
 
         return changed;
@@ -220,17 +209,15 @@ public:
         for (auto & btn : m_buttons) {
             btn.state = Ui::Render::UiElementState::None;
         }
-        m_closeState       = Ui::Render::UiElementState::None;
-        m_scrollbarHovered = false;
-        m_thumbHovered     = false;
-        m_draggingThumb    = false;
+        m_closeState = Ui::Render::UiElementState::None;
+        m_scrollBar.clear();
         return true;
     }
 
-    bool onScroll(int /*x*/, int /*y*/, fpx_t deltaY) override
+    Ui::Render::element_event_t onScroll(int /*x*/, int /*y*/, fpx_t deltaY) override
     {
         if (m_contentHeight <= m_viewportHeight) {
-            return false;
+            return {};
         }
         const fpx_t maxScroll = m_contentHeight - m_viewportHeight;
         const fpx_t direction = m_resManager.input().scrollNatural ? 1.0F : -1.0F;
@@ -238,57 +225,56 @@ public:
         m_scrollTarget = std::clamp(m_scrollTarget, 0.0F, maxScroll);
         std::cout << "[Dialog] onScroll deltaY=" << deltaY << " target=" << m_scrollTarget
                   << " offset=" << m_scrollOffset << " maxScroll=" << maxScroll << std::endl;
-        return true;
+        return { .event = Ui::Render::EventKind::Scroll, .changed = true };
     }
 
-    bool onMousePress(int x, int y, int /*clickCount*/) override
+    Ui::Render::element_event_t onMousePress(int x,
+                                             int y,
+                                             Ui::Window::MouseButton /*button*/,
+                                             int /*clickCount*/,
+                                             Ui::Window::KeyModifier /*modifiers*/) override
     {
         const fpx_t cssX = toCss(x);
         const fpx_t cssY = toCss(y);
 
         // Scrollbar: thumb grab or track click
-        if (m_contentHeight > m_viewportHeight) {
-            if (m_thumbBound.contains(cssX, cssY)) {
-                m_draggingThumb   = true;
-                m_dragStartY      = cssY;
-                m_dragStartScroll = m_scrollOffset;
-                return true;
+        if (m_contentHeight > m_viewportHeight && m_scrollBar.contains(cssX, cssY)) {
+            // Paging starts from where the animation is already heading, not from
+            // the frame on screen - the offset is what the thumb the user sees
+            // reports, and it is still catching up
+            const fpx_t paged = m_scrollBar.press(cssY, m_scrollOffset, m_scrollTarget);
+            if (!m_scrollBar.isDragging()) {
+                m_scrollTarget = paged;
             }
-            if (m_trackBound.contains(cssX, cssY)) {
-                const fpx_t maxScroll = m_contentHeight - m_viewportHeight;
-                if (cssY < m_thumbBound.y) {
-                    m_scrollTarget = std::clamp(m_scrollTarget - m_viewportHeight, 0.0F, maxScroll);
-                } else {
-                    m_scrollTarget = std::clamp(m_scrollTarget + m_viewportHeight, 0.0F, maxScroll);
-                }
-                return true;
-            }
+            return { .x = cssX, .y = cssY, .changed = true };
         }
 
-        bool wasHit = false;
+        Ui::Render::element_event_t result;
+        result.x = cssX;
+        result.y = cssY;
 
         if (m_closeBound.contains(cssX, cssY)) {
-            m_closeState = Ui::Render::UiElementState::Active;
-            wasHit       = true;
+            m_closeState   = Ui::Render::UiElementState::Active;
+            result.changed = true;
         } else {
             m_closeState = Ui::Render::UiElementState::None;
         }
 
         for (auto & btn : m_buttons) {
-            if (!wasHit && btn.bound.contains(cssX, cssY)) {
-                btn.state = Ui::Render::UiElementState::Active;
-                wasHit    = true;
+            if (!result.changed && btn.bound.contains(cssX, cssY)) {
+                btn.state      = Ui::Render::UiElementState::Active;
+                result.changed = true;
             } else if (btn.state == Ui::Render::UiElementState::Active) {
                 btn.state = Ui::Render::UiElementState::None;
             }
         }
-        return wasHit;
+        return result;
     }
 
-    Ui::Render::click_result_t onMouseRelease(int x, int y) override
+    Ui::Render::element_event_t onMouseRelease(int x, int y, Ui::Window::MouseButton /*button*/) override
     {
-        if (m_draggingThumb) {
-            m_draggingThumb = false;
+        if (m_scrollBar.isDragging()) {
+            m_scrollBar.release();
             return { .changed = true };
         }
 
@@ -614,8 +600,8 @@ private:
                 m_viewportHeight       = contentBot - contentTop;
 
                 // Available text width (reserve scrollbar space using hover extent)
-                const fpx_t scrollbarLeftEdge = cssW - layout.dialog.padding - layout.dialogScrollbarHoverRight
-                                              - layout.dialogScrollbarHoverW;
+                const fpx_t scrollbarLeftEdge = cssW - layout.dialog.padding - layout.scrollbarHoverRight
+                                              - layout.scrollbarHoverW;
                 const float maxTextWidth = (scrollbarLeftEdge - layout.dialog.padding) * g_config.scale;
 
                 // Word-wrap: split on \n first, then wrap long lines
@@ -673,43 +659,26 @@ private:
 
                 // Scrollbar
                 if (scrollable) {
-                    const bool                    hovered  = m_scrollbarHovered;
-                    const Ui::Res::Type::border_t border   = hovered ? layout.dialogScrollbarHoverBorder
-                                                                     : layout.dialogScrollbarBorder;
-                    const fpx_t                   minThumb = hovered ? layout.dialogScrollbarHoverMinThumb
-                                                                     : layout.dialogScrollbarMinThumb;
+                    // The strip the bar lives at the right edge of; ScrollBar puts
+                    // it there, in whichever state it is in, and answers with the
+                    // geometry and colours both this and the docks draw from
+                    m_scrollBar.setGeometry(
+                    { layout.dialog.padding, contentTop, cssW - (layout.dialog.padding * 2.0F), m_viewportHeight },
+                    m_contentHeight,
+                    m_viewportHeight);
 
-                    // Hit-test area always uses hover dimensions
-                    const fpx_t hitX = cssW - layout.dialog.padding - layout.dialogScrollbarHoverRight
-                                     - layout.dialogScrollbarHoverW;
-                    m_trackBound = { hitX, contentTop, layout.dialogScrollbarHoverW, m_viewportHeight };
-
-                    // Visual position from current state CSS values (centered by design)
-                    const fpx_t drawRight = hovered ? layout.dialogScrollbarHoverRight : layout.dialogScrollbarRight;
-                    const fpx_t drawW     = hovered ? layout.dialogScrollbarHoverW : layout.dialogScrollbarW;
-                    const fpx_t drawX     = cssW - layout.dialog.padding - drawRight - drawW;
-
-                    const fpx_t thumbRatio  = m_viewportHeight / m_contentHeight;
-                    const fpx_t thumbH      = std::max(minThumb, m_viewportHeight * thumbRatio);
-                    const fpx_t thumbTravel = m_viewportHeight - thumbH;
-                    const fpx_t scrollRatio = m_scrollOffset / (m_contentHeight - m_viewportHeight);
-                    m_thumbBound            = { hitX,
-                                                contentTop + thumbTravel * scrollRatio,
-                                                layout.dialogScrollbarHoverW,
-                                                thumbH };
-
-                    const Ui::Res::Type::bound_t drawTrack = { drawX, contentTop, drawW, m_viewportHeight };
-                    const Ui::Res::Type::bound_t drawThumb = { drawX, m_thumbBound.y, drawW, thumbH };
+                    const Ui::Res::Type::border_t border    = m_scrollBar.radius();
+                    const Ui::Res::Type::bound_t  drawTrack = m_scrollBar.track();
+                    const Ui::Res::Type::bound_t  drawThumb = m_scrollBar.thumb(m_scrollOffset);
 
                     m_rounded.begin(m_width, m_height, g_config.scale);
-                    const Ui::Color & thumbColor    = m_thumbHovered ? theme.dialogScrollbarThumbHover
-                                                                     : theme.dialogScrollbarThumb;
+                    const Ui::Color & thumbColor    = m_scrollBar.thumbColor();
                     const bool        atTop         = (drawThumb.y <= drawTrack.y);
                     const bool        atBottom      = (drawThumb.y + drawThumb.h >= drawTrack.y + drawTrack.h);
-                    const Ui::Color   thumbBgTop    = atTop ? theme.dialog.bg : theme.dialogScrollbarTrack;
-                    const Ui::Color   thumbBgBottom = atBottom ? theme.dialog.bg : theme.dialogScrollbarTrack;
+                    const Ui::Color   thumbBgTop    = atTop ? theme.dialog.bg : theme.scrollbarTrack;
+                    const Ui::Color   thumbBgBottom = atBottom ? theme.dialog.bg : theme.scrollbarTrack;
 
-                    m_rounded.draw(drawTrack, border, { theme.dialogScrollbarTrack, theme.dialog.bg });
+                    m_rounded.draw(drawTrack, border, { theme.scrollbarTrack, theme.dialog.bg });
 
                     if (atTop == atBottom) {
                         m_rounded.draw(drawThumb, border, { thumbColor, thumbBgTop });
@@ -794,27 +763,23 @@ private:
         return { bound.x + shift, bound.y + shift, bound.w, bound.h };
     }
 
-    Ui::Res::Type::dialog_t               m_dialog;
-    Ui::font_handle_t                     m_font      = 0;
-    Ui::font_handle_t                     m_titleFont = 0;
-    std::string                           m_iconKey;
-    std::string                           m_closeIconKey;
-    std::vector<dialog_button_t>          m_buttons;
-    DialogCloseFn                         m_onClose;
-    Ui::Res::Type::bound_t                m_closeBound {};
-    Ui::Render::UiElementState            m_closeState = Ui::Render::UiElementState::None;
-    fpx_t                                 m_scrollOffset {};
-    fpx_t                                 m_scrollTarget {};
-    fpx_t                                 m_contentHeight {};
-    fpx_t                                 m_viewportHeight {};
-    fpx_t                                 m_lineHeight {};
-    Ui::Res::Type::bound_t                m_trackBound {};
-    Ui::Res::Type::bound_t                m_thumbBound {};
-    bool                                  m_scrollbarHovered {};
-    bool                                  m_thumbHovered {};
-    bool                                  m_draggingThumb {};
-    fpx_t                                 m_dragStartY {};
-    fpx_t                                 m_dragStartScroll {};
+    Ui::Res::Type::dialog_t      m_dialog;
+    Ui::font_handle_t            m_font      = 0;
+    Ui::font_handle_t            m_titleFont = 0;
+    std::string                  m_iconKey;
+    std::string                  m_closeIconKey;
+    std::vector<dialog_button_t> m_buttons;
+    DialogCloseFn                m_onClose;
+    Ui::Res::Type::bound_t       m_closeBound {};
+    Ui::Render::UiElementState   m_closeState = Ui::Render::UiElementState::None;
+    fpx_t                        m_scrollOffset {};
+    fpx_t                        m_scrollTarget {};
+    fpx_t                        m_contentHeight {};
+    fpx_t                        m_viewportHeight {};
+    fpx_t                        m_lineHeight {};
+    // Geometry is only known at render (it depends on the dialog width), so the
+    // bar keeps it for the event handlers - a popup has no UiLayout to derive from
+    Ui::Render::ScrollBar                 m_scrollBar { m_resManager };
     std::chrono::steady_clock::time_point m_lastFrameTime {};
     Ui::task_fn_t                         m_renderRequest;
 

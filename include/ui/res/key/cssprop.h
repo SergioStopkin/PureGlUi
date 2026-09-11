@@ -29,32 +29,39 @@ namespace Ui::Res::Key {
 // ElementKey; per-store :root custom-property variables live in LayoutKey /
 // ThemeKey. Spellings stay in CSS kebab convention.
 enum class CssPropKey : unsigned char {
-    Color,          // color
-    Background,     // background
-    Width,          // width
-    Height,         // height
-    Margin,         // margin
-    MarginBottom,   // margin-bottom
-    Padding,        // padding
-    BorderRadius,   // border-radius
-    Top,            // top
-    Left,           // left
-    Right,          // right
-    Bottom,         // bottom
-    MinWidth,       // min-width
-    LineHeight,     // line-height
-    FontFamily,     // font-family
-    FontSize,       // font-size
-    FontWeight,     // font-weight
-    Icon,           // icon
-    IconLeft,       // icon-left
-    IconRight,      // icon-right
-    Shift,          // shift
-    SplitAngle,     // split-angle
-    MinThumbHeight, // min-thumb-height
-    GripWidth,      // grip-width
-    GripIcon,       // grip-icon
-    ClickThreshold, // click-threshold
+    Color,           // color
+    Background,      // background
+    Width,           // width
+    Height,          // height
+    Margin,          // margin
+    MarginBottom,    // margin-bottom
+    Padding,         // padding
+    BorderRadius,    // border-radius
+    Top,             // top
+    Left,            // left
+    Right,           // right
+    Bottom,          // bottom
+    MinWidth,        // min-width
+    MinHeight,       // min-height
+    LineHeight,      // line-height
+    ActiveContrast,  // active-contrast
+    FontFamily,      // font-family
+    FontSize,        // font-size
+    FontWeight,      // font-weight
+    Icon,            // icon
+    IconLeft,        // icon-left
+    IconRight,       // icon-right
+    Shift,           // shift
+    SplitAngle,      // split-angle
+    MinThumbHeight,  // min-thumb-height
+    GripWidth,       // grip-width
+    GripIcon,        // grip-icon
+    ClickThreshold,  // click-threshold
+    RowIndent,       // row-indent
+    RowExpanderSize, // row-expander-size
+    RowKeyRatio,     // row-key-ratio
+
+    Count, // enumerator total, never a property - what an exhaustive check counts against
 };
 
 [[nodiscard]] inline std::string cssPropKeyName(CssPropKey key)
@@ -73,7 +80,9 @@ enum class CssPropKey : unsigned char {
     case CssPropKey::Right: return "right";
     case CssPropKey::Bottom: return "bottom";
     case CssPropKey::MinWidth: return "min-width";
+    case CssPropKey::MinHeight: return "min-height";
     case CssPropKey::LineHeight: return "line-height";
+    case CssPropKey::ActiveContrast: return "active-contrast";
     case CssPropKey::FontFamily: return "font-family";
     case CssPropKey::FontSize: return "font-size";
     case CssPropKey::FontWeight: return "font-weight";
@@ -86,6 +95,11 @@ enum class CssPropKey : unsigned char {
     case CssPropKey::GripWidth: return "grip-width";
     case CssPropKey::GripIcon: return "grip-icon";
     case CssPropKey::ClickThreshold: return "click-threshold";
+    case CssPropKey::RowIndent: return "row-indent";
+    case CssPropKey::RowExpanderSize: return "row-expander-size";
+    case CssPropKey::RowKeyRatio: return "row-key-ratio";
+
+    case CssPropKey::Count: break;
     }
     return {};
 }

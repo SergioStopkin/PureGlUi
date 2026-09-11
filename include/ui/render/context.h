@@ -18,8 +18,11 @@
 #pragma once
 
 #include "common/noncopyable.h"
+#include "ui/elementid.h"
 #include "ui/intent.h"
-#include "ui/render/clickresult.h"
+#include "ui/render/binding.h"
+#include "ui/render/elementevent.h"
+#include "ui/render/renderscope.h"
 #include "ui/res/resmanager.h"
 #include "ui/result.h"
 #include "ui/type.h"
@@ -33,7 +36,7 @@ namespace Ui::Render {
 // action, opens a window, or mutates a workspace itself.
 //
 // Staged pureglui-side for now (it reads ResManager + the pureglui
-// UiRenderer/click_result_t). Relocates to ui/context.h (Ui::Context) once the
+// UiRenderer/element_event_t). Relocates to ui/context.h (Ui::Context) once the
 // render layer is fw-resident and ResManager is severed (roadmap step 8).
 class Context final : private Common::NonCopyable {
 public:
@@ -45,11 +48,15 @@ public:
     // Map a resolved main-UI click to intents. openMenuId is the currently-open
     // top menu, so a MenuButton click toggles open vs close. Execution is left to
     // the shell (which dispatches the resulting intents).
-    [[nodiscard]] Ui::result_t mapClick(const click_result_t & click, id_t openMenuId) const
+    [[nodiscard]] Ui::result_t mapClick(const element_event_t & click, id_t openMenuId) const
     {
         Ui::result_t result;
-        switch (click.type) {
-        case UiElementType::MenuButton: {
+
+        // The two data-dependent types first: their intent comes from res data
+        // rather than their type, so no (type, event) binding can express them.
+        if (click.type == UiElementType::MenuButton) {
+            // With an actionKey it is an action button; without one it is a
+            // popup opener, and clicking the open menu closes it.
             const std::string actionKey = m_resManager.actionKeyFor(click.id);
             if (!actionKey.empty()) {
                 result.intents.push_back({ Ui::IntentKind::EmitAction, INVALID_ID, actionKey, {} });
@@ -58,12 +65,13 @@ public:
                                                                      : Ui::IntentKind::OpenPopup;
                 result.intents.push_back({ kind, click.id, {}, {} });
             }
-            break;
+            return result;
         }
-        case UiElementType::MenuItem: {
+
+        if (click.type == UiElementType::MenuItem) {
             const Ui::Res::Type::menu_t item = m_resManager.findMenuItem(click.id);
             if (!item.items.empty()) {
-                break; // submenu parent: opened on hover, no click intent
+                return result; // submenu parent: opened on hover, no click intent
             }
             // Clicking a leaf dismisses the menu, then either opens its dialog or
             // emits its action (label is the value parameterized actions consume).
@@ -73,23 +81,57 @@ public:
             } else {
                 result.intents.push_back({ Ui::IntentKind::EmitAction, INVALID_ID, item.actionKey, item.label });
             }
-            break;
+            return result;
         }
-        case UiElementType::Tab: result.intents.push_back({ Ui::IntentKind::SwitchTab, click.id, {}, {} }); break;
-        case UiElementType::TabClose: result.intents.push_back({ Ui::IntentKind::CloseTab, click.id, {}, {} }); break;
-        case UiElementType::ToolbarButton: {
+
+        // Everything else is declared: the binding names the intent, and only
+        // the payload differs per intent kind. A type with no binding for this
+        // event yields nothing, which is how an element opts out.
+        binding_t binding;
+        if (!defaultBinding(click.type, click.event, binding)) {
+            return result;
+        }
+
+        switch (binding.intent) {
+        case Ui::IntentKind::EmitAction: {
             const std::string actionKey = m_resManager.actionKeyFor(click.id);
             if (!actionKey.empty()) {
-                result.intents.push_back({ Ui::IntentKind::EmitAction, INVALID_ID, actionKey, {} });
+                result.intents.push_back({ binding.intent, INVALID_ID, actionKey, {} });
             }
             break;
         }
-        case UiElementType::Text:
-            result.intents.push_back({ Ui::IntentKind::CopyText, INVALID_ID, {}, m_resManager.statusText() });
+        case Ui::IntentKind::CopyText:
+            result.intents.push_back({ binding.intent, INVALID_ID, {}, m_resManager.statusText() });
             break;
-        default: break;
+        case Ui::IntentKind::ActivateRow:
+        case Ui::IntentKind::ToggleRow:
+            // Back out of the reserved range, so the host receives the row id
+            // it projected rather than an element id it never issued
+            result.intents.push_back({ binding.intent, Ui::toDockRowId(click.id), {}, {} });
+            break;
+        default:
+            // id-carrying intents (SwitchTab, CloseTab, OpenPopup, OpenDialog)
+            result.intents.push_back({ binding.intent, click.id, {}, {} });
+            break;
         }
         return result;
+    }
+
+    // The repaint a click needs, for a caller that has already executed the
+    // intents. None for a type with no binding, so an unhandled click cannot
+    // force a frame.
+    [[nodiscard]] static RenderScope scopeFor(const element_event_t & click)
+    {
+        binding_t binding;
+        if (defaultBinding(click.type, click.event, binding)) {
+            return binding.scope;
+        }
+        // The data-dependent types both mutate chrome: a popup opens or closes,
+        // or an action runs against the menu that raised it
+        if (click.type == UiElementType::MenuButton || click.type == UiElementType::MenuItem) {
+            return RenderScope::Chrome;
+        }
+        return RenderScope::None;
     }
 
     // Map a normalized keyboard shortcut to an action intent. The shell handles

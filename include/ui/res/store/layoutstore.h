@@ -228,6 +228,13 @@ public:
             return region;
         };
 
+        if (hasObject(ElementKey::Window)) {
+            const auto & window     = block(ElementKey::Window);
+            m_layout.windowMinWidth = Ui::Convert::str2fpx(
+            resolveVariable(Common::Json::string(window, cssPropKeyName(CssPropKey::MinWidth), "")));
+            m_layout.windowMinHeight = Ui::Convert::str2fpx(
+            resolveVariable(Common::Json::string(window, cssPropKeyName(CssPropKey::MinHeight), "")));
+        }
         if (hasObject(ElementKey::TopMenu)) {
             m_layout.topMenu = parseRegion(block(ElementKey::TopMenu));
         }
@@ -467,28 +474,60 @@ public:
             resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::Shift), "")));
         }
 
-        if (hasObject(ElementKey::DialogScrollbar)) {
-            const auto & dialogScrollbar = block(ElementKey::DialogScrollbar);
-            m_layout.dialogScrollbarW    = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogScrollbar, cssPropKeyName(CssPropKey::Width), "")));
-            m_layout.dialogScrollbarRight = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogScrollbar, cssPropKeyName(CssPropKey::Right), "")));
-            m_layout.dialogScrollbarBorder = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(dialogScrollbar, cssPropKeyName(CssPropKey::BorderRadius), "")));
-            m_layout.dialogScrollbarMinThumb = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogScrollbar, cssPropKeyName(CssPropKey::MinThumbHeight), "")));
+        if (hasObject(ElementKey::Scrollbar)) {
+            const auto & scrollbar = block(ElementKey::Scrollbar);
+            m_layout.scrollbarW    = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::Width), "")));
+            m_layout.scrollbarRight = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::Right), "")));
+            m_layout.scrollbarBorder = Ui::Convert::parseCssBorderRadius(
+            resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::BorderRadius), "")));
+            m_layout.scrollbarMinThumb = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::MinThumbHeight), "")));
         }
 
-        if (hasObject(ElementKey::DialogScrollbarHover)) {
-            const auto & scrollbarHover    = block(ElementKey::DialogScrollbarHover);
-            m_layout.dialogScrollbarHoverW = Ui::Convert::parseCssNumber(
+        if (hasObject(ElementKey::ScrollbarHover)) {
+            const auto & scrollbarHover = block(ElementKey::ScrollbarHover);
+            m_layout.scrollbarHoverW    = Ui::Convert::parseCssNumber(
             resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::Width), "")));
-            m_layout.dialogScrollbarHoverRight = Ui::Convert::parseCssNumber(
+            m_layout.scrollbarHoverRight = Ui::Convert::parseCssNumber(
             resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::Right), "")));
-            m_layout.dialogScrollbarHoverBorder = Ui::Convert::parseCssBorderRadius(
+            m_layout.scrollbarHoverBorder = Ui::Convert::parseCssBorderRadius(
             resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::BorderRadius), "")));
-            m_layout.dialogScrollbarHoverMinThumb = Ui::Convert::parseCssNumber(
+            m_layout.scrollbarHoverMinThumb = Ui::Convert::parseCssNumber(
             resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::MinThumbHeight), "")));
+        }
+
+        // The dock slider, one block per PART. Split where the scrollbar's is not,
+        // because a slider's two pieces are shaped apart on purpose: the track is
+        // a range and the thumb a position on it. Only the track's thickness is
+        // stated - its length is the row's right column, which layout cannot know.
+        if (hasObject(ElementKey::DockSliderTrack)) {
+            const auto & track    = block(ElementKey::DockSliderTrack);
+            m_layout.sliderTrackH = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(track, cssPropKeyName(CssPropKey::Height), "")));
+            m_layout.sliderTrackBorder = Ui::Convert::parseCssBorderRadius(
+            resolveVariable(Common::Json::string(track, cssPropKeyName(CssPropKey::BorderRadius), "")));
+        }
+
+        if (hasObject(ElementKey::DockSliderThumb)) {
+            const auto & thumb    = block(ElementKey::DockSliderThumb);
+            m_layout.sliderThumbW = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(thumb, cssPropKeyName(CssPropKey::Width), "")));
+            m_layout.sliderThumbH = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(thumb, cssPropKeyName(CssPropKey::Height), "")));
+            m_layout.sliderThumbBorder = Ui::Convert::parseCssBorderRadius(
+            resolveVariable(Common::Json::string(thumb, cssPropKeyName(CssPropKey::BorderRadius), "")));
+        }
+
+        if (hasObject(ElementKey::DockSliderThumbHover)) {
+            const auto & thumbHover    = block(ElementKey::DockSliderThumbHover);
+            m_layout.sliderThumbHoverW = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(thumbHover, cssPropKeyName(CssPropKey::Width), "")));
+            m_layout.sliderThumbHoverH = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(thumbHover, cssPropKeyName(CssPropKey::Height), "")));
+            m_layout.sliderThumbHoverBorder = Ui::Convert::parseCssBorderRadius(
+            resolveVariable(Common::Json::string(thumbHover, cssPropKeyName(CssPropKey::BorderRadius), "")));
         }
 
         // Shared dock dimensional tunables. One block applies to every dock
@@ -505,6 +544,15 @@ public:
             m_layout.dockDefaults.gripIcon = Common::Sanitize::filePath(
             resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::GripIcon), "")),
             "dock.gripIcon");
+            // parseCssNumber, not str2fpx: these are unitless fractions of the
+            // row height, and str2fpx routes through str2int, which truncates
+            // "0.5" to 0 - collapsing every expander and slider to zero height.
+            m_layout.dockDefaults.rowIndentRatio = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::RowIndent), "")));
+            m_layout.dockDefaults.rowExpanderRatio = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::RowExpanderSize), "")));
+            m_layout.dockDefaults.rowKeyRatio = Ui::Convert::parseCssNumber(
+            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::RowKeyRatio), "")));
         }
 
         const Ui::Res::Type::Changed layoutChanged = (m_layout == oldLayout) ? Ui::Res::Type::Changed::None

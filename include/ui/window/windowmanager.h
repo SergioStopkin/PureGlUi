@@ -22,6 +22,7 @@
 #include "common/sanitize.h"
 #include "common/unicode.h"
 #include "ui/config.h"
+#include "ui/elementid.h"
 #include "ui/gl/glrender.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/svgrenderer.h"
@@ -62,7 +63,9 @@
 #include <iostream>
 #include <list>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -78,9 +81,11 @@ using Ui::Window::NativeEvent;
 using Ui::Window::NativeWindow;
 using Ui::Window::NativeWindowHandle;
 
-// Flip to true to trace how raw OS mouse events get routed to main/popup/content surface.
+// Flip to true to trace what this coordinator does: how a raw OS mouse event is
+// routed to main/popup/content surface, which windows each tick renders, the
+// popup and submenu lifecycle, and main-window resizes.
 // Pair with WIN32_EVENT_DEBUG to see the full press->classify->dispatch chain.
-constexpr bool WM_ROUTE_DEBUG = true;
+constexpr bool WM_ROUTE_DEBUG = false;
 
 /**
  * @brief Manages the main window and all child window contexts
@@ -106,10 +111,20 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     // or removed dock files).
     std::unordered_map<id_t, Ui::Render::DockColumn> m_docks;
 
-    // Capture target while a grip drag is in flight. Ui::INVALID_ID = no drag.
-    // While active, every mouse move/up routes exclusively to that dock,
-    // even when the cursor wanders into the content surface or another area.
-    id_t m_activeDragDock = Ui::INVALID_ID;
+    // The element holding the pointer between DragStart and DragEnd, chosen by
+    // its declared accepts mask rather than by type. Ui::INVALID_ID = no drag.
+    // While set, every mouse move/up routes to it exclusively, even when the
+    // cursor wanders into the content surface or another area.
+    id_t                      m_dragElement = Ui::INVALID_ID;
+    Ui::Render::UiElementType m_dragType    = Ui::Render::UiElementType::DockGrip;
+    // The dock a slider drag belongs to: the captured element is a host row,
+    // which names no dock
+    id_t m_dragDock = Ui::INVALID_ID;
+
+    // Host reaction to a slider drag: (row id, 0..1). A continuous stream, so
+    // it is a hook rather than an intent - the host owns the value, re-projects
+    // its rows, and the dock repaints from that.
+    std::function<void(id_t, fpx_t)> m_onRowValue;
 
     // Popup/submenu pairings: a PopupWindow surface + a PopupRenderer bound by a
     // Connector (typed both sides, renderer destroyed before the window's GL
@@ -200,9 +215,11 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     id_t m_nextPopupId = POPUP_GROUP_ID;
 
     // Event dispatch state
-    Event                      m_currentEvent {};
-    Ui::Render::click_result_t m_lastClickResult {};
-    bool                       m_popupEventConsumed = false;
+    Event                       m_currentEvent {};
+    Ui::Render::element_event_t m_lastClickResult {};
+    bool                        m_popupEventConsumed = false;
+
+    Ui::Window::PointerShape m_pointerShape = Ui::Window::PointerShape::Default;
 
     static Ui::Res::Type::border_t clampRadii(const Ui::Res::Type::border_t & radii, fpx_t w, fpx_t h)
     {
@@ -231,6 +248,9 @@ public:
     // Host callback fired when a dialog closes (the host reads lastDialogAction/Data).
     void setOnDialogClose(Ui::task_fn_t callback) { m_onDialogClose = std::move(callback); }
 
+    /** @brief Host reaction to a slider row being dragged: (row id, 0..1) */
+    void setOnRowValue(std::function<void(id_t, fpx_t)> callback) { m_onRowValue = std::move(callback); }
+
     void setDialogContentResolver(std::function<std::wstring(const std::string &)> resolver)
     {
         m_dialogContentResolver = std::move(resolver);
@@ -245,12 +265,88 @@ public:
         requestMainRender();
     }
 
+    // Whether the layout still has to be rebuilt before the next frame. Drawing
+    // reads live geometry while hit rects come from the element list, so anything
+    // that moves an element must leave this true.
+    [[nodiscard]] bool isContentDirty() const { return m_contentIsDirty; }
+
     // Double-click thresholds (host supplies these from its viewport config).
     void setDoubleClickConfig(uint32_t intervalMs, int distancePx)
     {
         if (m_eventHandler) {
             m_eventHandler->setDoubleClickConfig(intervalMs, distancePx);
         }
+    }
+
+    // Pointer shape, applied to whichever seam the platform owns it on: the
+    // window (X11 / Win32 / macOS) or the pointer (Wayland, which must re-set
+    // it on every enter). Both are no-ops where they do not apply, so this
+    // calls both rather than branching on platform.
+    void setCursor(Ui::Window::PointerShape shape)
+    {
+        if (m_pointerShape == shape) {
+            return;
+        }
+        m_pointerShape = shape;
+        if (m_main) {
+            // Through the window: m_main is the window+renderer pairing, and the
+            // cursor belongs to the surface, not to whatever draws into it
+            m_main->window().setCursor(shape);
+        }
+        if (m_eventHandler) {
+            m_eventHandler->setCursor(shape);
+        }
+    }
+
+    [[nodiscard]] Ui::Window::PointerShape pointerShape() const { return m_pointerShape; }
+
+    // Project host content into a dock, addressed by its res JSON "name" (the
+    // routing key; numeric dock ids are reassigned across a reload). Unknown
+    // name is a no-op, so a host can set rows for a dock its res does not
+    // declare without special-casing.
+    void setDockRows(std::string_view dockName, std::vector<Ui::Res::Dock::row_t> rows)
+    {
+        for (auto & [id, dock] : m_docks) {
+            if (dock.name() == dockName) {
+                dock.setRows(std::move(rows));
+                // Rows are drawn live but hit-tested from the element list, which
+                // only setContent() rebuilds - a repaint alone would leave every
+                // row clickable at the position it held before this call
+                requestContentRefresh();
+                return;
+            }
+        }
+    }
+
+    // Back to the top. setDockRows cannot decide this itself: it cannot tell "same
+    // content, a node expanded" from "different content entirely", and only the
+    // host knows which it just projected
+    void resetDockScroll(std::string_view dockName)
+    {
+        for (auto & [id, dock] : m_docks) {
+            if (dock.name() == dockName) {
+                dock.resetScroll();
+                requestContentRefresh(); // same stale hit rects as setDockRows
+                return;
+            }
+        }
+    }
+
+    // Where a dialog may sit: inside the chrome (menu+tabs, toolbars, status bar)
+    // less its own margin. Docks are deliberately not subtracted - a dialog is
+    // modal over the whole app, not a guest of the workspace they frame.
+    [[nodiscard]] Ui::Res::Type::bound_t dialogArea() const
+    {
+        const auto & layout = m_resManager.layout();
+        const fpx_t  margin = toPhys(layout.dialog.margin);
+        const fpx_t  left   = toPhys(layout.leftToolbar.width) + margin;
+        const fpx_t  right  = toPhys(layout.rightToolbar.width) + margin;
+        const fpx_t  top    = toPhys(layout.topMenu.height + layout.workspaceTab.height) + margin;
+        const fpx_t  bottom = toPhys(layout.statusBar.height) + margin;
+        return { left,
+                 top,
+                 std::max(1.0F, m_windowWidth - left - right),
+                 std::max(1.0F, m_windowHeight - top - bottom) };
     }
 
     // The rect left for embedded content after the UI chrome (toolbars + docks
@@ -425,9 +521,9 @@ public:
         }
     }
 
-    [[nodiscard]] const Event &                      currentEvent() const { return m_currentEvent; }
-    [[nodiscard]] const Ui::Render::click_result_t & lastClickResult() const { return m_lastClickResult; }
-    [[nodiscard]] bool                               popupEventConsumed() const { return m_popupEventConsumed; }
+    [[nodiscard]] const Event &                       currentEvent() const { return m_currentEvent; }
+    [[nodiscard]] const Ui::Render::element_event_t & lastClickResult() const { return m_lastClickResult; }
+    [[nodiscard]] bool                                popupEventConsumed() const { return m_popupEventConsumed; }
 
     /**
      * @brief Check if a point (popup-local coords) is inside popup's visual region
@@ -511,21 +607,30 @@ public:
                     onMouseMove(event.mouse.x, event.mouse.y);
                 }
                 break;
+            // Every button goes through: a content surface needs middle for pan
+            // and right for a context menu. Chrome handlers filter for
+            // themselves - the dispatcher no longer decides for them
             case EventType::MouseButtonPress:
-                if (event.mouse.button == MouseButton::Left) {
-                    if (isChildEvent) {
-                        onMousePress(event.mouse.x, event.mouse.y, event.childWindowId, event.mouse.clickCount);
-                    } else {
-                        onMousePress(event.mouse.x, event.mouse.y, event.mouse.clickCount);
-                    }
+                if (isChildEvent) {
+                    onMousePress(event.mouse.x,
+                                 event.mouse.y,
+                                 event.childWindowId,
+                                 event.mouse.button,
+                                 event.mouse.clickCount,
+                                 event.mouse.modifiers);
+                } else {
+                    onMousePress(event.mouse.x,
+                                 event.mouse.y,
+                                 event.mouse.button,
+                                 event.mouse.clickCount,
+                                 event.mouse.modifiers);
                 }
                 break;
             case EventType::MouseButtonRelease:
-                if (event.mouse.button == MouseButton::Left) {
-                    m_lastClickResult = onMouseRelease(event.mouse.x,
-                                                       event.mouse.y,
-                                                       isChildEvent ? event.childWindowId : Ui::INVALID_ID);
-                }
+                m_lastClickResult = onMouseRelease(event.mouse.x,
+                                                   event.mouse.y,
+                                                   isChildEvent ? event.childWindowId : Ui::INVALID_ID,
+                                                   event.mouse.button);
                 break;
             case EventType::Scroll:
                 if (isChildEvent) {
@@ -726,6 +831,10 @@ public:
         std::cout << "[WindowManager] Scale factor: " << g_config.scale << "x  UI margins: L=" << m_uiLeft
                   << " T=" << m_uiTop << " R=" << m_uiRight << " B=" << m_uiBottom << " docks=" << m_docks.size()
                   << (scaleChanged ? " (changed)" : "") << std::endl;
+
+        // Here, not at window creation: the floor is physical, so it can only be
+        // computed once the scale this pass just resolved is known
+        applyMinWindowSize();
         return scaleChanged;
     }
 
@@ -774,7 +883,25 @@ public:
             positionContentSurface(*entry.window);
             if (entry.pairing != nullptr) {
                 entry.pairing->resize(newViewport.w, newViewport.h);
+                // A surface that just grew holds the previous frame at the old
+                // size, so the strip it gained shows stale pixels (composited:
+                // a stale texture) until something redraws it. Queue it here -
+                // renderAll() draws content surfaces before the main window, so
+                // the composite stays in step with the drag.
+                entry.window->requestRender();
             }
+        }
+
+        // Hit rects live in the layout's element list, and only setContent()
+        // rebuilds it. Without this a dock that just moved is DRAWN at its new
+        // geometry - DockColumn::render reads m_outer live - while its grip stays
+        // clickable at the OLD one: the first toggle works, every one after it
+        // lands on empty space and does nothing.
+        //
+        // Skipped mid-drag: the pointer is captured then, so no hit test runs, and
+        // endDrag clears the capture before reflowing again.
+        if (m_dragElement == Ui::INVALID_ID) {
+            m_main->renderer().setContent();
         }
         m_renderQueue.request(MAIN_WINDOW_ID);
     }
@@ -893,6 +1020,30 @@ public:
                                        symbolicIcon.empty() ? std::string {} : resPath.icon(symbolicIcon));
     }
 
+    // Push the res-derived floor to the window manager. Re-applied on reload, so
+    // a res edit that adds a bigger dialog raises it without a restart.
+    void applyMinWindowSize()
+    {
+        if (!m_main) {
+            return;
+        }
+        const Ui::Res::Type::bound_t minSize = m_resManager.minWindowSize();
+        const fpx_t                  minW    = toPhys(minSize.w);
+        const fpx_t                  minH    = toPhys(minSize.h);
+        m_main->window().setMinSize(minW, minH);
+        std::cout << "[WindowManager] Min window size: " << minW << "x" << minH << " (current " << m_windowWidth << "x"
+                  << m_windowHeight << ")" << std::endl;
+
+        // The hint only constrains what the user drags next - it never grows a
+        // window that is already below it (a restored session, a smaller screen
+        // last run), so the floor is enforced once here too.
+        // Resize only: the cached bound has no position yet on the first pass
+        // (the window is not mapped), so moving it would drop it at 0,0
+        if (m_windowWidth < minW || m_windowHeight < minH) {
+            m_main->window().resize(std::max(m_windowWidth, minW), std::max(m_windowHeight, minH));
+        }
+    }
+
     /**
      * @brief Apply resource changes to all windows and renderers
      */
@@ -903,13 +1054,36 @@ public:
         // survive because Ui::Render::DockColumn's ctor pulls them from ResManager's
         // by-name dock-state map. Drag capture is cleared so a stale id
         // (dock removed mid-drag) can't route into a missing entry.
+        //
+        // Host-projected rows are carried across by name for the same reason
+        // widths are: the rebuild is our own bookkeeping, and a host must not
+        // have to re-push content every time something happens to touch the
+        // layout. A theme switch lands here (layout.json reads theme CSS vars,
+        // so it compares unequal) via apply(), which never runs the reload
+        // hooks - so "re-project in afterReload" would not even cover it.
         if (Common::Bit::And(changed, Ui::Res::Type::Changed::Layout) != 0) {
-            m_activeDragDock = Ui::INVALID_ID;
+            m_dragElement = Ui::INVALID_ID;
+
+            std::unordered_map<std::string, std::vector<Ui::Res::Dock::row_t>> carriedRows;
+            for (auto & [id, dock] : m_docks) {
+                if (!dock.rows().empty()) {
+                    carriedRows.emplace(dock.name(), dock.rows());
+                }
+            }
+
             m_docks.clear();
             const auto & dockConfigs = m_resManager.layout().docks;
             for (size_t i = 0; i < dockConfigs.size(); ++i) {
                 const id_t id = Ui::PubSub::dockSourceId(i);
                 m_docks.try_emplace(id, id, dockConfigs[i], m_resManager);
+            }
+            // A dock the reload removed simply has no taker; one it added comes
+            // up empty until the host projects into it.
+            for (auto & [id, dock] : m_docks) {
+                const auto carried = carriedRows.find(dock.name());
+                if (carried != carriedRows.end()) {
+                    dock.setRows(std::move(carried->second));
+                }
             }
             for (auto & [id, dock] : m_docks) {
                 clampDockStateToViewport(dock);
@@ -929,6 +1103,10 @@ public:
         if (Common::Bit::And(changed, Ui::Res::Type::Changed::Icon) != 0) {
             applyWindowIcon();
         }
+
+        // Unconditional: the floor is derived from the layout AND the menus'
+        // dialog sizes, so no single Changed bit covers it
+        applyMinWindowSize();
 
         // Main window: setBackground() calls makeCurrent() internally
         if (m_main && Common::Bit::And(changed, Ui::Res::Type::Changed::Theme) != 0) {
@@ -1049,8 +1227,10 @@ public:
             m_subscribe.add(WS_GROUP_ID + id, popupSubId, [this]() { recapturePopupCorners(); });
         }
 
-        std::cout << "[WindowManager] Created popup at screen(" << bound.x << "," << bound.y << ") rel(" << relX << ","
-                  << relY << ") size " << bound.w << "x" << bound.h << std::endl;
+        if constexpr (WM_ROUTE_DEBUG) {
+            std::cout << "[WindowManager] Created popup at screen(" << bound.x << "," << bound.y << ") rel(" << relX
+                      << "," << relY << ") size " << bound.w << "x" << bound.h << std::endl;
+        }
         return true;
     }
 
@@ -1145,7 +1325,9 @@ public:
             if (m_main) {
                 m_main->window().makeCurrent();
             }
-            std::cout << "[WindowManager] Destroyed submenu window" << std::endl;
+            if constexpr (WM_ROUTE_DEBUG) {
+                std::cout << "[WindowManager] Destroyed submenu window" << std::endl;
+            }
         }
     }
 
@@ -1271,8 +1453,10 @@ public:
             m_subscribe.add(WS_GROUP_ID + id, submenuId, [this]() { recaptureSubmenuCorners(); });
         }
 
-        std::cout << "[WindowManager] Created submenu at screen(" << bound.x << "," << bound.y << ") size " << bound.w
-                  << "x" << bound.h << std::endl;
+        if constexpr (WM_ROUTE_DEBUG) {
+            std::cout << "[WindowManager] Created submenu at screen(" << bound.x << "," << bound.y << ") size "
+                      << bound.w << "x" << bound.h << std::endl;
+        }
         return true;
     }
 
@@ -1332,7 +1516,7 @@ public:
 
         // Create the dialog window (centered), then emplace its renderer on the
         // connector (needs the window's GL context, made current by emplaceRenderer).
-        if (!m_dialogWindow->window().open(m_main->window(), m_resManager, resolved)) {
+        if (!m_dialogWindow->window().open(m_main->window(), m_resManager, resolved, dialogArea())) {
             m_dialogWindow.reset();
             return;
         }
@@ -1577,7 +1761,9 @@ public:
                 m_main->window().makeCurrent();
             }
 
-            std::cout << "[WindowManager] Destroyed popup window" << std::endl;
+            if constexpr (WM_ROUTE_DEBUG) {
+                std::cout << "[WindowManager] Destroyed popup window" << std::endl;
+            }
         }
     }
 
@@ -1659,6 +1845,11 @@ public:
         m_main->renderer().setExtraOpsHook([this](Ui::Render::UiRenderer & out) {
             for (const auto & [id, dock] : m_docks) {
                 dock.render(out);
+            }
+        });
+        m_main->renderer().setExtraElementsHook([this](Ui::Render::UiLayout & layout) {
+            for (const auto & [id, dock] : m_docks) {
+                dock.appendElements(layout);
             }
         });
     }
@@ -1777,8 +1968,10 @@ public:
         // Only log when the queue carries more than the steady-state main
         // window - i.e. a child window or popup also needs a frame this tick.
         // The pending=1 case is the per-tick noise we want to suppress.
-        if (const size_t pending = m_renderQueue.pending().size(); pending != 1) {
-            std::cout << "[WM] renderAll pending=" << pending << std::endl;
+        if constexpr (WM_ROUTE_DEBUG) {
+            if (const size_t pending = m_renderQueue.pending().size(); pending != 1) {
+                std::cout << "[WM] renderAll pending=" << pending << std::endl;
+            }
         }
 
         // 1. Render child windows (content surface) -- may queue main window render
@@ -1957,12 +2150,19 @@ public:
      * (modal) dialog classification - they differ only in the connector type.
      * @return the hit connector, or nullptr.
      */
+    // Whether an event carries pointer coordinates: what the popup match and the
+    // route trace both classify on
+    [[nodiscard]] static bool isMouseEvent(const Event & event)
+    {
+        return event.type == EventType::MouseMove || event.type == EventType::MouseButtonPress
+            || event.type == EventType::MouseButtonRelease || event.type == EventType::Scroll
+            || event.type == EventType::MouseLeave;
+    }
+
     template <typename C>
     static C * matchPopupTarget(Event & event, std::initializer_list<C *> candidates)
     {
-        const bool isMouse = (event.type == EventType::MouseMove || event.type == EventType::MouseButtonPress
-                              || event.type == EventType::MouseButtonRelease || event.type == EventType::Scroll
-                              || event.type == EventType::MouseLeave);
+        const bool isMouse = isMouseEvent(event);
 
         if (g_config.isCompositing) {
             // MouseLeave has no meaningful coords - handled globally by the caller.
@@ -2016,13 +2216,10 @@ public:
         }
 
         // Non-composite mode: classify remaining source handles.
-        const bool isMouse = (event.type == EventType::MouseMove || event.type == EventType::MouseButtonPress
-                              || event.type == EventType::MouseButtonRelease || event.type == EventType::Scroll
-                              || event.type == EventType::MouseLeave);
-        const auto src     = event.sourceWindow;
+        const auto src = event.sourceWindow;
         if (src == 0 || (m_main && src == m_main->window().nativeHandle())) {
             if constexpr (WM_ROUTE_DEBUG) {
-                if (isMouse) {
+                if (isMouseEvent(event)) {
                     std::cout << "[WM] route=main src=" << src
                               << " main=" << (m_main ? m_main->window().nativeHandle() : NativeWindowHandle {})
                               << " type=" << static_cast<int>(event.type) << std::endl;
@@ -2036,7 +2233,7 @@ public:
             if (entry.window != nullptr && src == entry.window->nativeHandle()) {
                 event.childWindowId = id;
                 if constexpr (WM_ROUTE_DEBUG) {
-                    if (isMouse) {
+                    if (isMouseEvent(event)) {
                         std::cout << "[WM] route=content src=" << src << " childId=" << id
                                   << " type=" << static_cast<int>(event.type) << std::endl;
                     }
@@ -2046,7 +2243,7 @@ public:
         }
 
         if constexpr (WM_ROUTE_DEBUG) {
-            if (isMouse) {
+            if (isMouseEvent(event)) {
                 std::cout << "[WM] route=unknown src=" << src << " type=" << static_cast<int>(event.type) << std::endl;
             }
         }
@@ -2082,7 +2279,11 @@ public:
             if (event.mouse.button == MouseButton::Left) {
                 const bool insideVisual = target.window().containsPoint(event.mouse.x, event.mouse.y);
                 if (insideVisual) {
-                    target.onMousePress(event.mouse.x, event.mouse.y, event.mouse.clickCount);
+                    target.onMousePress(event.mouse.x,
+                                        event.mouse.y,
+                                        event.mouse.button,
+                                        event.mouse.clickCount,
+                                        event.mouse.modifiers);
                     target.window().requestRender();
                     m_popupEventConsumed = true;
                 }
@@ -2092,7 +2293,7 @@ public:
             if (event.mouse.button == MouseButton::Left) {
                 const bool insideVisual = target.window().containsPoint(event.mouse.x, event.mouse.y);
                 if (insideVisual) {
-                    m_lastClickResult = target.onMouseRelease(event.mouse.x, event.mouse.y);
+                    m_lastClickResult = target.onMouseRelease(event.mouse.x, event.mouse.y, event.mouse.button);
                     target.window().requestRender();
                     m_popupEventConsumed = true;
                 }
@@ -2101,7 +2302,7 @@ public:
         case EventType::Scroll: {
             const bool insideVisual = target.window().containsPoint(event.mouse.x, event.mouse.y);
             if (insideVisual) {
-                if (target.onScroll(event.mouse.x, event.mouse.y, event.scroll.deltaY)) {
+                if (target.onScroll(event.mouse.x, event.mouse.y, event.scroll.deltaY).changed) {
                     target.window().requestRender();
                 }
                 m_popupEventConsumed = true;
@@ -2394,8 +2595,10 @@ public:
      */
     void onMainWindowResize(fpx_t width, fpx_t height)
     {
-        std::cout << "[WindowManager] onMainWindowResize: " << width << "x" << height << " (was " << m_windowWidth
-                  << "x" << m_windowHeight << ")" << std::endl;
+        if constexpr (WM_ROUTE_DEBUG) {
+            std::cout << "[WindowManager] onMainWindowResize: " << width << "x" << height << " (was " << m_windowWidth
+                      << "x" << m_windowHeight << ")" << std::endl;
+        }
 
         m_windowWidth  = width;
         m_windowHeight = height;
@@ -2421,8 +2624,12 @@ public:
         // and the body height did - layoutDocks() reads both.
         layoutDocks();
 
-        // Sync main window internal dimensions first - recenter/resize reads bound()
-        m_main->window().syncDimensions(width, height);
+        // Sync main window internal dimensions first - recenter/resize reads
+        // bound(). Guarded like every other main-window use here: a resize can
+        // arrive before the window exists (and does, in headless tests).
+        if (m_main) {
+            m_main->window().syncDimensions(width, height);
+        }
 
         // Resize UI renderer to new dimensions
         if (hasUiRenderer()) {
@@ -2431,7 +2638,7 @@ public:
 
         // Recenter dialog (position only - corner recapture after content surface resize below)
         if (m_dialogWindow) {
-            m_dialogWindow->window().recenter(m_main->window().bound(), m_uiTop, m_uiBottom);
+            m_dialogWindow->window().recenter(dialogArea());
         }
 
         const Ui::Res::Type::bound_t newBound = viewportBound();
@@ -2467,36 +2674,26 @@ public:
 
     bool onMouseMove(int x, int y) override
     {
-        // Mid-drag on a dock grip: route exclusively to that dock until
-        // mouse-up so the cursor can wander into the content surface without
-        // breaking the resize gesture.
-        if (m_activeDragDock != Ui::INVALID_ID) {
-            auto it = m_docks.find(m_activeDragDock);
-            if (it != m_docks.end()) {
-                const fpx_t cssX = toCss(x);
-                const fpx_t cssY = toCss(y);
-                if (it->second.onMouseMove(cssX, cssY)) {
-                    // Transient width changed. First clamp to what the
-                    // viewport can actually fit (so the dock can't push the
-                    // content surface below zero), then reflow margins + dock
-                    // positions + content surface size in one pass. The content surface
-                    // child shrinks/grows live as the user drags.
-                    clampDraggingDockToViewport(it->second);
-                    reflowDocksAndViewport();
-                }
-                return true;
-            }
-            m_activeDragDock = Ui::INVALID_ID; // dock vanished; release capture
+        // Mid-drag: route exclusively to whoever holds the pointer until
+        // mouse-up, so the cursor can wander into the content surface without
+        // breaking the gesture.
+        if (m_dragElement != Ui::INVALID_ID && dragMove(toCss(x), toCss(y))) {
+            return true;
         }
 
         // Hover update on all docks (cheap, none capture by default).
         bool dockHoverChanged = false;
+        bool overGrip         = false;
         for (auto & [id, dock] : m_docks) {
             dockHoverChanged |= dock.onMouseMove(toCss(x), toCss(y));
+            overGrip |= dock.isHoveredGrip();
         }
         if (dockHoverChanged) {
             m_renderQueue.request(MAIN_WINDOW_ID);
         }
+
+        // The grip is a resize handle; say so before the drag rather than after
+        setCursor(overGrip ? Ui::Window::PointerShape::ResizeH : Ui::Window::PointerShape::Default);
 
         if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
             if (m_main) {
@@ -2523,57 +2720,189 @@ public:
         return m_main ? m_main->onMouseMove(x, y) : dockHoverChanged;
     }
 
-    bool onMousePress(int x, int y, int clickCount) override
+    // Take the pointer for an element that declared DragStart. False means the
+    // element was not one we know how to drag; the press then falls through to
+    // normal routing.
+    //
+    // Both axes are passed on: the dock grip and slider drag horizontally, the
+    // dock scrollbar vertically.
+    //
+    // The consequence of a drag is type-specific and framework-internal - a
+    // dock resize is chrome, the way tab-arrow scrolling is - so it is
+    // dispatched here rather than through the intent table.
+    bool beginDrag(Ui::Render::UiElement & element, fpx_t cssX, fpx_t cssY, int clickCount)
     {
-        // Dock grip press → capture and start drag, or toggle on double-
-        // click. Has to run before content surface routing because grip rects can sit
-        // adjacent to (or briefly overlap by a pixel due to rounding) the
-        // content surface edge.
+        m_dragType = element.type;
+
+        if (element.type == Ui::Render::UiElementType::DockSlider) {
+            const id_t rowId = Ui::toDockRowId(element.id);
+            for (auto & [id, dock] : m_docks) {
+                if (!dock.hasSliderRow(rowId)) {
+                    continue;
+                }
+                m_dragElement = element.id;
+                m_dragDock    = id;
+                if (const std::optional<fpx_t> jumped = dock.beginSliderGesture(rowId, cssX)) {
+                    reportRowValue(*jumped);
+                }
+                return true;
+            }
+            return false;
+        }
+
+        // Pressing the track pages instead of grabbing, so the gesture can be over
+        // before it starts - isDraggingScroll() is what decides whether to capture
+        if (element.type == Ui::Render::UiElementType::DockScrollbar) {
+            auto scrolled = m_docks.find(toDockIdFromScroll(element.id));
+            if (scrolled == m_docks.end()) {
+                return false;
+            }
+            scrolled->second.beginScrollGesture(cssY);
+            if (scrolled->second.isDraggingScroll()) {
+                m_dragElement = element.id;
+            }
+            requestContentRefresh();
+            return true;
+        }
+
+        if (element.type != Ui::Render::UiElementType::DockGrip) {
+            return false;
+        }
+        auto it = m_docks.find(toDockIdFromGrip(element.id));
+        if (it == m_docks.end()) {
+            return false;
+        }
+        it->second.beginGripGesture(cssX, clickCount);
+        // Double-click resolves immediately (no drag), so reflow now and hold
+        // nothing. A normal press keeps the pointer until its release.
+        if (it->second.isDragging()) {
+            m_dragElement = element.id;
+        } else {
+            // Restore via memoryX may exceed what fits now (other docks may
+            // have grown since the size was captured), so clamp against
+            // current viewport availability before the layout pass sees it.
+            clampDockStateToViewport(it->second);
+            reflowDocksAndViewport();
+        }
+        return true;
+    }
+
+    void reportRowValue(fpx_t ratio)
+    {
+        if (m_onRowValue) {
+            m_onRowValue(Ui::toDockRowId(m_dragElement), ratio);
+        }
+    }
+
+    // Route a move to whatever holds the pointer, ignoring what is under the
+    // cursor - that is the whole point of capture.
+    bool dragMove(fpx_t cssX, fpx_t cssY)
+    {
+        if (m_dragType == Ui::Render::UiElementType::DockSlider) {
+            auto dragged = m_docks.find(m_dragDock);
+            if (dragged == m_docks.end()) {
+                m_dragElement = Ui::INVALID_ID; // dock vanished; release capture
+                return false;
+            }
+            reportRowValue(dragged->second.onSliderDrag(cssX));
+            return true;
+        }
+
+        if (m_dragType == Ui::Render::UiElementType::DockScrollbar) {
+            auto scrolled = m_docks.find(toDockIdFromScroll(m_dragElement));
+            if (scrolled == m_docks.end()) {
+                m_dragElement = Ui::INVALID_ID; // dock vanished; release capture
+                return false;
+            }
+            if (scrolled->second.onScrollDrag(cssY)) {
+                requestContentRefresh();
+            }
+            return true;
+        }
+
+        auto it = m_docks.find(toDockIdFromGrip(m_dragElement));
+        if (it == m_docks.end()) {
+            m_dragElement = Ui::INVALID_ID; // dock vanished; release capture
+            return false;
+        }
+        if (it->second.onMouseMove(cssX, cssY)) {
+            // Transient width changed. Clamp to what the viewport can actually
+            // fit (so the dock cannot push the content surface below zero),
+            // then reflow margins + dock positions + content surface size in
+            // one pass. The content child shrinks/grows live as the user drags.
+            clampDraggingDockToViewport(it->second);
+            reflowDocksAndViewport();
+        }
+        return true;
+    }
+
+    void endDrag(fpx_t cssX)
+    {
+        // A slider and a scrollbar commit on every move, so a release only ends
+        // the grab and frees the pointer
+        if (m_dragType == Ui::Render::UiElementType::DockSlider) {
+            if (auto dragged = m_docks.find(m_dragDock); dragged != m_docks.end()) {
+                dragged->second.endSliderDrag();
+            }
+            m_dragElement = Ui::INVALID_ID;
+            return;
+        }
+
+        if (m_dragType == Ui::Render::UiElementType::DockScrollbar) {
+            if (auto scrolled = m_docks.find(toDockIdFromScroll(m_dragElement)); scrolled != m_docks.end()) {
+                scrolled->second.endScrollDrag();
+            }
+            m_dragElement = Ui::INVALID_ID;
+            return;
+        }
+
+        auto it = m_docks.find(toDockIdFromGrip(m_dragElement));
+        if (it != m_docks.end()) {
+            it->second.onMouseUp(cssX);
+        }
+        m_dragElement = Ui::INVALID_ID;
+        reflowDocksAndViewport();
+    }
+
+    Ui::Render::element_event_t onMousePress(int                     x,
+                                             int                     y,
+                                             Ui::Window::MouseButton button,
+                                             int                     clickCount,
+                                             Ui::Window::KeyModifier modifiers) override
+    {
+        // A press on anything that declared DragStart takes the pointer before
+        // content-surface routing gets a look: grip rects sit flush against
+        // (and can round into) the content edge. Left only - the other buttons
+        // belong to whatever the press lands on.
         const fpx_t cssX = toCss(x);
         const fpx_t cssY = toCss(y);
-        for (auto & [id, dock] : m_docks) {
-            if (dock.onMouseDown(cssX, cssY, clickCount)) {
-                // Double-click resolves immediately (no drag), so reflow now
-                // and don't hold capture. A normal press starts a drag and
-                // keeps capture until the corresponding release.
-                if (dock.isDragging()) {
-                    m_activeDragDock = id;
-                } else {
-                    // Restore via memoryX may exceed what fits now (other
-                    // docks may have grown since the size was captured), so
-                    // clamp against current viewport availability before the
-                    // layout pass sees the new width.
-                    clampDockStateToViewport(dock);
-                    reflowDocksAndViewport();
-                }
+        if (button == Ui::Window::MouseButton::Left && m_main) {
+            Ui::Render::UiElement * grabbed = m_main->renderer().hitTest(cssX, cssY, Ui::Render::EventKind::DragStart);
+            if (grabbed != nullptr && beginDrag(*grabbed, cssX, cssY, clickCount)) {
                 m_renderQueue.request(MAIN_WINDOW_ID);
-                return true;
+                return { .changed = true };
             }
         }
 
         if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
-            return hit.pairing->onMousePress(hit.lx, hit.ly, clickCount);
+            return hit.pairing->onMousePress(hit.lx, hit.ly, button, clickCount, modifiers);
         }
-        return m_main ? m_main->onMousePress(x, y, clickCount) : false;
+        return m_main ? m_main->onMousePress(x, y, button, clickCount, modifiers) : Ui::Render::element_event_t {};
     }
 
-    Ui::Render::click_result_t onMouseRelease(int x, int y) override
+    Ui::Render::element_event_t onMouseRelease(int x, int y, Ui::Window::MouseButton button) override
     {
-        // Mid-drag release on a dock: commit state and reflow content surface.
-        if (m_activeDragDock != Ui::INVALID_ID) {
-            auto it = m_docks.find(m_activeDragDock);
-            if (it != m_docks.end()) {
-                it->second.onMouseUp(toCss(x));
-            }
-            m_activeDragDock = Ui::INVALID_ID;
-            reflowDocksAndViewport();
+        // Mid-drag release: commit state and reflow content surface. A drag can
+        // only have started on Left, so only Left ends it
+        if (m_dragElement != Ui::INVALID_ID && button == Ui::Window::MouseButton::Left) {
+            endDrag(toCss(x));
             return {};
         }
 
         if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
-            return hit.pairing->onMouseRelease(hit.lx, hit.ly);
+            return hit.pairing->onMouseRelease(hit.lx, hit.ly, button);
         }
-        return m_main ? m_main->onMouseRelease(x, y) : Ui::Render::click_result_t {};
+        return m_main ? m_main->onMouseRelease(x, y, button) : Ui::Render::element_event_t {};
     }
 
     bool onMouseLeave() override
@@ -2603,12 +2932,12 @@ public:
         // as the user expects; small/no-drag leaves fall through as a no-op.
         // Cursor wandering into the content surface mid-drag doesn't reach here - that's
         // handled by the capture in onMouseMove.
-        const bool wasDragging = (m_activeDragDock != Ui::INVALID_ID);
+        const bool wasDragging = (m_dragElement != Ui::INVALID_ID);
         for (auto & [id, dock] : m_docks) {
             dock.onMouseLeave();
         }
         if (wasDragging) {
-            m_activeDragDock = Ui::INVALID_ID;
+            m_dragElement = Ui::INVALID_ID;
             // Width may have changed (either committed-on-leave or, below threshold,
             // reverted to start width). Reflow so dock layout + content surface pick up
             // the final state instead of holding the last drag-step size.
@@ -2619,14 +2948,28 @@ public:
         return changed;
     }
 
-    bool onScroll(int x, int y, fpx_t deltaY) override
+    Ui::Render::element_event_t onScroll(int x, int y, fpx_t deltaY) override
     {
+        // A dock owns the wheel over its own column, ahead of the content surface
+        // - the same precedence the DragStart hit test takes on press. The caller
+        // discards this result, so the repaint is requested here
+        for (auto & [id, dock] : m_docks) {
+            if (!dock.outer().contains(toCss(x), toCss(y))) {
+                continue;
+            }
+            if (!dock.onScroll(deltaY)) {
+                return {};
+            }
+            requestContentRefresh();
+            return { .event = Ui::Render::EventKind::Scroll, .changed = true };
+        }
+
         // Scroll passes raw (main-local) coords, matching the prior contract -
         // the renderer uses scroll for zoom, not a hit point.
         if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
             return hit.pairing->onScroll(x, y, deltaY);
         }
-        return m_main ? m_main->onScroll(x, y, deltaY) : false;
+        return m_main ? m_main->onScroll(x, y, deltaY) : Ui::Render::element_event_t {};
     }
 
     // Child-routed overloads (child-local coordinates, bypass hit-testing).
@@ -2638,19 +2981,25 @@ public:
         return pairing != nullptr ? pairing->onMouseMove(x, y) : onMouseMove(x, y);
     }
 
-    bool onMousePress(int x, int y, id_t childId, int clickCount)
+    Ui::Render::element_event_t onMousePress(int                     x,
+                                             int                     y,
+                                             id_t                    childId,
+                                             Ui::Window::MouseButton button,
+                                             int                     clickCount,
+                                             Ui::Window::KeyModifier modifiers)
     {
         Ui::IRenderer * pairing = (childId != Ui::INVALID_ID) ? contentPairing(childId) : nullptr;
-        return pairing != nullptr ? pairing->onMousePress(x, y, clickCount) : onMousePress(x, y, clickCount);
+        return pairing != nullptr ? pairing->onMousePress(x, y, button, clickCount, modifiers)
+                                  : onMousePress(x, y, button, clickCount, modifiers);
     }
 
-    Ui::Render::click_result_t onMouseRelease(int x, int y, id_t childId)
+    Ui::Render::element_event_t onMouseRelease(int x, int y, id_t childId, Ui::Window::MouseButton button)
     {
         Ui::IRenderer * pairing = (childId != Ui::INVALID_ID) ? contentPairing(childId) : nullptr;
-        return pairing != nullptr ? pairing->onMouseRelease(x, y) : onMouseRelease(x, y);
+        return pairing != nullptr ? pairing->onMouseRelease(x, y, button) : onMouseRelease(x, y, button);
     }
 
-    bool onScroll(int x, int y, fpx_t deltaY, id_t childId)
+    Ui::Render::element_event_t onScroll(int x, int y, fpx_t deltaY, id_t childId)
     {
         Ui::IRenderer * pairing = (childId != Ui::INVALID_ID) ? contentPairing(childId) : nullptr;
         return pairing != nullptr ? pairing->onScroll(x, y, deltaY) : onScroll(x, y, deltaY);

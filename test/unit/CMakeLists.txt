@@ -34,6 +34,13 @@ add_executable(
     TestFs.cpp
     TestResManager.cpp
     TestMenuStore.cpp
+    TestMenuIconRole.cpp
+    TestMinWindowSize.cpp
+    TestScrollBar.cpp
+    TestScrollbarRes.cpp
+    TestSliderRes.cpp
+    TestSlider.cpp
+    TestTruncateText.cpp
     TestSig.cpp
 )
 

@@ -161,38 +161,52 @@ public:
         return true;
     }
 
-    bool onMousePress(int x, int y, int /*clickCount*/) override
+    Ui::Render::element_event_t onMousePress(int x,
+                                             int y,
+                                             Ui::Window::MouseButton /*button*/,
+                                             int /*clickCount*/,
+                                             Ui::Window::KeyModifier /*modifiers*/) override
     {
-        const auto cssX   = toCss(x);
-        const auto cssY   = toCss(y);
-        bool       wasHit = false;
+        const auto cssX = toCss(x);
+        const auto cssY = toCss(y);
+
+        Ui::Render::element_event_t result;
+        result.x = cssX;
+        result.y = cssY;
 
         for (auto & el : m_popupElements) {
-            if (!wasHit && el.bound.contains(cssX, cssY) && el.type == Ui::Render::UiElementType::MenuItem
-                && el.state != Ui::Render::UiElementState::Disabled && m_resManager.findMenuItem(el.id).items.empty()) {
-                el.state = Ui::Render::UiElementState::Active;
-                wasHit   = true;
+            if (!result.changed && el.bound.contains(cssX, cssY)
+                && Ui::Render::acceptsEvent(el.accepts, Ui::Render::EventKind::LeftClick)
+                && el.state != Ui::Render::UiElementState::Disabled) {
+                el.state       = Ui::Render::UiElementState::Active;
+                result.type    = el.type;
+                result.id      = el.id;
+                result.event   = Ui::Render::EventKind::LeftClick;
+                result.changed = true;
             } else if (el.state == Ui::Render::UiElementState::Active) {
                 el.state = Ui::Render::UiElementState::None;
             }
         }
 
-        return wasHit;
+        return result;
     }
 
-    Ui::Render::click_result_t onMouseRelease(int x, int y) override
+    Ui::Render::element_event_t onMouseRelease(int x, int y, Ui::Window::MouseButton /*button*/) override
     {
         const auto cssX = toCss(x);
         const auto cssY = toCss(y);
 
-        Ui::Render::click_result_t result;
+        Ui::Render::element_event_t result;
+        result.x = cssX;
+        result.y = cssY;
 
         for (auto & el : m_popupElements) {
             if (result.id == Ui::INVALID_ID && el.state == Ui::Render::UiElementState::Active
                 && el.bound.contains(cssX, cssY) && el.type == Ui::Render::UiElementType::MenuItem
                 && el.id != Ui::INVALID_ID) {
-                result.type = el.type;
-                result.id   = el.id;
+                result.type  = el.type;
+                result.id    = el.id;
+                result.event = Ui::Render::EventKind::LeftClick;
             }
             if (el.state == Ui::Render::UiElementState::Active) {
                 el.state = Ui::Render::UiElementState::None;

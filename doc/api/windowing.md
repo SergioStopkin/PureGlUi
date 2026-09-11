@@ -44,12 +44,31 @@ void setOnDialogClose(Ui::task_fn_t callback);
 void setDialogContentResolver(std::function<std::wstring(const std::string &)> resolver);
 void setOnElementHover(std::function<void(Ui::Render::UiElementType, id_t)> cb);
 void setDoubleClickConfig(uint32_t intervalMs, int distancePx);
+void setOnRowValue(std::function<void(id_t rowId, fpx_t ratio)> callback);
 ```
 
 - `setOnDialogClose` - fired (deferred) when a dialog closes; the host then reads `lastDialogAction()` / `lastDialogData()`.
 - `setDialogContentResolver` - resolves dialog content placeholders (e.g. `%VERSION%`/`%CPU%`) to runtime values; if unset the locale string is shown verbatim.
 - `setOnElementHover` - forwarded to the main `UiRenderer`; reports `(elementType, id)` on hover.
 - `setDoubleClickConfig` - forwards double-click interval/distance thresholds to the platform event handler (host supplies these from its viewport config).
+- `setOnRowValue` - a dock slider row moved. This is a hook rather than an intent because a drag is a continuous stream, not a discrete request: the host gets `(rowId, ratio)` on every step and decides what the fraction means. `rowId` is the host's own id, which is why host row ids must be unique across docks. A host normally reaches this through `Ui::Shell::setOnDockRowValue`, which forwards here - see [shell-actions.md](shell-actions.md).
+
+Dock content (the host projects rows the way it projects tabs):
+
+```cpp
+void setDockRows(std::string_view dockName, std::vector<Ui::Res::Dock::row_t> rows);
+void resetDockScroll(std::string_view dockName);
+```
+
+- `setDockRows` - replace one dock's content, addressed by the dock's stable `name` from `res/dock/*.json`. See `row_t` / `RowKind` in [resources.md](resources.md).
+- `resetDockScroll` - send a dock back to its first row, for when the content changes underneath it rather than scrolls.
+
+Pointer shape:
+
+```cpp
+void setCursor(Ui::Window::PointerShape shape);
+[[nodiscard]] Ui::Window::PointerShape pointerShape() const;
+```
 
 Content-surface registry (the host-facing seam) - see "Content surfaces + render queue" below:
 
@@ -239,11 +258,23 @@ enum class EventType : unsigned char {
     None, CloseRequested, Resize, MouseButtonPress, MouseButtonRelease,
     MouseMove, MouseLeave, Scroll, KeyPress, KeyRelease
 };
-enum class MouseButton : unsigned char { Left = 1, Middle = 2, Right = 3 };
-enum class KeyModifier : uint32_t { None = 0, Shift = 1<<0, Control = 1<<1, Alt = 1<<2, Meta = 1<<3 };
+// each in its own header now, one type per file
+enum class MouseButton : unsigned char { Left = 1, Middle = 2, Right = 3 };  // window/mousebutton.h
+enum class KeyModifier : uint32_t { None = 0, Shift = 1<<0, Control = 1<<1, Alt = 1<<2, Meta = 1<<3 };  // window/keymodifier.h
 ```
 
-Free helpers: `toInt`/`toMouseButton`, `toUint`/`toKeyModifier`, `operator|`/`operator&` on `KeyModifier`, and `hasModifier(modifiers, flag)`.
+`MouseButton` values match X11 button numbers, which is what `toMouseButton()` converts. Free helpers: `toInt`/`toMouseButton` (`mousebutton.h`), `toUint`/`toKeyModifier`, `operator|`/`operator&` on `KeyModifier`, and `hasModifier(modifiers, flag)` (`keymodifier.h`).
+
+### Ui::Window::PointerShape
+
+Header: `include/ui/window/pointershape.h`
+
+```cpp
+enum class PointerShape : unsigned char { Default, Crosshair, ResizeH, Move };
+[[nodiscard]] const char * pointerShapeToThemeName(PointerShape shape);
+```
+
+Deliberately short: each entry costs a name mapping on four platforms, so one is added when something actually needs it - `Crosshair` for precise picking, `ResizeH` for a dock-grip drag, `Move` for a viewport pan. `pointerShapeToThemeName` returns the cursor-theme name `wl_cursor_theme_get_cursor` wants; X11 goes through `XCreateFontCursor` with `XC_*` constants instead, so it maps separately rather than pulling in libXcursor just to share these strings. Set through `WindowManager::setCursor`.
 
 ```cpp
 struct alignas(128) Event final {

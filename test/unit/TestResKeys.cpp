@@ -35,6 +35,7 @@
 #include "ui/res/key/section.h"
 #include "ui/res/key/theme.h"
 
+#include <cstddef>
 #include <gtest/gtest.h>
 #include <set>
 #include <string>
@@ -80,6 +81,7 @@ TEST(ResKeys, ElementKeyAllMappedUniqueNonEmpty)
         ElementKey::RightToolbar,
         ElementKey::StatusBar,
         ElementKey::StatusBarActive,
+        ElementKey::Window,
         ElementKey::Workspace,
         ElementKey::WorkspaceTabs,
         ElementKey::WorkspaceTab,
@@ -103,19 +105,29 @@ TEST(ResKeys, ElementKeyAllMappedUniqueNonEmpty)
         ElementKey::DialogButtonPrimary,
         ElementKey::DialogLink,
         ElementKey::DialogLinkVisited,
-        ElementKey::DialogScrollbar,
-        ElementKey::DialogScrollbarHover,
-        ElementKey::DialogScrollbarThumb,
-        ElementKey::DialogScrollbarThumbHover,
+        ElementKey::Scrollbar,
+        ElementKey::ScrollbarHover,
+        ElementKey::ScrollbarThumb,
+        ElementKey::ScrollbarThumbHover,
         ElementKey::Dock,
         ElementKey::DockDefaults,
         ElementKey::DockGrip,
         ElementKey::DockGripHover,
         ElementKey::DockGripActive,
+        ElementKey::DockSliderTrack,
+        ElementKey::DockSliderThumb,
+        ElementKey::DockSliderThumbHover,
         ElementKey::DockSeparator,
+        ElementKey::Host,
     };
     expectNonEmptyAndUnique(all, elementKeyName);
-    EXPECT_EQ(all.size(), 51U);
+    // Against the ENUM, not against a hand-kept number: a key added without a
+    // line above now fails here instead of going unlisted, which is how Host and
+    // the slider keys once drifted out. Worth the sentinel because -Wswitch
+    // cannot see this - it guards elementKeyName, so a missing SPELLING is a
+    // compile error, while a spelling shared by two keys is caught only by
+    // running the list above over every enumerator there is.
+    EXPECT_EQ(all.size(), static_cast<std::size_t>(ElementKey::Count));
 }
 
 TEST(ResKeys, ElementKeySpotSpellings)
@@ -130,16 +142,20 @@ TEST(ResKeys, ElementKeySpotSpellings)
 TEST(ResKeys, CssPropKeyAllMappedUniqueNonEmpty)
 {
     const std::vector<CssPropKey> all {
-        CssPropKey::Color,      CssPropKey::Background,     CssPropKey::Width,          CssPropKey::Height,
-        CssPropKey::Margin,     CssPropKey::MarginBottom,   CssPropKey::Padding,        CssPropKey::BorderRadius,
-        CssPropKey::Top,        CssPropKey::Left,           CssPropKey::Right,          CssPropKey::Bottom,
-        CssPropKey::MinWidth,   CssPropKey::LineHeight,     CssPropKey::FontFamily,     CssPropKey::FontSize,
-        CssPropKey::FontWeight, CssPropKey::Icon,           CssPropKey::IconLeft,       CssPropKey::IconRight,
-        CssPropKey::Shift,      CssPropKey::SplitAngle,     CssPropKey::MinThumbHeight, CssPropKey::GripWidth,
-        CssPropKey::GripIcon,   CssPropKey::ClickThreshold,
+        CssPropKey::Color,          CssPropKey::Background,   CssPropKey::Width,
+        CssPropKey::Height,         CssPropKey::Margin,       CssPropKey::MarginBottom,
+        CssPropKey::Padding,        CssPropKey::BorderRadius, CssPropKey::Top,
+        CssPropKey::Left,           CssPropKey::Right,        CssPropKey::Bottom,
+        CssPropKey::MinWidth,       CssPropKey::MinHeight,    CssPropKey::LineHeight,
+        CssPropKey::ActiveContrast, CssPropKey::FontFamily,   CssPropKey::FontSize,
+        CssPropKey::FontWeight,     CssPropKey::Icon,         CssPropKey::IconLeft,
+        CssPropKey::IconRight,      CssPropKey::Shift,        CssPropKey::SplitAngle,
+        CssPropKey::MinThumbHeight, CssPropKey::GripWidth,    CssPropKey::GripIcon,
+        CssPropKey::ClickThreshold, CssPropKey::RowIndent,    CssPropKey::RowExpanderSize,
+        CssPropKey::RowKeyRatio,
     };
     expectNonEmptyAndUnique(all, cssPropKeyName);
-    EXPECT_EQ(all.size(), 26U);
+    EXPECT_EQ(all.size(), static_cast<std::size_t>(CssPropKey::Count));
 }
 
 TEST(ResKeys, CssPropKeySpotSpellings)
@@ -160,7 +176,7 @@ TEST(ResKeys, LayoutKeyAllMappedUniqueNonEmpty)
         LayoutKey::MenuMaxDepth,
     };
     expectNonEmptyAndUnique(all, layoutKeyName);
-    EXPECT_EQ(all.size(), 9U);
+    EXPECT_EQ(all.size(), static_cast<std::size_t>(LayoutKey::Count));
     // Layout variables are CSS custom properties: every spelling is a --var.
     for (const LayoutKey key : all) {
         EXPECT_EQ(layoutKeyName(key).rfind("--", 0), 0U) << layoutKeyName(key);
@@ -175,7 +191,7 @@ TEST(ResKeys, ThemeKeyAllMappedUniqueNonEmpty)
         ThemeKey::ClInfo,   ThemeKey::ClWarn,        ThemeKey::FontSans, ThemeKey::FontMono,
     };
     expectNonEmptyAndUnique(all, themeKeyName);
-    EXPECT_EQ(all.size(), 14U);
+    EXPECT_EQ(all.size(), static_cast<std::size_t>(ThemeKey::Count));
     // "name" is a plain field; every other theme key is a --var.
     EXPECT_EQ(themeKeyName(ThemeKey::Name), "name");
     EXPECT_EQ(themeKeyName(ThemeKey::ClMain), "--cl-main");
