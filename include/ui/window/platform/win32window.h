@@ -199,13 +199,13 @@ public:
 
     // SetCursor alone is undone by the next WM_SETCURSOR, so the class cursor
     // is what actually sticks; SetCursor makes it take effect before the
-    // pointer next moves. LoadCursorW on a system IDC_ needs no unloading.
+    // pointer next moves. A system IDC_ needs no unloading.
     void setCursor(Ui::Window::PointerShape shape) override
     {
         if (m_hwnd == nullptr) {
             return;
         }
-        HCURSOR cursor = LoadCursorW(nullptr, toIdcCursor(shape));
+        HCURSOR cursor = LoadCursorA(nullptr, toIdcCursor(shape));
         if (cursor == nullptr) {
             return;
         }
@@ -584,7 +584,10 @@ private:
         return reinterpret_cast<LONG_PTR>(cursor);
     }
 
-    [[nodiscard]] static const wchar_t * toIdcCursor(Ui::Window::PointerShape shape)
+    // The one A entry point here, and the only one that carries no text: IDC_ is an
+    // integer id encoded in a pointer, and without UNICODE defined the macro types
+    // it char. Wide would need the id re-spelled as a literal or a pointer cast
+    [[nodiscard]] static const char * toIdcCursor(Ui::Window::PointerShape shape)
     {
         switch (shape) {
         case Ui::Window::PointerShape::Crosshair: return IDC_CROSS;
