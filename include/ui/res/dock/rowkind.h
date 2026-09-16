@@ -26,9 +26,14 @@ namespace Ui::Res::Dock {
 // An explicit kind rather than inferring "slider" from a sentinel value: a
 // slider legitimately sits at any ratio including zero, so no value is free to
 // mean "not a slider".
+//
+// Menu is a choice: the value column shows what is chosen, with a dropdown
+// chevron, and a click there opens the res menu the row names. Choosing is then
+// that menu's own action - the framework never learns what the options mean.
 enum class RowKind : unsigned char {
     Text,
     Slider,
+    Menu,
 };
 
 } // namespace Ui::Res::Dock

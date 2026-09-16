@@ -36,7 +36,8 @@ enum class UiElementType : unsigned char {
     DockExpander,  // Expand/collapse box on a DockRow that has children
     DockGrip,      // Resize handle on a dock's viewport-facing edge
     DockSlider,    // Draggable track on a DockRow whose kind is Slider
-    DockScrollbar  // Scroll track + thumb, when a dock holds more rows than fit
+    DockScrollbar, // Scroll track + thumb, when a dock holds more rows than fit
+    DockMenu       // Value column + chevron on a DockRow whose kind is Menu
 };
 
 inline int toInt(UiElementType type) { return static_cast<int>(type); }
@@ -60,7 +61,8 @@ inline int toInt(UiElementType type) { return static_cast<int>(type); }
     case UiElementType::TabClose:
     case UiElementType::TabArrow:
     case UiElementType::DockRow:
-    case UiElementType::DockExpander: return clickAndHover;
+    case UiElementType::DockExpander:
+    case UiElementType::DockMenu: return clickAndHover;
     case UiElementType::Text: return EventKind::LeftClick;
     // Drag only, all three, for their own reasons.
     //

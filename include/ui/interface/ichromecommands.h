@@ -55,6 +55,10 @@ public:
     // Dock row intents (host-projected content; rowId is the host's own id).
     virtual void activateRow(id_t rowId) = 0;
     virtual void toggleRow(id_t rowId)   = 0;
+
+    // Open the res menu a Menu row names, anchored under that row. elementId, not
+    // the host row id: the anchor is the element's own bound.
+    virtual void openRowMenu(id_t elementId) = 0;
 };
 
 // Route one intent to its chrome command. The intents-in counterpart to
@@ -82,6 +86,7 @@ inline void routeIntent(const intent_t & intent, IChromeCommands & chrome)
         break;
     case IntentKind::ActivateRow: chrome.activateRow(intent.id); break;
     case IntentKind::ToggleRow: chrome.toggleRow(intent.id); break;
+    case IntentKind::OpenRowMenu: chrome.openRowMenu(intent.id); break;
     }
 }
 

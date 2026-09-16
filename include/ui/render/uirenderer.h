@@ -848,7 +848,8 @@ private:
         case UiElementType::DockExpander:
         case UiElementType::DockGrip:
         case UiElementType::DockSlider:
-        case UiElementType::DockScrollbar: return style;
+        case UiElementType::DockScrollbar:
+        case UiElementType::DockMenu: return style;
         }
         return style;
     }

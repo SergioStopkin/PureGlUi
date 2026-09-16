@@ -309,6 +309,18 @@ public:
 
     void endSliderDrag() { m_sliderDrag.clear(); }
 
+    // The res menu a Menu row opens, empty for any other row. A row element carries
+    // the row and not the dock, so this is also how a caller finds the dock holding it
+    [[nodiscard]] std::string menuKeyOf(id_t rowId) const
+    {
+        for (const Ui::Res::Dock::row_t & row : m_rows) {
+            if (row.id == rowId && row.kind == Ui::Res::Dock::RowKind::Menu) {
+                return row.menu;
+            }
+        }
+        return {};
+    }
+
     void onMouseLeave()
     {
         if (m_isDragging) {
@@ -520,6 +532,11 @@ private:
             if (m_rows[i].kind == Ui::Res::Dock::RowKind::Slider) {
                 layout.addElement(UiElementType::DockSlider, sliderHitBound(contentRect, i), elementId);
             }
+            // Over its row too, but only the value column: a click on the choice
+            // opens the row's menu, a click on the label still selects the row
+            if (m_rows[i].kind == Ui::Res::Dock::RowKind::Menu) {
+                layout.addElement(UiElementType::DockMenu, menuBound(contentRect, i), elementId);
+            }
         }
     }
 
@@ -634,6 +651,25 @@ private:
 
     // Thin relative to the row, so the label still reads as the dominant thing
     [[nodiscard]] fpx_t sliderHeight() const { return m_resManager.layout().sliderTrackH; }
+
+    // A Menu row's value column: from where the key half ends to the row's edge -
+    // the same split renderRows draws a value in, so the hit area is the value
+    [[nodiscard]] Ui::Res::Type::bound_t menuBound(const Ui::Res::Type::bound_t & contentRect, std::size_t index) const
+    {
+        const Ui::Res::Type::bound_t row  = rowBound(contentRect, index);
+        const fpx_t                  padH = m_resManager.popup().itemPaddingH;
+        const fpx_t split = row.x + padH + ((row.w - (padH * 2.0F)) * m_resManager.layout().dockDefaults.rowKeyRatio);
+        return { split, row.y, row.x + row.w - split, row.h };
+    }
+
+    // The dropdown chevron at the row's far edge, sized like the expander so the two
+    // glyphs a row can carry read as one family
+    [[nodiscard]] Ui::Res::Type::bound_t menuChevronBound(const Ui::Res::Type::bound_t & row) const
+    {
+        const fpx_t size = expanderSize();
+        const fpx_t padH = m_resManager.popup().itemPaddingH;
+        return { row.x + row.w - padH - size, row.y + ((row.h - size) / 2.0F), size, size };
+    }
 
     // The thumb length the pointer maths uses, which is the HOVER one in both
     // states - a grab is always on a hovered thumb, and sizing the travel to the
@@ -772,6 +808,16 @@ private:
                 const Ui::Res::Type::bound_t track = sliderBound(contentRect, i);
                 renderSlider(out, track, row.ratio, i == m_hotSliderRow);
                 valueBound.w = track.x - bound.x;
+            }
+            // A menu row keeps its value where every value sits, and gives the far
+            // edge to the chevron that says the value can be changed
+            if (row.kind == Ui::Res::Dock::RowKind::Menu) {
+                const Ui::Res::Type::bound_t chevron = menuChevronBound(bound);
+                const std::string            icon = m_resManager.iconDefault(Ui::Res::Key::IconRoleKey::RowMenu).icon;
+                if (!icon.empty()) {
+                    out.appendImage(chevron, m_resManager.resPath().icon(icon), theme.dock.background.fg);
+                }
+                valueBound.w = chevron.x - bound.x;
             }
 
             // Halve what is left of the row after its padding: keys own the left

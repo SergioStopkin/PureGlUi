@@ -376,6 +376,7 @@ enum class Ui::IntentKind : uint8_t {
     CopyText,    // copy arg to the clipboard (status-bar text)
     ActivateRow, // dock row id selected
     ToggleRow,   // dock row id expand/collapse requested
+    OpenRowMenu, // element id of a Menu row's value column
 };
 ```
 

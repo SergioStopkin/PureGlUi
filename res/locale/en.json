@@ -51,5 +51,6 @@
   "TipSubmitForm": "Submit the form",
   "TipCancel": "Cancel",
   "TipSomeAction": "Some action",
-  "StatusReady": "Ready"
+  "StatusReady": "Ready",
+  "StatusCopiedToClipboard": "Copied to clipboard"
 }

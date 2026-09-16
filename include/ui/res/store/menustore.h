@@ -30,6 +30,7 @@
 #include "ui/res/store/iconstore.h"
 #include "ui/res/store/layoutstore.h"
 #include "ui/res/store/menudisable.h"
+#include "ui/res/store/menuheight.h"
 #include "ui/res/store/submenuentry.h"
 #include "ui/res/store/themestore.h"
 #include "ui/res/type/bound.h"
@@ -441,21 +442,7 @@ public:
 
         // Precompute popup content height for each menu
         for (auto & menu : m_menus) {
-            int regularItemCount = 0;
-            int separatorCount   = 0;
-            for (const auto & item : menu.items) {
-                if (!item.visible) {
-                    continue;
-                }
-                if (item.separator) {
-                    ++separatorCount;
-                } else {
-                    ++regularItemCount;
-                }
-            }
-            menu.popupHeight = regularItemCount * m_layoutStore.popup().itemHeight
-                             + separatorCount
-                               * (m_layoutStore.popup().separatorHeight + m_layoutStore.popup().separatorMarginV * 2);
+            menu.popupHeight = menuHeightOf(menu.items, m_layoutStore.popup());
         }
 
         std::cout << "[MenuStore] Loaded " << m_menus.size() << " menus" << std::endl;

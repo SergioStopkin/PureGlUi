@@ -173,6 +173,11 @@ public:
 
             if (initialize(hooks)) {
                 run();
+                // A host that writes the session off-thread finishes that write here:
+                // landing after this one, its older snapshot would overwrite the newest
+                if (m_hooks.beforeExitSave) {
+                    m_hooks.beforeExitSave();
+                }
                 m_resManager.saveSession(); // persist on clean exit (incl. SIGINT/SIGTERM)
                 exitCode = 0;
             } else {
@@ -240,7 +245,9 @@ public:
     // (across popup + submenu) if any, else the open dropdown. "" = nothing open.
     [[nodiscard]] Ui::key_t activeMenuKey() const
     {
-        if (m_openMenuId == Ui::INVALID_ID) {
+        // A row menu has no key path to come back by - its anchor is a dock row that
+        // a reload or a resize may have moved or removed - so it is never restored
+        if (m_openMenuId == Ui::INVALID_ID || m_rowMenuElement != Ui::INVALID_ID) {
             return {};
         }
         const id_t activeItem = m_windowManager.activePopupItemId();
@@ -285,6 +292,11 @@ public:
     // resource reload, so the highlighted item survives all three.
     void reopenActivePopup()
     {
+        // Closed rather than left behind at the old screen position
+        if (m_rowMenuElement != Ui::INVALID_ID) {
+            destroyPopup();
+            return;
+        }
         const Ui::key_t activeKey = activeMenuKey();
         if (activeKey.empty()) {
             return;
@@ -305,6 +317,35 @@ public:
     // True while a temporary (auto-expiring) status message is showing. The host
     // model-status updater checks this so it does not clobber a temp message.
     [[nodiscard]] bool hasTempStatus() const { return !m_tempStatusText.empty(); }
+
+    // The real status line. While a temp message shows it waits underneath and is
+    // what the expiry restores, so an update made during one is not lost
+    void setStatusText(const std::string & text)
+    {
+        if (m_tempStatusText.empty()) {
+            m_resManager.setStatusText(text);
+            m_windowManager.requestContentRefresh();
+        } else {
+            m_lastStatusText = text;
+        }
+    }
+
+    // Show a temporary (auto-expiring) status message: the feedback an action gives
+    // on what it just did. Resolved text, like setStatusText - the caller owns the
+    // locale lookup. An overlay on the real status, which checkTempStatusExpiry()
+    // puts back.
+    void showTempStatus(const std::string & text)
+    {
+        // Only a real status is worth restoring: while a temp one shows, the bar
+        // holds a temp message, and saving that would restore it for good
+        if (m_tempStatusText.empty()) {
+            m_lastStatusText = m_resManager.statusText();
+        }
+        m_tempStatusText   = text;
+        m_tempStatusExpiry = std::chrono::steady_clock::now() + TEMP_STATUS_DURATION;
+        m_resManager.setStatusText(text);
+        m_windowManager.requestContentRefresh();
+    }
 
     // --- init spine: framework-internal steps. initialize() owns their order; a
     // host supplies its domain steps as init_hooks_t instead of calling these. ---
@@ -452,7 +493,8 @@ public:
                 return;
             }
 
-            const auto & event = m_windowManager.currentEvent();
+            const auto & event   = m_windowManager.currentEvent();
+            m_pressClosedRowMenu = Ui::INVALID_ID;
 
             // Popup press -- only handle outside-click policy (inside forwarding done by dispatchEvent)
             if (event.isPopupEvent && m_windowManager.hasPopup()) {
@@ -503,6 +545,7 @@ public:
                         if constexpr (SHELL_DEBUG) {
                             std::cout << "[Shell] Closing popup (clicked outside menu and popup area)" << std::endl;
                         }
+                        m_pressClosedRowMenu = rowMenuUnder(mainX, mainY);
                         destroyPopup();
                         // Forward click to main window
                         if (event.mouse.button == Ui::Window::MouseButton::Left) {
@@ -545,6 +588,7 @@ public:
                     }
                 }
                 if (closePopup) {
+                    m_pressClosedRowMenu = rowMenuUnder(event.mouse.x, event.mouse.y);
                     destroyPopup();
                 }
             }
@@ -674,7 +718,7 @@ public:
             if (action == Ui::Res::Type::DialogAction::CopyLink && !dialog.link.empty()) {
                 const std::string & linkText = m_resManager.localeManager().get(dialog.link);
                 if (!linkText.empty() && m_windowManager.copyToClipboard(linkText)) {
-                    showTempStatus("Copied to clipboard");
+                    showTempStatus(m_resManager.localeManager().get("StatusCopiedToClipboard"));
                 }
             }
 
@@ -813,8 +857,14 @@ private:
     int m_lastWindowY = 0;
 
     // Popup menu state.
-    id_t m_openMenuId    = Ui::INVALID_ID; // ID of currently open popup menu (INVALID = none)
-    id_t m_hoveredMenuId = Ui::INVALID_ID; // ID of menu currently hovered (avoids duplicate hover actions)
+    id_t m_openMenuId = Ui::INVALID_ID; // ID of currently open popup menu (INVALID = none)
+    // The dock Menu row whose menu is open; INVALID when the open popup, if any,
+    // belongs to the top bar. It decides how a move, a reload and a hover treat it
+    id_t m_rowMenuElement = Ui::INVALID_ID;
+    // A press on that same row just closed its menu, so the click the press ends is
+    // the close rather than a request to open again. Cleared by the next press
+    id_t m_pressClosedRowMenu = Ui::INVALID_ID;
+    id_t m_hoveredMenuId      = Ui::INVALID_ID; // ID of menu currently hovered (avoids duplicate hover actions)
 
     // Bool flags (grouped for minimal padding).
     bool m_pendingResize     = false;
@@ -921,7 +971,8 @@ private:
     {
         m_windowManager.destroyPopup(syncDisplay);
 
-        m_openMenuId = Ui::INVALID_ID;
+        m_openMenuId     = Ui::INVALID_ID;
+        m_rowMenuElement = Ui::INVALID_ID;
         m_resManager.clearActiveMenu();
         m_windowManager.requestContentRefresh();
     }
@@ -1021,6 +1072,12 @@ private:
             return;
         }
 
+        // A dock row's menu is not part of the bar: sweeping the pointer across the
+        // bar must not trade it for one of the bar's dropdowns
+        if (m_rowMenuElement != Ui::INVALID_ID) {
+            return;
+        }
+
         // Don't switch immediately after activation -- wait one render pass
         // to avoid destroying a popup that was just created this frame.
         if (m_menuJustActivated) {
@@ -1046,22 +1103,9 @@ private:
         }
     }
 
+    // A top-bar dropdown, hung under its menu button
     void createMenuPopup(id_t menuId)
     {
-        // Destroy any existing popup before creating a new one
-        // Use syncDisplay=true to ensure old popup is removed before corner capture
-        if (m_openMenuId != Ui::INVALID_ID) {
-            destroyPopup(true);
-        }
-
-        m_openMenuId = menuId;
-        m_resManager.setActiveMenu(menuId);
-        m_windowManager.requestContentRefresh(); // Rebuild layout with active menu highlight next frame
-        if constexpr (SHELL_DEBUG) {
-            std::cout << "[Shell] Creating popup for menu: " << menuId << std::endl;
-        }
-
-        // Find the menu
         const auto & menus = m_resManager.menus();
         auto         it = std::find_if(menus.begin(), menus.end(), [menuId](const auto & m) { return m.id == menuId; });
 
@@ -1071,15 +1115,6 @@ private:
         }
 
         const auto & menu = *it;
-
-        // Get main window's absolute screen position
-        int mainWindowScreenX = 0;
-        int mainWindowScreenY = 0;
-        m_windowManager.mainWindowScreenPosition(mainWindowScreenX, mainWindowScreenY);
-
-        // Store current window position for move detection
-        m_lastWindowX = mainWindowScreenX;
-        m_lastWindowY = mainWindowScreenY;
 
         // Calculate cumulative X position by summing widths of all preceding menu buttons
         fpx_t buttonXCss = 0;
@@ -1102,18 +1137,46 @@ private:
             std::cout << "[Shell] Popup position: menuId=" << menuId << " X=" << buttonXCss << " Y=" << buttonYCss
                       << std::endl;
         }
+        showMenuPopup(menu, buttonXCss, buttonYCss);
+    }
+
+    // Everything a popup menu needs once its anchor is known, for a top-bar dropdown
+    // and a dock row's menu alike: the anchor is the popup's top-left corner in
+    // main-window CSS px, which is where the two differ and all they differ in
+    void showMenuPopup(const Ui::Res::Type::menu_t & menu, fpx_t anchorXCss, fpx_t anchorYCss)
+    {
+        // Destroy any existing popup before creating a new one
+        // Use syncDisplay=true to ensure old popup is removed before corner capture
+        if (m_openMenuId != Ui::INVALID_ID) {
+            destroyPopup(true);
+        }
+
+        m_openMenuId = menu.id;
+        m_resManager.setActiveMenu(menu.id);
+        m_windowManager.requestContentRefresh(); // Rebuild layout with active menu highlight next frame
+        if constexpr (SHELL_DEBUG) {
+            std::cout << "[Shell] Creating popup for menu: " << menu.id << std::endl;
+        }
+
+        // Get main window's absolute screen position
+        int mainWindowScreenX = 0;
+        int mainWindowScreenY = 0;
+        m_windowManager.mainWindowScreenPosition(mainWindowScreenX, mainWindowScreenY);
+
+        // Store current window position for move detection
+        m_lastWindowX = mainWindowScreenX;
+        m_lastWindowY = mainWindowScreenY;
 
         // Use toPhysRound so position and size stay divisible by g_config.scale - i.e.
         // integer NS points on macOS (bsf=2). Fractional physical px produce a
         // half-point NS frame; the CAShapeLayer mask then snaps to integer points
         // while GL renders at the fractional edge, leaving a 1-px hairline at the
         // top/right.
-        const fpx_t buttonX    = mainWindowScreenX + toPhysRound(buttonXCss);
-        const fpx_t buttonY    = mainWindowScreenY + toPhysRound(buttonYCss);
-        const fpx_t popupCssW  = m_resManager.layout().topMenuDropdown.width;
-        const fpx_t popupWidth = toPhysRound(popupCssW);
+        const fpx_t buttonX    = mainWindowScreenX + toPhysRound(anchorXCss);
+        const fpx_t buttonY    = mainWindowScreenY + toPhysRound(anchorYCss);
+        const fpx_t popupWidth = toPhysRound(menuPopupCssWidth());
 
-        const fpx_t contentCssH = menu.popupHeight;
+        const fpx_t contentCssH = menuPopupCssHeight(menu);
         const fpx_t popupHeight = toPhysRound(contentCssH);
 
         if constexpr (SHELL_DEBUG) {
@@ -1140,7 +1203,7 @@ private:
         }
 
         // Initialize renderer with corner capture (renders main window, captures corners)
-        m_windowManager.initPopupRenderer();
+        m_windowManager.initPopupRenderer(menu);
 
         // Render first frame before showing to avoid visible flat/unrounded flash
         if (m_windowManager.renderPopup()) {
@@ -1167,6 +1230,15 @@ private:
         if constexpr (SHELL_DEBUG) {
             std::cout << "[Shell] Popup renderer initialized successfully" << std::endl;
         }
+    }
+
+    // Every popup menu shares the dropdown width res gives the top bar, so a row's
+    // menu reads as the same kind of object as File or View
+    [[nodiscard]] fpx_t menuPopupCssWidth() const { return m_resManager.layout().topMenuDropdown.width; }
+
+    [[nodiscard]] fpx_t menuPopupCssHeight(const Ui::Res::Type::menu_t & menu) const
+    {
+        return Ui::Res::Store::menuHeightOf(menu.items, m_resManager.popup());
     }
 
     // Map a resolved main-UI click to intents via the Context facade and execute
@@ -1217,7 +1289,8 @@ private:
         case Ui::Render::UiElementType::DockExpander:
         case Ui::Render::UiElementType::DockGrip:
         case Ui::Render::UiElementType::DockSlider:
-        case Ui::Render::UiElementType::DockScrollbar: return false;
+        case Ui::Render::UiElementType::DockScrollbar:
+        case Ui::Render::UiElementType::DockMenu: return false;
         }
         return false;
     }
@@ -1292,6 +1365,44 @@ private:
         }
     }
 
+    void openRowMenu(id_t elementId) override
+    {
+        // The press that started this click already closed this row's menu, so the
+        // click IS the close - opening again would leave the chevron unable to close
+        if (m_pressClosedRowMenu == elementId) {
+            m_pressClosedRowMenu = Ui::INVALID_ID;
+            return;
+        }
+        const Ui::Res::Type::menu_t menu = m_resManager.findMenuItemByKey(m_windowManager.rowMenuKey(elementId));
+        if (menu.id == Ui::INVALID_ID || menu.items.empty()) {
+            std::cerr << "[Shell] Dock row names no menu with items: element " << elementId << std::endl;
+            return;
+        }
+
+        // Right-aligned under the row, where the value and its chevron sit - and above
+        // the row when the list would run past the bottom of the window, which is
+        // where a dock's last rows are. The row element's bound is the whole row:
+        // its value column shares the id and is laid out after it
+        const Ui::Res::Type::bound_t & row     = m_windowManager.elementBound(elementId);
+        const fpx_t                    height  = menuPopupCssHeight(menu);
+        const fpx_t                    below   = row.y + row.h;
+        const bool                     isBelow = below + height <= toCss(m_windowManager.windowHeight());
+        const fpx_t                    x       = std::max(0.0F, row.x + row.w - menuPopupCssWidth());
+        showMenuPopup(menu, x, isBelow ? below : row.y - height);
+        m_rowMenuElement = elementId;
+    }
+
+    // The open row menu's element when a press at these main-window px lands on its
+    // row, INVALID otherwise. Asked before the popup is destroyed, which forgets it
+    [[nodiscard]] id_t rowMenuUnder(int x, int y) const
+    {
+        if (m_rowMenuElement == Ui::INVALID_ID) {
+            return Ui::INVALID_ID;
+        }
+        const Ui::Res::Type::bound_t & row = m_windowManager.elementBound(m_rowMenuElement);
+        return row.contains(toCss(x), toCss(y)) ? m_rowMenuElement : Ui::INVALID_ID;
+    }
+
     void toggleRow(id_t rowId) override
     {
         if (m_onDockRowToggled) {
@@ -1302,7 +1413,7 @@ private:
     void copyText(const std::string & text) override
     {
         if (m_windowManager.copyToClipboard(text)) {
-            showTempStatus("Copied to clipboard");
+            showTempStatus(m_resManager.localeManager().get("StatusCopiedToClipboard"));
         }
     }
 
@@ -1338,17 +1449,6 @@ private:
         }
 
         m_pendingResize = false;
-    }
-
-    // Show a temporary (auto-expiring) status message. Saves the current real
-    // status text first so checkTempStatusExpiry() can restore it on expiry.
-    void showTempStatus(const std::string & text)
-    {
-        m_lastStatusText   = m_resManager.statusText();
-        m_tempStatusText   = text;
-        m_tempStatusExpiry = std::chrono::steady_clock::now() + TEMP_STATUS_DURATION;
-        m_resManager.setStatusText(text);
-        m_windowManager.requestContentRefresh();
     }
 };
 

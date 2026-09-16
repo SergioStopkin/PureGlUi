@@ -42,6 +42,7 @@
 #include "ui/res/dock/anchor.h"
 #include "ui/res/dock/config.h"
 #include "ui/res/dock/row.h"
+#include "ui/res/dock/rowkind.h"
 #include "ui/res/dock/state.h"
 #include "ui/res/resmanager.h"
 #include "ui/result.h"
@@ -188,8 +189,12 @@ protected:
         if (target == elements.end()) {
             return {};
         }
-        const Ui::fpx_t               x   = target->bound.x + (target->bound.w / 2.0F);
-        const Ui::fpx_t               y   = target->bound.y + (target->bound.h / 2.0F);
+        return clickAt(layout, target->bound.x + (target->bound.w / 2.0F), target->bound.y + (target->bound.h / 2.0F));
+    }
+
+    // What a left click at this CSS point maps to, whichever element lies on top
+    [[nodiscard]] Ui::result_t clickAt(Ui::Render::UiLayout & layout, Ui::fpx_t x, Ui::fpx_t y) const
+    {
         const Ui::Render::UiElement * hit = layout.hitTest(x, y, Ui::Render::EventKind::LeftClick);
         if (hit == nullptr) {
             return {};
@@ -423,6 +428,114 @@ TEST_F(DockRowLayoutTest, AnExpanderClickTogglesTheSameRow)
     const Ui::result_t              result = clickMiddleOf(layout, Ui::Render::UiElementType::DockExpander);
     const std::vector<Ui::intent_t> expected { Ui::intent_t { Ui::IntentKind::ToggleRow, 42, {}, {} } };
     EXPECT_EQ(result.intents, expected);
+}
+
+// ============================================================================
+// A Menu row: the value is a choice
+// ============================================================================
+
+namespace {
+
+    Ui::Res::Dock::row_t unitRow()
+    {
+        Ui::Res::Dock::row_t row;
+        row.id    = 42;
+        row.label = "Units";
+        row.value = "mm";
+        row.kind  = Ui::Res::Dock::RowKind::Menu;
+        row.menu  = "View:Units";
+        return row;
+    }
+
+} // namespace
+
+// Exactly one, and only over the value column - so the label half is still the row
+TEST_F(DockRowLayoutTest, AMenuRowOffersOneMenuElementOverItsValueColumn)
+{
+    Ui::Render::DockColumn dock(1, seed("row-menu-element"), resManager);
+    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setRows({ unitRow() });
+
+    Ui::Render::UiLayout layout;
+    dock.appendElements(layout);
+
+    std::vector<Ui::Res::Type::bound_t> menus;
+    for (const Ui::Render::UiElement & element : layout.elements()) {
+        if (element.type == Ui::Render::UiElementType::DockMenu) {
+            menus.emplace_back(element.bound);
+        }
+    }
+    ASSERT_EQ(menus.size(), 1U);
+    EXPECT_GE(menus.front().x, midpoint(dock) - 0.01F);
+    EXPECT_LE(menus.front().x + menus.front().w, dock.content().x + dock.content().w + 0.01F);
+}
+
+// Opened by ELEMENT id: Shell needs the row's bound to anchor the popup, and the
+// bound is looked up by the id the element was laid out with
+TEST_F(DockRowLayoutTest, AValueClickOpensTheRowMenuByElementId)
+{
+    Ui::Render::DockColumn dock(1, seed("row-menu-open"), resManager);
+    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setRows({ unitRow() });
+
+    Ui::Render::UiLayout layout;
+    dock.appendElements(layout);
+
+    const Ui::result_t              result = clickMiddleOf(layout, Ui::Render::UiElementType::DockMenu);
+    const std::vector<Ui::intent_t> expected {
+        Ui::intent_t { Ui::IntentKind::OpenRowMenu, Ui::toDockRowElementId(42), {}, {} }
+    };
+    EXPECT_EQ(result.intents, expected);
+}
+
+TEST_F(DockRowLayoutTest, ALabelClickOnAMenuRowStillActivatesIt)
+{
+    Ui::Render::DockColumn dock(1, seed("row-menu-label"), resManager);
+    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setRows({ unitRow() });
+
+    Ui::Render::UiLayout layout;
+    dock.appendElements(layout);
+
+    const Ui::fpx_t                 x      = dock.content().x + resManager.popup().itemPaddingH + 1.0F;
+    const Ui::fpx_t                 y      = dock.content().y + (resManager.popup().itemHeight / 2.0F);
+    const Ui::result_t              result = clickAt(layout, x, y);
+    const std::vector<Ui::intent_t> expected { Ui::intent_t { Ui::IntentKind::ActivateRow, 42, {}, {} } };
+    EXPECT_EQ(result.intents, expected);
+}
+
+// The chevron takes the far edge, so the value right-aligns against it rather
+// than being drawn underneath it
+TEST_F(DockRowLayoutTest, AMenuRowValueEndsBeforeItsChevron)
+{
+    Ui::Render::DockColumn dock(1, seed("row-menu-chevron"), resManager);
+    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setRows({ unitRow() });
+
+    const auto          texts = draw(dock);
+    const text_call_t * value = find(texts, "mm");
+    ASSERT_NE(value, nullptr);
+
+    const Ui::fpx_t padH     = resManager.popup().itemPaddingH;
+    const Ui::fpx_t expander = resManager.popup().itemHeight * resManager.layout().dockDefaults.rowExpanderRatio;
+    const Ui::fpx_t chevronX = dock.content().x + dock.content().w - padH - expander;
+    EXPECT_LE(value->pos.x + value->pos.w, chevronX + 0.01F);
+}
+
+// The key is what Shell resolves the menu from, and only a Menu row has one
+TEST_F(DockRowLayoutTest, OnlyAMenuRowNamesAMenu)
+{
+    Ui::Render::DockColumn dock(1, seed("row-menu-key"), resManager);
+    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+
+    Ui::Res::Dock::row_t text = unitRow();
+    text.id                   = 43;
+    text.kind                 = Ui::Res::Dock::RowKind::Text;
+    dock.setRows({ unitRow(), text });
+
+    EXPECT_EQ(dock.menuKeyOf(42), "View:Units");
+    EXPECT_EQ(dock.menuKeyOf(43), "");
+    EXPECT_EQ(dock.menuKeyOf(44), "");
 }
 
 } // namespace PureGlUi

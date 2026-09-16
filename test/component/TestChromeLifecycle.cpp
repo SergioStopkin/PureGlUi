@@ -30,6 +30,7 @@
 
 #include "fakerender.h"
 #include "recordingchrome.h"
+#include "ui/elementid.h"
 #include "ui/intent.h"
 #include "ui/interface/ichromecommands.h"
 #include "ui/render/context.h"
@@ -180,6 +181,15 @@ TEST_F(ChromeLifecycleTest, TabClickSwitchesAndCloseCloses)
     click(Ui::Render::UiElementType::Tab, 42);
     click(Ui::Render::UiElementType::TabClose, 42);
     EXPECT_EQ(chrome.log, (std::vector<std::string> { "switchTab(42)", "closeTab(42)" }));
+}
+
+// A dock Menu row's value column reaches the chrome with its element id untouched,
+// unlike ActivateRow: the chrome anchors the popup on the element, not the host row
+TEST_F(ChromeLifecycleTest, RowMenuValueOpensTheRowMenu)
+{
+    const Ui::id_t elementId = Ui::toDockRowElementId(7);
+    click(Ui::Render::UiElementType::DockMenu, elementId);
+    EXPECT_EQ(chrome.log, (std::vector<std::string> { "openRowMenu(" + std::to_string(elementId) + ")" }));
 }
 
 // Clicking the status-bar text copies it to the clipboard.

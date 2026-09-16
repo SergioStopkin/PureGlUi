@@ -25,7 +25,7 @@ Input flows one direction through three seams:
 
 1. An OS event (click/key) reaches Shell via `WindowManager` pub/sub subscriptions (`wireEvents`).
 2. Shell asks `Ui::Render::Context` (intents-out; see [render.md](render.md)) to map it: `m_context.mapClick(...)` / `m_context.mapKey(...)` return a `Ui::result_t` carrying `Ui::intent_t`s.
-3. Each intent goes to `execute(intent)`, which calls the pure `Ui::routeIntent(intent, *this)` switch (see [interfaces.md](interfaces.md)); that dispatches to Shell's private `IChromeCommands` overrides (`emitAction`/`openPopup`/`closePopup`/`openDialog`/`switchTab`/`closeTab`/`copyText` + `isPopupOpen`).
+3. Each intent goes to `execute(intent)`, which calls the pure `Ui::routeIntent(intent, *this)` switch (see [interfaces.md](interfaces.md)); that dispatches to Shell's private `IChromeCommands` overrides (`emitAction`/`openPopup`/`closePopup`/`openDialog`/`switchTab`/`closeTab`/`copyText`/`activateRow`/`toggleRow`/`openRowMenu` + `isPopupOpen`).
 4. `emitAction(actionKey, arg)` forwards to `m_actions.dispatch(actionKey, arg)` - the action subsystem below.
 
 `run()` is the event loop driving all of the above.
@@ -67,6 +67,7 @@ purpose rather than spine position because the first two run on both paths:
 | `afterWindowCreated` | one-time: window + GL exist, renderer does not |
 | `afterInit` | one-time: the spine is complete, everything is live |
 | `afterReload` | once per reload, after the chrome is back up |
+| `beforeExitSave` | one-time, `runApp` only: the loop has ended and the exit session save is next |
 
 - `initialize(hooks)` runs the whole init spine and returns false if window
   creation fails. Spine order: `loadAllResources()` (framework res, then the
@@ -77,7 +78,10 @@ purpose rather than spine position because the first two run on both paths:
   calling `initialize()`, and must register its domain actions before it too - the
   disable pass runs inside the spine.
 - `runApp(hooks)` is the whole lifecycle in one call: signal handlers, session
-  restore, `initialize`, `run`, session save, exit code. It deliberately does NOT
+  restore, `initialize`, `run`, the `beforeExitSave` hook, session save, exit code.
+  The hook is where a host that writes the session off-thread lets that write
+  finish: landing after the exit save, its older snapshot would overwrite the
+  newest. It deliberately does NOT
   shut down (a host's content surfaces must die before the main window) and does
   not print a banner (only `main()` brackets the object's lifetime).
 - `run()` loops while `windowManager().isRunning()`: drains `frameTasks`, polls +
@@ -154,6 +158,8 @@ void      restoreActiveMenu(const Ui::key_t & activeKey);      // reopen dropdow
 void      reopenActivePopup();                                 // recreate open popup at its anchor (after move/resize)
 void      closePopupMenu();                                    // close any open popup (no-op if none)
 bool      hasTempStatus() const;                               // true while an auto-expiring status message shows
+void      showTempStatus(const std::string & text);            // show one - resolved text, the caller does the locale lookup
+void      setStatusText(const std::string & text);             // the real status line; during a temp message it waits underneath
 std::wstring resolveDialogPlaceholders(const std::string & tpl);
 ```
 
@@ -171,7 +177,12 @@ std::wstring resolveDialogPlaceholders(const std::string & tpl);
 
 `createMenuPopup(id_t menuId)` is the internal popup builder (private; reached via
 the `IChromeCommands::openPopup` override and menu-hover switching), listed here
-because the task references it - it is not part of the public host API.
+because the task references it - it is not part of the public host API. It anchors
+under the bar button and hands off to `showMenuPopup(menu, anchorXCss, anchorYCss)`,
+which the `openRowMenu` override shares: a dock `Menu` row's menu opens right-aligned
+under its row (above it when it would run past the window bottom). A row menu is
+never restored by key - a reload, move or resize closes it - bar hover does not trade
+it for a dropdown, and a press on its own row closes it without reopening.
 
 ## Action subsystem (Ui::Action)
 

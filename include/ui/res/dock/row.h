@@ -20,6 +20,7 @@
 #include "ui/res/dock/rowkind.h"
 #include "ui/type.h"
 
+#include <cstdint>
 #include <string>
 
 namespace Ui::Res::Dock {
@@ -58,6 +59,9 @@ struct alignas(128) row_t final {
     // maps it to whatever range it means and can put the mapped number in
     // `value` to have it drawn alongside. Ignored unless kind is Slider.
     fpx_t ratio = 0.0F;
+    // The res menu key a Menu row opens ("View:Units"), with `value` as the
+    // current choice's display text. Ignored unless kind is Menu.
+    std::string menu;
 
     bool operator==(const row_t &) const = default;
 };

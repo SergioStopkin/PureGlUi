@@ -55,6 +55,10 @@ public:
     void copyText(const std::string & text) override { log.emplace_back("copyText(" + text + ")"); }
     void activateRow(Ui::id_t rowId) override { log.emplace_back("activateRow(" + std::to_string(rowId) + ")"); }
     void toggleRow(Ui::id_t rowId) override { log.emplace_back("toggleRow(" + std::to_string(rowId) + ")"); }
+    void openRowMenu(Ui::id_t elementId) override
+    {
+        log.emplace_back("openRowMenu(" + std::to_string(elementId) + ")");
+    }
 };
 
 } // namespace PureGlUi

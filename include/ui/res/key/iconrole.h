@@ -31,6 +31,7 @@ enum class IconRoleKey : unsigned char {
     Warning,            // warning marker (no-handler dialog etc.)
     RowCollapsed,       // dock row expander, children hidden (optional)
     RowExpanded,        // dock row expander, children shown (optional)
+    RowMenu,            // dock Menu row dropdown chevron (optional)
 };
 
 [[nodiscard]] inline std::string iconRoleKeyName(IconRoleKey role)
@@ -41,6 +42,7 @@ enum class IconRoleKey : unsigned char {
     case IconRoleKey::Warning: return "warning";
     case IconRoleKey::RowCollapsed: return "rowCollapsed";
     case IconRoleKey::RowExpanded: return "rowExpanded";
+    case IconRoleKey::RowMenu: return "rowMenu";
     }
     return {};
 }

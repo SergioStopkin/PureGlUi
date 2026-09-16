@@ -64,6 +64,11 @@ struct alignas(2) binding_t final {
         // selecting - the same overlap trick TabClose uses over Tab
         outBinding = { IntentKind::ToggleRow, RenderScope::Chrome };
         return true;
+    case UiElementType::DockMenu:
+        // Over the row's value column, by the same overlap: a click on the value
+        // opens its menu, a click on the label still selects the row
+        outBinding = { IntentKind::OpenRowMenu, RenderScope::Chrome };
+        return true;
     case UiElementType::MenuButton:
     case UiElementType::MenuItem:
     case UiElementType::Separator:

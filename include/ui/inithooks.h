@@ -39,6 +39,7 @@ struct alignas(128) init_hooks_t final {
     Ui::task_fn_t afterWindowCreated;  // one-time: window + GL context exist, renderer does not
     Ui::task_fn_t afterInit;           // one-time: the spine is complete, everything is live
     Ui::task_fn_t afterReload;         // once per reload, after the chrome is back up (e.g. flush session)
+    Ui::task_fn_t beforeExitSave;      // one-time, runApp only: the loop has ended, the exit session save is next
 };
 
 } // namespace Ui

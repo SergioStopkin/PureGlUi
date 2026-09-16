@@ -38,6 +38,7 @@
 #include "ui/render/uirenderer.h"
 #include "ui/res/key/iconrole.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/store/menuheight.h"
 #include "ui/res/type/changed.h"
 #include "ui/type.h"
 #include "ui/window/compositetexture.h"
@@ -316,6 +317,19 @@ public:
                 return;
             }
         }
+    }
+
+    // The res menu a dock Menu row names, empty when the element is not one. Every
+    // dock is asked, since an element carries the row and not the dock it came from
+    [[nodiscard]] std::string rowMenuKey(id_t elementId) const
+    {
+        const id_t rowId = Ui::toDockRowId(elementId);
+        for (const auto & [id, dock] : m_docks) {
+            if (std::string key = dock.menuKeyOf(rowId); !key.empty()) {
+                return key;
+            }
+        }
+        return {};
     }
 
     // Back to the top. setDockRows cannot decide this itself: it cannot tell "same
@@ -1241,18 +1255,11 @@ public:
      * captures corners, initializes the popup renderer with corner data,
      * then renders and shows the first popup frame.
      */
-    void initPopupRenderer()
+    // The menu is handed in rather than looked up among the top-bar menus: a dock
+    // row's menu is a node anywhere in the tree, and both kinds render the same way
+    void initPopupRenderer(const Ui::Res::Type::menu_t & menu)
     {
         if (!m_popupWindow) {
-            return;
-        }
-
-        // Find active menu
-        const auto & menus  = m_resManager.menus();
-        const id_t   menuId = m_resManager.activeMenuId();
-        auto         it = std::find_if(menus.begin(), menus.end(), [menuId](const auto & m) { return m.id == menuId; });
-        if (it == menus.end()) {
-            std::cerr << "[WindowManager] Active menu not found: " << menuId << std::endl;
             return;
         }
 
@@ -1260,7 +1267,7 @@ public:
         renderMainWindow(true);
 
         // Emplace the popup renderer on the connector and wire the submenu hover callback.
-        emplacePopupRenderer(*m_popupWindow, *it)
+        emplacePopupRenderer(*m_popupWindow, menu)
         .setSubmenuHoverCallback([this](const Ui::Res::Type::bound_t & itemBound,
                                         const Ui::Res::Type::menu_t &  item,
                                         bool                           isFirst,
@@ -1640,22 +1647,8 @@ public:
         const fpx_t submenuY = parentScreenY + popupBound.y + itemBound.y;
 
         // Calculate submenu size from items
-        const auto & popup          = m_resManager.popup();
-        const fpx_t  submenuCssW    = m_resManager.layout().topMenuDropdown.width;
-        int          regularCount   = 0;
-        int          separatorCount = 0;
-        for (const auto & sub : item.items) {
-            if (!sub.visible) {
-                continue;
-            }
-            if (sub.separator) {
-                ++separatorCount;
-            } else {
-                ++regularCount;
-            }
-        }
-        const fpx_t contentCssH = regularCount * popup.itemHeight
-                                + separatorCount * (popup.separatorHeight + popup.separatorMarginV * 2);
+        const fpx_t submenuCssW = m_resManager.layout().topMenuDropdown.width;
+        const fpx_t contentCssH = Ui::Res::Store::menuHeightOf(item.items, m_resManager.popup());
         // Round to integer physical px divisible by g_config.scale (see app.h createMenuPopup)
         const fpx_t submenuW = toPhysRound(submenuCssW);
         const fpx_t submenuH = toPhysRound(contentCssH);

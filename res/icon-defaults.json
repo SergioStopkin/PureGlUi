@@ -18,5 +18,8 @@
   "submenu": {
     "icon": "chevron",
     "place": "right"
+  },
+  "rowMenu": {
+    "icon": "25BC.svg"
   }
 }

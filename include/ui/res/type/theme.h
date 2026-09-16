@@ -24,9 +24,16 @@
 
 namespace Ui::Res::Type {
 
+// Grouped WIDEST FIRST - the dock primitive, then fonts, then colour pairs, then
+// the scalars and single colours. Grouping by what a field means instead cost 179
+// bytes of padding per theme: a 64-aligned font_t or the 128-aligned dock between
+// 16-byte pairs leaves the gap between them empty.
 struct alignas(128) theme_t final {
+    // Dock primitive (one shared theme for all dock instances; left/right + inner/outer same style)
+    Ui::Res::Dock::dock_theme_t dock;
+
     // Per-element font properties (family, size, weight from theme JSON blocks)
-    Ui::Res::Type::font_t topMenuFont;      // "top-menu"               (fallback: fontSans, 16, regular)
+    Ui::Res::Type::font_t topMenuFont;      // "top-menu"                (fallback: fontSans, 16, regular)
     Ui::Res::Type::font_t menuItemFont;     // "top-menu-item"           (fallback: fontSans, 16, regular)
     Ui::Res::Type::font_t shortcutFont;     // "top-menu-item-shortcut"  (fallback: fontMono, 16, regular)
     Ui::Res::Type::font_t leftToolbarFont;  // "left-toolbar"            (fallback: fontSans, 24, bold)
@@ -34,6 +41,8 @@ struct alignas(128) theme_t final {
     Ui::Res::Type::font_t rightToolbarFont; // "right-toolbar"           (fallback: fontSans, 24, regular)
     Ui::Res::Type::font_t statusBarFont;    // "status-bar"              (fallback: fontMono, 14, regular)
     Ui::Res::Type::font_t workspaceTabFont; // "workspace-tab"           (fallback: fontSans, 14, regular)
+    Ui::Res::Type::font_t dialogFont;       // "dialog" font
+    Ui::Res::Type::font_t dialogTitleFont;  // "dialog-title" font
 
     // Root CSS variables (from :root block)
     Ui::Res::Type::color_pair_t main;   // --cl-main + --bg-main
@@ -55,42 +64,41 @@ struct alignas(128) theme_t final {
     Ui::Res::Type::color_pair_t menuItemHover;       // "top-menu-item:hover"
     Ui::Res::Type::color_pair_t menuItemActive;      // "top-menu-item:active"
     Ui::Res::Type::color_pair_t button;              // "button" color + background
+    Ui::Res::Type::color_pair_t workspaceTab;        // "workspace-tab" color + background
+    Ui::Res::Type::color_pair_t workspaceTabHover;   // "workspace-tab:hover"
+    Ui::Res::Type::color_pair_t workspaceTabActive;  // "workspace-tab:active"
+    Ui::Res::Type::color_pair_t tabClose;            // "workspace-tab-close" color (tint)
+    Ui::Res::Type::color_pair_t tabCloseHover;       // "workspace-tab-close:hover" color (tint)
+    Ui::Res::Type::color_pair_t dialog;              // "dialog" color + background
+    Ui::Res::Type::color_pair_t dialogButton;        // "dialog-button" color + background
+    Ui::Res::Type::color_pair_t dialogButtonHover;   // "dialog-button:hover" color + background
+    Ui::Res::Type::color_pair_t dialogButtonActive;  // "dialog-button:active" color + background
+    Ui::Res::Type::color_pair_t dialogButtonPrimary; // "dialog-button:primary" color + background
+    Ui::Res::Type::color_pair_t dialogClose;         // "dialog-close" color (tint)
+    Ui::Res::Type::color_pair_t dialogCloseHover;    // "dialog-close:hover" color (tint) + background
+    Ui::Res::Type::color_pair_t dialogCloseActive;   // "dialog-close:active" color (tint) + background
+    Ui::Res::Type::color_pair_t tabArrow;            // "workspace-tab-arrow" color (tint) + transparent bg
+    Ui::Res::Type::color_pair_t statusBar;           // "status-bar"
+    Ui::Res::Type::color_pair_t statusBarActive;     // "status-bar:active"
+
     // HSL lightness delta marking an armed toolbar button, in percentage
     // points. Applied through Color::edgeColor so it lightens on a dark theme
     // and darkens on a light one, rather than needing a second colour block
-    fpx_t                       buttonActiveContrast = 12.0F; // "button" active-contrast
-    Ui::Res::Type::color_pair_t workspaceTab;                 // "workspace-tab" color + background
-    Ui::Res::Type::color_pair_t workspaceTabHover;            // "workspace-tab:hover"
-    Ui::Res::Type::color_pair_t workspaceTabActive;           // "workspace-tab:active"
-    Ui::Res::Type::color_pair_t tabClose;                     // "workspace-tab-close" color (tint)
-    Ui::Res::Type::color_pair_t tabCloseHover;                // "workspace-tab-close:hover" color (tint)
-    Ui::Res::Type::font_t       dialogFont;                   // "dialog" font
-    fpx_t                       dialogLineHeight = 1.4F;      // "dialog" line-height
-    Ui::Res::Type::color_pair_t dialog;                       // "dialog" color + background
-    Ui::Res::Type::font_t       dialogTitleFont;              // "dialog-title" font
-    Ui::Color                   dialogTitleColor;             // "dialog-title" color
-    Ui::Color                   dialogLinkColor;              // "dialog-link" color
-    Ui::Color                   dialogLinkVisited;            // "dialog-link:visited" color
-    Ui::Res::Type::color_pair_t dialogButton;                 // "dialog-button" color + background
-    Ui::Res::Type::color_pair_t dialogButtonHover;            // "dialog-button:hover" color + background
-    Ui::Res::Type::color_pair_t dialogButtonActive;           // "dialog-button:active" color + background
-    Ui::Res::Type::color_pair_t dialogButtonPrimary;          // "dialog-button:primary" color + background
-    Ui::Color                   scrollbarTrack;               // "scrollbar" background
-    Ui::Color                   scrollbarThumb;               // "scrollbar-thumb" background
-    Ui::Color                   scrollbarThumbHover;          // "scrollbar-thumb:hover" background
-    Ui::Res::Type::color_pair_t dialogClose;                  // "dialog-close" color (tint)
-    Ui::Res::Type::color_pair_t dialogCloseHover;             // "dialog-close:hover" color (tint) + background
-    Ui::Res::Type::color_pair_t dialogCloseActive;            // "dialog-close:active" color (tint) + background
-    Ui::Res::Type::color_pair_t tabArrow;                     // "workspace-tab-arrow" color (tint) + transparent bg
-    Ui::Res::Type::color_pair_t statusBar;                    // "status-bar"
-    Ui::Res::Type::color_pair_t statusBarActive;              // "status-bar:active"
+    fpx_t buttonActiveContrast = 12.0F; // "button" active-contrast
+    fpx_t dialogLineHeight     = 1.4F;  // "dialog" line-height
+    fpx_t shadowOpacity {};
 
     Ui::Res::Type::FontWeight workspaceTabActiveWeight =
     Ui::Res::Type::FontWeight::Bold; // "workspace-tab:active" font-weight
 
     // Standalone colors (no pairing needed)
+    Ui::Color dialogTitleColor;    // "dialog-title" color
+    Ui::Color dialogLinkColor;     // "dialog-link" color
+    Ui::Color dialogLinkVisited;   // "dialog-link:visited" color
+    Ui::Color scrollbarTrack;      // "scrollbar" background
+    Ui::Color scrollbarThumb;      // "scrollbar-thumb" background
+    Ui::Color scrollbarThumbHover; // "scrollbar-thumb:hover" background
     Ui::Color colorShadow;
-    fpx_t     shadowOpacity {};
     Ui::Color colorModel;
     Ui::Color colorError;
     Ui::Color colorLoad;
@@ -100,9 +108,6 @@ struct alignas(128) theme_t final {
     Ui::Color separatorColor;        // "top-menu-separator"     background
     Ui::Color shortcutColor;         // "top-menu-item-shortcut" color
     Ui::Color shortcutHoverColor;    // "top-menu-item-shortcut:hover" color
-
-    // Dock primitive (one shared theme for all dock instances; left/right + inner/outer same style)
-    Ui::Res::Dock::dock_theme_t dock;
 
     bool operator==(const theme_t &) const = default;
 };

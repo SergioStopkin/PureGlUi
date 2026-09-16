@@ -40,6 +40,10 @@ enum class IntentKind : uint8_t {
     // which is why it must be unique across docks.
     ActivateRow, // row id selected
     ToggleRow,   // row id expand/collapse requested
+    // Unlike the two above, chrome work: the menu a row names is res data the
+    // framework already owns. `id` is the ELEMENT id, which is what the shell
+    // needs to find both the row and where to anchor the popup under it.
+    OpenRowMenu, // element id of a Menu row's value column
 };
 
 } // namespace Ui

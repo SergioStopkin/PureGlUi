@@ -204,7 +204,8 @@ that never diff return `void`. `MenuStore` and `DockStore` are
   `LayoutStore`, `ResPath` by reference. The disable pass lives in
   `store/menudisable.h` (`disableUnhandled`, one overload for menus + one for
   buttons); the auto-submenu walker's intermediate is `submenu_entry_t`
-  (`store/submenuentry.h`).
+  (`store/submenuentry.h`). `store/menuheight.h` (`menuHeightOf(items, popup)`)
+  is the one popup-height sum, shared by the store, the submenu and a row menu.
 - `DockStore` (`store/dockstore.h`) - session-persisted per-dock state
   (`dock_state_t`), keyed by dock name. Reads the dock CONFIG list from the
   injected `LayoutStore` (for orphan-filtering on write). `writeDockJson` /
@@ -371,7 +372,7 @@ Headers under `include/ui/res/dock/`.
   thumb pair carries both.
 - `row_t` (`row.h`) - one line of dock content, projected by the host the way it
   projects workspaces into `Ui::TabBar`: `{id, label, value, icon, depth,
-  hasChildren, isExpanded, isSelected, RowKind kind, fpx_t ratio}`. Deliberately
+  hasChildren, isExpanded, isSelected, RowKind kind, fpx_t ratio, menu}`. Deliberately
   one type for both dock kinds - a tree row indents by `depth` and draws a
   chevron from `hasChildren` with `value` empty; a property row sits at depth 0
   with a non-empty right-aligned `value`; a group is a property row with
@@ -381,12 +382,17 @@ Headers under `include/ui/res/dock/`.
   are LITERAL display text, not locale keys - the host resolves any lookup before
   projecting, exactly as `tab_t::label` does.
 - `RowKind` enum (`rowkind.h`) - `Text` (every row that is read rather than
-  manipulated: tree nodes, key/value properties, group headers) or `Slider`. An
-  explicit kind rather than inferring "slider" from a sentinel value, because a
-  slider legitimately sits at any ratio including zero, so no value is free to
-  mean "not a slider". `ratio` is 0..1 and ignored unless `kind` is `Slider`; the
-  framework knows only the fraction, and a host that wants the mapped number
-  drawn alongside puts it in `value`.
+  manipulated: tree nodes, key/value properties, group headers), `Slider` or
+  `Menu`. An explicit kind rather than inferring "slider" from a sentinel value,
+  because a slider legitimately sits at any ratio including zero, so no value is
+  free to mean "not a slider". `ratio` is 0..1 and ignored unless `kind` is
+  `Slider`; the framework knows only the fraction, and a host that wants the
+  mapped number drawn alongside puts it in `value`. A `Menu` row is a choice:
+  `value` is the current choice's display text, drawn with the `rowMenu` icon
+  role's chevron at the far edge, and `menu` is the res menu key (`"View:Units"`)
+  a click on the value opens as a popup right-aligned under the row. The pick
+  runs that menu item's own action, so the host re-projects the row with the new
+  `value`; bold-active comes from `setActionValueProvider` as in any menu.
 
 ## session.json v2
 

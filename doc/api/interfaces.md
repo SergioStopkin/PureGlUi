@@ -167,6 +167,11 @@ Pure-virtual methods:
 - `void toggleRow(id_t rowId)` - a dock row's expand/collapse was requested. The
   host flips its own flag and re-projects via `WindowManager::setDockRows`; the
   framework holds no expanded state of its own.
+- `void openRowMenu(id_t elementId)` - a `RowKind::Menu` row's value column was
+  clicked. Unlike the two row calls above it carries the ELEMENT id, because the
+  popup is anchored on the row's laid-out bound; the chrome resolves the res menu
+  from `row_t::menu` and never tells the host. The choice comes back as that
+  menu's normal action.
 
 Free function (same header):
 - `inline void routeIntent(const intent_t &intent, IChromeCommands &chrome)` -
