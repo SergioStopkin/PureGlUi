@@ -20,8 +20,9 @@
  * @brief Tests for how a dock row splits into key and value: the row minus its
  *        padding is halved, the key column pays for the expander and the depth
  *        indent out of its own half, and the value is right-aligned in the rest.
- *        Also which rows are offered to hit-testing at all, and that a row click
- *        reaches the host carrying the host's own row id.
+ *        Also which rows are offered to hit-testing at all, that a row click
+ *        reaches the host carrying the host's own row id, and that nothing a row
+ *        carries is placed outside a dock too narrow to hold it.
  *
  * Text ops are recorded through a fake sink, so these assert the geometry the
  * renderer asks for. The label is what gets cut when a value needs more than its
@@ -44,14 +45,17 @@
 #include "ui/res/dock/row.h"
 #include "ui/res/dock/rowkind.h"
 #include "ui/res/dock/state.h"
+#include "ui/res/key/iconrole.h"
 #include "ui/res/resmanager.h"
 #include "ui/result.h"
 
 #include <algorithm>
+#include <array>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #ifndef TEST_RES_DIR
@@ -68,13 +72,25 @@ namespace {
         Ui::Res::Type::AlignH  alignH = Ui::Res::Type::AlignH::Left;
     };
 
+    struct alignas(64) image_call_t final {
+        std::string            src;
+        Ui::Res::Type::bound_t bound;
+    };
+
+    // Everything one frame asked the sink for, of the two kinds these tests read
+    struct alignas(64) drawn_t final {
+        std::vector<text_call_t>  texts;
+        std::vector<image_call_t> images;
+    };
+
     // Fixed metrics so a character is worth a known width and the expectations are
     // arithmetic a reader can redo
     class RecordingText final : public Ui::IRender {
     public:
         static constexpr Ui::fpx_t GLYPH = 8.0F;
 
-        std::vector<text_call_t> texts;
+        std::vector<text_call_t>  texts;
+        std::vector<image_call_t> images;
 
         void beginFrame(Ui::fpx_t /*width*/, Ui::fpx_t /*height*/) override { }
         void endFrame() override { }
@@ -94,14 +110,15 @@ namespace {
         {
             texts.emplace_back(text_call_t { std::string(text), pos, alignH });
         }
-        void drawImage(std::string_view /*src*/,
-                       const Ui::Res::Type::bound_t & /*bound*/,
+        void drawImage(std::string_view               src,
+                       const Ui::Res::Type::bound_t & bound,
                        const Ui::Res::Type::border_t & /*radii*/,
                        const Ui::Color & /*tint*/,
                        Ui::fpx_t /*scale*/,
                        const Ui::Render::shadow_t & /*shadow*/,
                        bool /*isFilled*/) override
         {
+            images.emplace_back(image_call_t { std::string(src), bound });
         }
         void warmImage(std::string_view /*src*/,
                        const Ui::Res::Type::bound_t & /*bound*/,
@@ -149,14 +166,14 @@ protected:
 
     void SetUp() override { resManager.loadAll(); }
 
-    Ui::Res::Dock::dock_config_t seed(const std::string & name)
+    Ui::Res::Dock::dock_config_t seed(const std::string & name, Ui::fpx_t width = DOCK_WIDTH)
     {
-        resManager.setDockState(name, Ui::Res::Dock::dock_state_t { DOCK_WIDTH, DOCK_WIDTH });
-        return Ui::Res::Dock::dock_config_t { name, Ui::Res::Dock::DockAnchor::Left, 1, DOCK_WIDTH };
+        resManager.setDockState(name, Ui::Res::Dock::dock_state_t { width, width });
+        return Ui::Res::Dock::dock_config_t { name, Ui::Res::Dock::DockAnchor::Left, 1, width };
     }
 
     // Render one dock's rows through a recording sink and hand back what it drew
-    std::vector<text_call_t> draw(Ui::Render::DockColumn & dock)
+    drawn_t draw(Ui::Render::DockColumn & dock)
     {
         auto   sink    = std::make_unique<RecordingText>();
         auto * watched = sink.get();
@@ -165,7 +182,7 @@ protected:
         renderer.setContent();
         renderer.setExtraOpsHook([&dock](Ui::Render::UiRenderer & out) { dock.render(out); });
         renderer.Render(VIEW_W, VIEW_H);
-        return watched->texts;
+        return { std::move(watched->texts), std::move(watched->images) };
     }
 
     // The op carrying `text`, or nothing if it was cut away entirely
@@ -229,7 +246,7 @@ TEST_F(DockRowLayoutTest, KeyStaysInItsHalfAndValueIsRightAligned)
     row.depth = 1;
     dock.setRows({ row });
 
-    const auto          texts = draw(dock);
+    const auto          texts = draw(dock).texts;
     const text_call_t * key   = find(texts, "Area");
     const text_call_t * value = find(texts, "1.000 mm2");
     ASSERT_NE(key, nullptr);
@@ -255,7 +272,7 @@ TEST_F(DockRowLayoutTest, DeeperRowsSpendTheirOwnHalfOnTheIndent)
     deep.depth                = 2;
     dock.setRows({ shallow, deep });
 
-    const auto          texts = draw(dock);
+    const auto          texts = draw(dock).texts;
     const text_call_t * first = find(texts, "X");
     const text_call_t * later = find(texts, "Y");
     ASSERT_NE(first, nullptr);
@@ -274,7 +291,7 @@ TEST_F(DockRowLayoutTest, LabelStartsAfterTheExpanderColumnWithAGap)
     row.label = "Name";
     dock.setRows({ row });
 
-    const auto          texts = draw(dock);
+    const auto          texts = draw(dock).texts;
     const text_call_t * key   = find(texts, "Name");
     ASSERT_NE(key, nullptr);
 
@@ -302,7 +319,7 @@ TEST_F(DockRowLayoutTest, ALongValueIsCutRatherThanOverrunningTheKey)
     row.depth = 1;
     dock.setRows({ row });
 
-    const auto texts = draw(dock);
+    const auto texts = draw(dock).texts;
     EXPECT_NE(find(texts, "Name"), nullptr) << "the key column is never given up";
     EXPECT_EQ(find(texts, longValue), nullptr) << "the value should have been cut to what is left";
 
@@ -325,7 +342,7 @@ TEST_F(DockRowLayoutTest, ARowWithNoValueDrawsOnlyItsLabel)
     row.label = "Node";
     dock.setRows({ row });
 
-    const auto texts = draw(dock);
+    const auto texts = draw(dock).texts;
     ASSERT_NE(find(texts, "Node"), nullptr);
     for (const auto & call : texts) {
         EXPECT_NE(call.alignH, Ui::Res::Type::AlignH::Right);
@@ -347,7 +364,7 @@ TEST_F(DockRowLayoutTest, ACollapsedDockDrawsNoRows)
     row.value = "1";
     dock.setRows({ row });
 
-    const auto texts = draw(dock);
+    const auto texts = draw(dock).texts;
     EXPECT_EQ(find(texts, "Hidden"), nullptr);
     EXPECT_EQ(find(texts, "1"), nullptr);
 }
@@ -512,7 +529,7 @@ TEST_F(DockRowLayoutTest, AMenuRowValueEndsBeforeItsChevron)
     dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
     dock.setRows({ unitRow() });
 
-    const auto          texts = draw(dock);
+    const auto          texts = draw(dock).texts;
     const text_call_t * value = find(texts, "mm");
     ASSERT_NE(value, nullptr);
 
@@ -536,6 +553,129 @@ TEST_F(DockRowLayoutTest, OnlyAMenuRowNamesAMenu)
     EXPECT_EQ(dock.menuKeyOf(42), "View:Units");
     EXPECT_EQ(dock.menuKeyOf(43), "");
     EXPECT_EQ(dock.menuKeyOf(44), "");
+}
+
+// ============================================================================
+// A dock narrower than what its rows carry
+// ============================================================================
+
+namespace {
+
+    // Narrower than a row's padding either side, and wide enough for rows yet not
+    // for a slider track or a deep expander. Dragging a dock shut passes both
+    constexpr std::array NARROW_WIDTHS { 12.0F, 60.0F };
+
+    // Enough to scroll, and every fixed-size piece a row can carry: an expander at
+    // the top level and two levels down, a slider, and a menu chevron
+    std::vector<Ui::Res::Dock::row_t> furnishedRows()
+    {
+        std::vector<Ui::Res::Dock::row_t> rows;
+
+        Ui::Res::Dock::row_t group;
+        group.id          = 1;
+        group.label       = "Geometry";
+        group.hasChildren = true;
+        group.isExpanded  = true;
+        rows.emplace_back(group);
+
+        Ui::Res::Dock::row_t deep = group;
+        deep.id                   = 2;
+        deep.label                = "Centroid";
+        deep.depth                = 2;
+        rows.emplace_back(deep);
+
+        Ui::Res::Dock::row_t slider;
+        slider.id    = 3;
+        slider.label = "Offset";
+        slider.kind  = Ui::Res::Dock::RowKind::Slider;
+        slider.ratio = 0.5F;
+        rows.emplace_back(slider);
+
+        rows.emplace_back(unitRow());
+
+        for (Ui::id_t id = 100; id < 120; ++id) {
+            Ui::Res::Dock::row_t text;
+            text.id    = id;
+            text.label = "Row";
+            text.value = "1.0";
+            rows.emplace_back(text);
+        }
+        return rows;
+    }
+
+    // Whether a piece lies inside the area along x, the axis a narrow dock squeezes
+    bool isWithinX(const Ui::Res::Type::bound_t & piece, const Ui::Res::Type::bound_t & area)
+    {
+        constexpr Ui::fpx_t EPSILON = 0.01F;
+        return piece.w >= 0.0F && piece.x >= area.x - EPSILON && piece.x + piece.w <= area.x + area.w + EPSILON;
+    }
+
+} // namespace
+
+// Every fixed-size piece is placed from a row edge, so a row narrower than the
+// piece puts it past the dock - over the toolbar or the viewport beside it, where
+// it also answers clicks. The grip is the one element that lives outside content
+TEST_F(DockRowLayoutTest, ANarrowDockOffersNothingOutsideItsContent)
+{
+    for (const Ui::fpx_t width : NARROW_WIDTHS) {
+        Ui::Render::DockColumn dock(1, seed("row-narrow-elements-" + std::to_string(width), width), resManager);
+        dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+        dock.setRows(furnishedRows());
+
+        Ui::Render::UiLayout layout;
+        dock.appendElements(layout);
+
+        for (const Ui::Render::UiElement & element : layout.elements()) {
+            if (element.type == Ui::Render::UiElementType::DockGrip) {
+                continue;
+            }
+            EXPECT_TRUE(isWithinX(element.bound, dock.content()))
+            << "width " << width << ": element type " << Ui::Render::toInt(element.type) << " at x=" << element.bound.x
+            << " w=" << element.bound.w << ", content x=" << dock.content().x << " w=" << dock.content().w;
+        }
+    }
+}
+
+// The glyph half of the same fault: a chevron drawn from the row's far edge lands
+// on the grip once the row is narrower than the glyph and its padding
+TEST_F(DockRowLayoutTest, ANarrowDockDrawsNoRowGlyphOutsideItsContent)
+{
+    const std::string chevron = resManager.resPath().icon(
+    resManager.iconDefault(Ui::Res::Key::IconRoleKey::RowMenu).icon);
+    ASSERT_FALSE(chevron.empty());
+
+    for (const Ui::fpx_t width : NARROW_WIDTHS) {
+        Ui::Render::DockColumn dock(1, seed("row-narrow-glyphs-" + std::to_string(width), width), resManager);
+        dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+        dock.setRows(furnishedRows());
+
+        for (const image_call_t & image : draw(dock).images) {
+            if (image.src != chevron) {
+                continue;
+            }
+            EXPECT_TRUE(isWithinX(image.bound, dock.content()))
+            << "width " << width << ": chevron at x=" << image.bound.x << " w=" << image.bound.w
+            << ", content x=" << dock.content().x << " w=" << dock.content().w;
+        }
+    }
+}
+
+// A dock too narrow to show a row has nothing to scroll: a bar there is a stripe
+// down the dock edge that scrolls rows no one can read
+TEST_F(DockRowLayoutTest, ADockTooNarrowForARowOffersNoScrollbar)
+{
+    Ui::Render::DockColumn dock(1, seed("row-narrow-scroll", NARROW_WIDTHS[0]), resManager);
+    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setRows(furnishedRows());
+
+    Ui::Render::UiLayout layout;
+    dock.appendElements(layout);
+
+    const bool hasScrollbar = std::any_of(
+    layout.elements().begin(),
+    layout.elements().end(),
+    [](const Ui::Render::UiElement & element) { return element.type == Ui::Render::UiElementType::DockScrollbar; });
+    EXPECT_FALSE(hasScrollbar);
 }
 
 } // namespace PureGlUi

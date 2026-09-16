@@ -254,9 +254,13 @@ public:
         return setFirstRow(static_cast<int>(m_firstRow) + rows);
     }
 
-    // A collapsed dock has no content area, and a scrollbar hung off a zero-width
-    // one lands outside it - on top of the grip
-    [[nodiscard]] bool isScrollable() const { return content().w > 0.0F && maxFirstRow() > 0; }
+    // Only beside rows that are shown: in a dock too narrow for them the bar is a
+    // stripe down the edge scrolling nothing anyone can read, and in a collapsed one
+    // it hangs off a zero-width area onto the grip
+    [[nodiscard]] bool isScrollable() const
+    {
+        return hasRoomForRows(content().w - scrollbarWidth()) && maxFirstRow() > 0;
+    }
 
     // Press on the scrollbar - grab or page, decided by ScrollBar; isDragging()
     // is what tells the caller whether to keep the pointer
@@ -502,7 +506,7 @@ private:
     {
         const Ui::Res::Type::bound_t contentRect = rowsRect();
         const fpx_t                  rowH        = rowHeight();
-        if (m_rows.empty() || contentRect.w <= 0.0F || rowH <= 0.0F) {
+        if (m_rows.empty() || !hasRoomForRows(contentRect.w) || rowH <= 0.0F) {
             return;
         }
 
@@ -524,12 +528,12 @@ private:
                           << " sliderBound=(" << sb.x << "," << sb.y << " " << sb.w << "x" << sb.h << ")" << std::endl;
             }
             layout.addElement(UiElementType::DockRow, rowBound(contentRect, i), elementId);
-            if (m_rows[i].hasChildren) {
+            if (hasExpander(contentRect, i)) {
                 layout.addElement(UiElementType::DockExpander, expanderBound(contentRect, i), elementId);
             }
             // Over its row, so the slider takes the press instead of selecting.
             // The HIT bound, not the track's: what is drawn is taller than the bar
-            if (m_rows[i].kind == Ui::Res::Dock::RowKind::Slider) {
+            if (hasSlider(contentRect, i)) {
                 layout.addElement(UiElementType::DockSlider, sliderHitBound(contentRect, i), elementId);
             }
             // Over its row too, but only the value column: a click on the choice
@@ -538,6 +542,37 @@ private:
                 layout.addElement(UiElementType::DockMenu, menuBound(contentRect, i), elementId);
             }
         }
+    }
+
+    // The narrowest a row can be and still hold anything: its padding either side.
+    // A dock narrower than that shows no rows, since nothing a row carries would fit
+    [[nodiscard]] bool hasRoomForRows(fpx_t width) const { return width > 2.0F * m_resManager.popup().itemPaddingH; }
+
+    // Whether a fixed-size piece placed from a row edge still lies inside the row.
+    // Nothing clips a dock's ops to its content, so a piece past the row edge lands
+    // on the grip, the toolbar or the viewport - and answers clicks there
+    [[nodiscard]] static bool isInsideRow(const Ui::Res::Type::bound_t & piece, const Ui::Res::Type::bound_t & row)
+    {
+        return piece.w >= 0.0F && piece.x >= row.x && piece.x + piece.w <= row.x + row.w;
+    }
+
+    // The two pieces a row both draws and offers for hit-testing, each asked in ONE
+    // place so a narrow dock cannot draw what does not answer, or the reverse
+    [[nodiscard]] bool hasExpander(const Ui::Res::Type::bound_t & contentRect, std::size_t index) const
+    {
+        return m_rows[index].hasChildren
+            && isInsideRow(expanderBound(contentRect, index), rowBound(contentRect, index));
+    }
+
+    // A track shorter than its thumb has no travel, and thumbBound would push the
+    // thumb past both ends of it
+    [[nodiscard]] bool hasSlider(const Ui::Res::Type::bound_t & contentRect, std::size_t index) const
+    {
+        if (m_rows[index].kind != Ui::Res::Dock::RowKind::Slider) {
+            return false;
+        }
+        const Ui::Res::Type::bound_t track = sliderBound(contentRect, index);
+        return track.w >= sliderThumbLength() && isInsideRow(track, rowBound(contentRect, index));
     }
 
     // A dock row is the same visual object as a menu row, so it takes the popup
@@ -740,7 +775,7 @@ private:
         const Ui::Res::Type::bound_t contentRect = rowsRect();
         const std::size_t            last        = lastVisibleRow();
         for (std::size_t i = m_firstRow; i < last; ++i) {
-            if (m_rows[i].kind != Ui::Res::Dock::RowKind::Slider) {
+            if (!hasSlider(contentRect, i)) {
                 continue;
             }
             if (sliderThumbBound(sliderBound(contentRect, i), m_rows[i].ratio, true).contains(cssX, cssY)) {
@@ -763,7 +798,7 @@ private:
     // Rows fill the content area top-down, starting at the scroll offset
     void renderRows(UiRenderer & out, const Ui::Res::Type::bound_t & contentRect) const
     {
-        if (m_rows.empty() || contentRect.w <= 0.0F) {
+        if (m_rows.empty() || !hasRoomForRows(contentRect.w)) {
             return;
         }
 
@@ -787,7 +822,7 @@ private:
 
             const fpx_t indent = padH + (indentStep() * static_cast<fpx_t>(row.depth));
 
-            if (row.hasChildren) {
+            if (hasExpander(contentRect, i)) {
                 const std::string expander = m_resManager
                                              .iconDefault(row.isExpanded ? Ui::Res::Key::IconRoleKey::RowExpanded
                                                                          : Ui::Res::Key::IconRoleKey::RowCollapsed)
@@ -804,16 +839,17 @@ private:
             // A slider owns the right column, so the value text - if the host
             // supplied one - shifts left to sit between the label and the track
             Ui::Res::Type::bound_t valueBound = bound;
-            if (row.kind == Ui::Res::Dock::RowKind::Slider) {
+            if (hasSlider(contentRect, i)) {
                 const Ui::Res::Type::bound_t track = sliderBound(contentRect, i);
                 renderSlider(out, track, row.ratio, i == m_hotSliderRow);
                 valueBound.w = track.x - bound.x;
             }
             // A menu row keeps its value where every value sits, and gives the far
-            // edge to the chevron that says the value can be changed
-            if (row.kind == Ui::Res::Dock::RowKind::Menu) {
-                const Ui::Res::Type::bound_t chevron = menuChevronBound(bound);
-                const std::string            icon = m_resManager.iconDefault(Ui::Res::Key::IconRoleKey::RowMenu).icon;
+            // edge to the chevron that says the value can be changed. Drawn only,
+            // never hit-tested itself - the value column around it takes the click
+            const Ui::Res::Type::bound_t chevron = menuChevronBound(bound);
+            if (row.kind == Ui::Res::Dock::RowKind::Menu && isInsideRow(chevron, bound)) {
+                const std::string icon = m_resManager.iconDefault(Ui::Res::Key::IconRoleKey::RowMenu).icon;
                 if (!icon.empty()) {
                     out.appendImage(chevron, m_resManager.resPath().icon(icon), theme.dock.background.fg);
                 }
