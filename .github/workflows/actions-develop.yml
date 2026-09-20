@@ -152,9 +152,12 @@ jobs:
       # cache gate so GL test coverage is deterministic on every run - the
       # runner has no hardware GL driver, so run.sh deploys Mesa and TestGlSmoke
       # exercises the full GL render path instead of the GL 1.1 early-return.
-      - name: Cache Mesa
+      # Restore + save rather than cache: the save runs only once the fetch has
+      # succeeded. A plain cache step saves on failure too, and a half-fetched Mesa
+      # under a key that never changes is restored by every run after it
+      - name: Restore Mesa
         id:   mesa-cache
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: 3rd/mesa
           key:  mesa-dist-win-release-msvc
@@ -162,6 +165,13 @@ jobs:
       - name: Fetch Mesa
         if:   steps.mesa-cache.outputs.cache-hit != 'true'
         run:  ./mesa-windows.sh fetch
+
+      - name: Save Mesa
+        if:   steps.mesa-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: 3rd/mesa
+          key:  mesa-dist-win-release-msvc
 
       # Prepend the vcpkg bin dir so the runtime DLLs (cairo/rsvg/freetype/glew/...)
       # resolve if applocal deploy misses any.

@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+
+# Stop at the first failure. Without it a failed configure still runs the build,
+# and the error CI reports is the build's complaint about the missing project
+# rather than what actually went wrong
+set -e
+
 . .cicd-config
 
 USAGE_TEXT="Usage: ./build.sh <dev|rel|test|ut|ct|cov>"
