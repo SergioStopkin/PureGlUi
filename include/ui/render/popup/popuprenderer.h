@@ -51,10 +51,14 @@ public:
 
     // Bold variant of the popup item font, used to mark the active row in
     // radio-group popups (display mode / theme).
-    static Ui::Res::Type::font_t boldVariant(Ui::Res::Type::font_t font)
+    //
+    // By reference and copied inside: font_t is over-aligned, and MSVC cannot align
+    // a by-value parameter past what the stack guarantees (C2719)
+    static Ui::Res::Type::font_t boldVariant(const Ui::Res::Type::font_t & font)
     {
-        font.weight = Ui::Res::Type::FontWeight::Bold;
-        return font;
+        Ui::Res::Type::font_t bold = font;
+        bold.weight                = Ui::Res::Type::FontWeight::Bold;
+        return bold;
     }
 
     ~PopupRenderer() override { cleanup(); }
