@@ -17,11 +17,25 @@
 
 #pragma once
 
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
 
 namespace Common {
+
+// The user's home: %USERPROFILE% on Windows, read wide so a name outside the code
+// page survives, $HOME elsewhere. Empty when unset, which leaves a path joined to
+// it relative
+inline std::filesystem::path homeDir()
+{
+#ifdef _WIN32
+    const wchar_t * home = _wgetenv(L"USERPROFILE");
+#else
+    const char * home = std::getenv("HOME");
+#endif
+    return (home != nullptr) ? std::filesystem::path(home) : std::filesystem::path {};
+}
 
 // True if dir exists and is a directory; logs + returns false otherwise.
 // Guards directory_iterator loops, which throw on a missing path (unlike the

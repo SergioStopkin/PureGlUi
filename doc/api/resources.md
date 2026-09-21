@@ -104,11 +104,14 @@ Persistence seam:
   whose own state objects fire their own persist hooks (reached through the
   registry setters, which the fw cannot suppress) checks this in its save path.
 - `sessionDir()`, `sessionFile()`, `sessionPath()` - storage location, from
-  app.json. `sessionPath()` joins the two.
+  app.json. `sessionPath()` joins the two under the user's home (`Common::homeDir()`:
+  `%USERPROFILE%` on Windows, `$HOME` elsewhere), never the start directory - an app
+  started from a network share or a read-only install could not save there.
 - `loadSession(path)` / `static writeSession(path, blob)` - the file I/O, path
   explicit (pass `sessionPath()` for the default location). Missing file on load =
   fresh start, not an error. The write goes to a sibling temp file and is renamed
   over the target, so a crash or a racing save cannot leave a half-written file.
+  A rename the filesystem refuses removes the temp and returns false.
 - `saveSession()` - serialize + write to `sessionPath()` in one call.
 - `serializeSession()` -> `std::string` - encode all persisted state to a v2
   session blob (see below).

@@ -33,6 +33,7 @@
 #include "ui/res/resmanager.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -45,6 +46,20 @@
 #endif
 
 namespace {
+
+// Every staging file writeSession left beside target: one per write, named
+// <file>.tmp.<n>
+std::vector<std::filesystem::path> tempsBeside(const std::filesystem::path & target)
+{
+    std::vector<std::filesystem::path> temps;
+    const std::string                  prefix = target.filename().string() + ".tmp";
+    for (const auto & entry : std::filesystem::directory_iterator(target.parent_path())) {
+        if (entry.path().filename().string().starts_with(prefix)) {
+            temps.emplace_back(entry.path());
+        }
+    }
+    return temps;
+}
 
 // A serialized blob round-trips into an identical restored state.
 TEST(Session, RoundTripRestoresState)
@@ -233,13 +248,20 @@ TEST(Session, PersistHookRespectsDiffGuards)
 
 // === File I/O (ResManager owns the location, so it owns the read/write) ======
 
-// sessionPath joins the two app.json values; both are non-empty for real res.
-TEST(Session, SessionPathJoinsDirAndFile)
+// The two app.json names under the user's home, never under the start directory:
+// an app started from a share or a read-only install cannot save where it started
+TEST(Session, SessionPathLivesInTheUsersHome)
 {
-    Ui::Res::ResManager manager { TEST_RES_DIR };
-    const std::string   path = manager.sessionPath();
-    EXPECT_NE(path.find(manager.sessionDir()), std::string::npos);
-    EXPECT_NE(path.find(manager.sessionFile()), std::string::npos);
+#ifdef _WIN32
+    const wchar_t * home = _wgetenv(L"USERPROFILE");
+#else
+    const char * home = std::getenv("HOME");
+#endif
+    ASSERT_NE(home, nullptr) << "no home in this environment, so nothing to anchor to";
+
+    Ui::Res::ResManager         manager { TEST_RES_DIR };
+    const std::filesystem::path expected = std::filesystem::path(home) / manager.sessionDir() / manager.sessionFile();
+    EXPECT_EQ(std::filesystem::path(manager.sessionPath()), expected);
 }
 
 // writeSession round-trips a blob, creates missing parent directories, and leaves
@@ -253,7 +275,7 @@ TEST(Session, WriteSessionIsAtomicAndLeavesNoTemp)
 
     EXPECT_TRUE(Ui::Res::ResManager::writeSession(target.string(), R"({"version":2})"));
     ASSERT_TRUE(std::filesystem::exists(target));
-    EXPECT_FALSE(std::filesystem::exists(target.string() + ".tmp"));
+    EXPECT_TRUE(tempsBeside(target).empty());
 
     // Scoped: on Windows an open read handle blocks the rename that replaces the
     // target, so leaving this stream open would fail the overwrite below (and the
@@ -267,15 +289,31 @@ TEST(Session, WriteSessionIsAtomicAndLeavesNoTemp)
 
     // Overwriting an existing file works and still leaves no temp.
     EXPECT_TRUE(Ui::Res::ResManager::writeSession(target.string(), "{}"));
-    EXPECT_FALSE(std::filesystem::exists(target.string() + ".tmp"));
+    EXPECT_TRUE(tempsBeside(target).empty());
+
+    std::filesystem::remove_all(dir);
+}
+
+// A rename the filesystem refuses still takes its temp with it: otherwise every
+// failed save leaves one more beside the session, for good
+TEST(Session, ARefusedRenameLeavesNoTemp)
+{
+    const std::filesystem::path dir    = std::filesystem::temp_directory_path() / "pureglui-session-refused";
+    const std::filesystem::path target = dir / "session.json";
+    std::filesystem::remove_all(dir);
+    // A non-empty directory where the file goes: no platform renames a file over one
+    std::filesystem::create_directories(target / "occupied");
+
+    EXPECT_FALSE(Ui::Res::ResManager::writeSession(target.string(), "{}"));
+    EXPECT_TRUE(tempsBeside(target).empty()) << "the refused save left its temp behind";
 
     std::filesystem::remove_all(dir);
 }
 
 // A missing session file is a fresh start, not a failure, and leaves state alone.
-// Uses an explicit path: sessionPath() is relative to the CWD, so the default
-// overload would pick up a real .pureglui/session.json if the app had ever run
-// here - and saveSession() must never be called from a test for the same reason.
+// Uses an explicit path: sessionPath() is the user's real session in their home,
+// so the default would pick it up if the app had ever run on this machine - and
+// saveSession() must never be called from a test for the same reason.
 TEST(Session, LoadSessionSucceedsWhenFileAbsent)
 {
     Ui::Res::ResManager manager { TEST_RES_DIR };

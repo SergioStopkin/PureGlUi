@@ -19,11 +19,11 @@ CMAKE_SOURCE_DIR=.
 
 BUILD_PREFIX=cmake-build
 # Windows: build on local disk to avoid shared folder corruption
-# if [[ "$OS" == "Windows_NT" ]]; then
-#     BUILD_PREFIX_PATH="$USERPROFILE/$PROJECT_NAME/$BUILD_PREFIX"
-# else
+if [[ "$OS" == "Windows_NT" ]]; then
+    BUILD_PREFIX_PATH="$USERPROFILE/$PROJECT_NAME/$BUILD_PREFIX"
+else
     BUILD_PREFIX_PATH=$BUILD_PREFIX
-# fi
+fi
 
 BUILD_DIR_DEV=$BUILD_PREFIX_PATH-develop
 BUILD_DIR_REL=$BUILD_PREFIX_PATH-release

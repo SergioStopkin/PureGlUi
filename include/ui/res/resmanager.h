@@ -61,6 +61,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -535,10 +536,12 @@ public:
         }
     }
 
-    // <sessionDir>/<sessionFile>, both from app.json.
+    // <home>/<sessionDir>/<sessionFile>, the two names from app.json. The user's
+    // home, never the start directory: an app started from a share or a read-only
+    // install cannot save where it started
     [[nodiscard]] std::string sessionPath() const
     {
-        return (std::filesystem::path(m_sessionDir) / m_sessionFile).string();
+        return (Common::homeDir() / m_sessionDir / m_sessionFile).string();
     }
 
     // Read the session blob back - the counterpart of writeSession. Takes the path
@@ -579,6 +582,7 @@ public:
     // the blob on the UI thread and posts the disk write to a worker.
     static bool writeSession(const std::string & sessionPath, const std::string & blob)
     {
+        std::filesystem::path temp;
         try {
             const std::filesystem::path target(sessionPath);
             if (target.has_parent_path()) {
@@ -590,7 +594,7 @@ public:
             // Surviving a crash never needed the name to be shared; surviving a
             // concurrent save needs it not to be.
             static std::atomic<uint64_t> sequence { 0 };
-            std::filesystem::path        temp = target;
+            temp = target;
             temp += ".tmp." + std::to_string(sequence.fetch_add(1));
             {
                 std::ofstream file(temp, std::ios::trunc);
@@ -606,6 +610,9 @@ public:
             }
             return true;
         } catch (const std::exception & e) {
+            // A refused rename leaves the temp behind, one more with every save
+            std::error_code ignored;
+            std::filesystem::remove(temp, ignored);
             std::cerr << "[ResManager] Failed to save session: " << e.what() << std::endl;
             return false;
         }

@@ -141,6 +141,21 @@ for (const auto & entry : std::filesystem::directory_iterator(themeDir)) {
 }
 ```
 
+## Common::homeDir
+
+Header: `include/common/fs.h`
+
+Free function.
+
+```cpp
+inline std::filesystem::path homeDir();
+```
+
+- Returns the user's home: `%USERPROFILE%` on Windows (read as a wide string, so a name outside the code page survives), `$HOME` on Linux and macOS.
+- Returns an empty path when the variable is unset, so a path joined to it stays relative.
+
+Notes: `ResManager::sessionPath()` anchors the session under it, so where the app was started from never decides where it saves.
+
 ## Common::System
 
 Header: `include/common/system.h`
