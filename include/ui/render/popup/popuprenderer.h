@@ -24,10 +24,12 @@
 #include "ui/render/uilayout.h"
 #include "ui/type.h"
 
+#include <algorithm>
 #include <functional>
 #include <iostream>
 #include <set>
 #include <utility>
+#include <vector>
 
 namespace Ui::Render::Popup {
 
@@ -39,12 +41,16 @@ namespace Ui::Render::Popup {
  */
 class PopupRenderer final : public PopupRendererBase {
 public:
-    PopupRenderer(Ui::task_fn_t makeCurrent, const Ui::Res::ResManager & resManager, const Ui::Res::Type::menu_t & menu)
+    PopupRenderer(Ui::task_fn_t                 makeCurrent,
+                  const Ui::Res::ResManager &   resManager,
+                  const Ui::Res::Type::menu_t & menu,
+                  fpx_t                         cssWidth)
         : PopupRendererBase(std::move(makeCurrent), resManager)
-        , m_popupElements(Ui::Render::UiLayout::buildPopup(menu, resManager))
+        , m_popupElements(Ui::Render::UiLayout::buildPopup(menu, resManager, cssWidth))
         , m_popupFont(m_fontRenderer.createFont(resManager.theme().menuItemFont))
         , m_popupFontBold(m_fontRenderer.createFont(boldVariant(resManager.theme().menuItemFont)))
         , m_popupScFont(m_fontRenderer.createFont(resManager.theme().shortcutFont))
+        , m_shortcutColumnW(widestShortcut(menu.items))
         , m_containerBorder(resManager.layout().topMenuDropdown.border)
     {
     }
@@ -430,13 +436,12 @@ private:
                 }
             }
 
-            // Shortcut text (right-aligned)
+            // Shortcut text, from the left edge of the right-aligned shortcut column
             if (!menuItem.shortcut.empty() && m_popupScFont != 0) {
                 auto * scFr = fontRenderer.font(m_popupScFont);
                 if (scFr != nullptr && scFr->program != 0U) {
-                    const auto shortcutW = fontRenderer.textWidth(m_popupScFont, menuItem.shortcut);
-                    const auto startX    = Ui::Gl::TextAlign::startXRight(el.bound, shortcutW, pH, g_config.scale);
-                    const auto baseline  = scFr->metrics.baselineCap(el.bound.y, el.bound.h, g_config.scale);
+                    const auto startX = Ui::Gl::TextAlign::startXRight(el.bound, m_shortcutColumnW, pH, g_config.scale);
+                    const auto baseline = scFr->metrics.baselineCap(el.bound.y, el.bound.h, g_config.scale);
                     auto       verts = Ui::Gl::FontRenderer::buildTextVerts(*scFr, menuItem.shortcut, startX, baseline);
 
                     if (!verts.empty()) {
@@ -521,10 +526,24 @@ private:
         return changed;
     }
 
+    // Run from the initializer list, so it may read only members declared above
+    // m_shortcutColumnW
+    [[nodiscard]] fpx_t widestShortcut(const std::vector<Ui::Res::Type::menu_t> & items)
+    {
+        fpx_t width = 0;
+        for (const auto & item : items) {
+            if (item.visible && !item.separator && !item.shortcut.empty()) {
+                width = std::max(width, m_fontRenderer.textWidth(m_popupScFont, item.shortcut));
+            }
+        }
+        return width;
+    }
+
     std::vector<Ui::Render::UiElement> m_popupElements;
-    Ui::font_handle_t                  m_popupFont     = 0;
-    Ui::font_handle_t                  m_popupFontBold = 0;
-    Ui::font_handle_t                  m_popupScFont   = 0;
+    Ui::font_handle_t                  m_popupFont       = 0;
+    Ui::font_handle_t                  m_popupFontBold   = 0;
+    Ui::font_handle_t                  m_popupScFont     = 0;
+    fpx_t                              m_shortcutColumnW = 0; // every shortcut starts where the widest one does
     Ui::Res::Type::border_t            m_containerBorder;
     SubmenuHoverFn                     m_onSubmenuHover;
     id_t                               m_submenuParentId = Ui::INVALID_ID;

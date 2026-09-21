@@ -27,6 +27,7 @@
  * the action tier, radio-highlight state, and popup-item geometry.
  */
 
+#include "common/unicode.h"
 #include "fakerender.h"
 #include "ui/action/registry.h"
 #include "ui/intent.h"
@@ -196,7 +197,10 @@ TEST_F(UiDriverTest, PopupItemHitTestResolvesToItemId)
     const Ui::Res::Type::menu_t * menu = popupMenu();
     ASSERT_NE(menu, nullptr);
 
-    const std::vector<Ui::Render::UiElement> popup = Ui::Render::UiLayout::buildPopup(*menu, resManager);
+    const std::vector<Ui::Render::UiElement> popup = Ui::Render::UiLayout::buildPopup(
+    *menu,
+    resManager,
+    resManager.layout().topMenuDropdown.width);
     ASSERT_FALSE(popup.empty());
 
     const Ui::Render::UiElement * target = nullptr;
@@ -230,6 +234,61 @@ TEST_F(UiDriverTest, PopupItemHitTestResolvesToItemId)
         }
     }
     EXPECT_TRUE(missed);
+}
+
+// -- Popup width: the widest row, never under res's floor -------------------
+// A row that fits leaves the floor alone; one that does not widens the popup to
+// exactly that row, padded on both sides and between label and shortcut. Rows
+// that draw nothing cannot widen it
+TEST_F(UiDriverTest, PopupWidthIsTheWidestRowAndNeverUnderTheFloor)
+{
+    FakeRender           render;
+    Ui::Render::UiLayout layout;
+    layout.build(resManager.layout(),
+                 resManager.theme(),
+                 resManager.menus(),
+                 resManager.buttons(),
+                 resManager.tabBar(),
+                 resManager.localeManager(),
+                 1600.0F,
+                 1000.0F,
+                 &render);
+
+    const Ui::Res::Type::menu_t * menu = popupMenu();
+    ASSERT_NE(menu, nullptr);
+    Ui::Res::Type::menu_t row;
+    row.label = menu->label; // a bar label, so a locale key with display text
+
+    const Ui::fpx_t floor  = resManager.layout().topMenuDropdown.width;
+    const Ui::fpx_t padH   = resManager.popup().itemPaddingH;
+    const auto      glyphs = Common::Unicode::fromUtf8(resManager.localeManager().get(row.label)).size();
+    const Ui::fpx_t labelW = static_cast<Ui::fpx_t>(glyphs) * FakeRender::GLYPH_WIDTH;
+    ASSERT_GT(labelW, 0.0F);
+    ASSERT_LT(padH + labelW + padH, floor);
+    EXPECT_FLOAT_EQ(layout.popupWidthOf({ row }, resManager, render), floor);
+
+    row.shortcut             = std::string(32, 'W');
+    const Ui::fpx_t expected = padH + labelW + padH + (32.0F * FakeRender::GLYPH_WIDTH) + padH;
+    ASSERT_GT(expected, floor);
+    EXPECT_FLOAT_EQ(layout.popupWidthOf({ row }, resManager, render), expected);
+
+    Ui::Res::Type::menu_t hidden    = row;
+    hidden.visible                  = false;
+    hidden.shortcut                 = std::string(64, 'W');
+    Ui::Res::Type::menu_t separator = hidden;
+    separator.visible               = true;
+    separator.separator             = true;
+    EXPECT_FLOAT_EQ(layout.popupWidthOf({ row, hidden, separator }, resManager, render), expected);
+
+    // Shortcuts share one column: the longest label has to clear the longest
+    // shortcut even when they sit on different rows
+    Ui::Res::Type::menu_t shortLabel    = row;
+    shortLabel.label                    = "";
+    shortLabel.shortcut                 = std::string(48, 'W');
+    Ui::Res::Type::menu_t shortShortcut = row;
+    shortShortcut.shortcut              = "W";
+    const Ui::fpx_t column              = padH + labelW + padH + (48.0F * FakeRender::GLYPH_WIDTH) + padH;
+    EXPECT_FLOAT_EQ(layout.popupWidthOf({ shortLabel, shortShortcut }, resManager, render), column);
 }
 
 // -- Radio highlight: isActiveItem follows the action's value provider ------

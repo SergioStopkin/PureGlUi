@@ -1164,6 +1164,15 @@ public:
     // the parent's move/resize itself - the shell must not move/recreate it.
     [[nodiscard]] bool popupFollowsParent() const { return m_popupWindow && m_popupWindow->window().followsParent(); }
 
+    // A popup's CSS width, for a top-level popup and a submenu alike. The main
+    // context has to be current: a glyph measured for the first time is uploaded
+    // into the main renderer's atlas
+    [[nodiscard]] fpx_t menuPopupCssWidth(const std::vector<Ui::Res::Type::menu_t> & items)
+    {
+        m_main->window().makeCurrent();
+        return m_main->renderer().popupWidthOf(items);
+    }
+
     /**
      * @brief Create popup window at screen coordinates with uniform corner radius
      * @param screenX Absolute X coordinate
@@ -1286,7 +1295,8 @@ public:
     {
         auto & renderer = connector.emplaceRenderer([&window = connector.window()] { window.makeCurrent(); },
                                                     m_resManager,
-                                                    menu);
+                                                    menu,
+                                                    toCss(connector.window().bound().w));
         renderer.resize(connector.window().bound().w, connector.window().bound().h);
         renderer.setAlpha(connector.window().hasAlpha());
         return renderer;
@@ -1646,7 +1656,7 @@ public:
         const fpx_t submenuY = parentScreenY + popupBound.y + itemBound.y;
 
         // Calculate submenu size from items
-        const fpx_t submenuCssW = m_resManager.layout().topMenuDropdown.width;
+        const fpx_t submenuCssW = menuPopupCssWidth(item.items);
         const fpx_t contentCssH = Ui::Res::Store::menuHeightOf(item.items, m_resManager.popup());
         // Round to integer physical px divisible by g_config.scale (see app.h createMenuPopup)
         const fpx_t submenuW = toPhysRound(submenuCssW);

@@ -29,6 +29,7 @@
 #include "ui/tabbar.h"
 #include "ui/type.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -89,6 +90,8 @@ public:
         m_itemFont      = 0;
         m_itemFontBold  = 0;
         m_popupFont     = 0;
+        m_popupFontBold = 0;
+        m_shortcutFont  = 0;
         m_statusBarFont = 0;
         m_buttonImgSize = layout.buttonImgSize;
 
@@ -99,7 +102,10 @@ public:
             m_itemFontBold = render->createFont(
             { theme.workspaceTabFont.family, theme.workspaceTabFont.size, theme.workspaceTabActiveWeight });
             m_statusBarFont = render->createFont(theme.statusBarFont);
-            m_popupFont     = m_itemFont;
+            m_popupFont     = render->createFont(theme.menuItemFont);
+            m_popupFontBold = render->createFont(
+            { theme.menuItemFont.family, theme.menuItemFont.size, Ui::Res::Type::FontWeight::Bold });
+            m_shortcutFont = render->createFont(theme.shortcutFont);
         }
 
         // ---- Top menu buttons ----
@@ -201,16 +207,66 @@ public:
     }
 
     /**
+     * @brief Width a popup needs for these items, in CSS px
+     *
+     * The widest row - label, a padding gap, then the right icon or theme swatch the
+     * renderer puts at the far edge - and never under res's dropdown width, which is
+     * the floor every popup shares. Shortcuts share one column as wide as the widest
+     * of them, so a row with a shortcut has to clear the whole column, not just its
+     * own. Measured with the fonts the last build() made, so the popup's own
+     * renderer need not exist yet.
+     */
+    [[nodiscard]] fpx_t popupWidthOf(const std::vector<Ui::Res::Type::menu_t> & items,
+                                     const Ui::Res::ResManager &                resManager,
+                                     Ui::IRender &                              render) const
+    {
+        const auto & layout         = resManager.layout();
+        const fpx_t  padH           = resManager.popup().itemPaddingH;
+        fpx_t        width          = layout.topMenuDropdown.width;
+        fpx_t        shortcutW      = 0; // the shortcut column
+        fpx_t        shortcutLabelW = 0; // the widest label on a row with a shortcut
+        for (const auto & item : items) {
+            if (!item.visible || item.separator) {
+                continue;
+            }
+            // Bold for the active radio choice, which the renderer draws wider
+            const Ui::font_handle_t font   = resManager.isActiveItem(item) ? m_popupFontBold : m_popupFont;
+            const fpx_t             labelW = render.textWidth(
+            font,
+            Common::Unicode::fromUtf8(resManager.localeManager().get(item.label)));
+            if (!item.shortcut.empty()) {
+                shortcutW      = std::max(shortcutW,
+                                     render.textWidth(m_shortcutFont, Common::Unicode::fromUtf8(item.shortcut)));
+                shortcutLabelW = std::max(shortcutLabelW, labelW);
+                continue;
+            }
+            fpx_t edgeW = 0; // the far-edge content plus its padding from the edge
+            if (item.showsThemePreview) {
+                edgeW = layout.themePreview.right + layout.themePreview.width;
+            } else if (!item.icon.empty() && item.iconPlace == Ui::Res::Type::IconPlace::Right) {
+                edgeW = layout.menuItemIconWidth + padH;
+            }
+            width = std::max(width, padH + labelW + padH + edgeW);
+        }
+        if (shortcutW > 0) {
+            width = std::max(width, padH + shortcutLabelW + padH + shortcutW + padH);
+        }
+        return width;
+    }
+
+    /**
      * @brief Build popup layout from menu data
      *
      * @param menu        Menu definition with items
      * @param resManager  Resource manager for popup style and layout
+     * @param cssWidth    The popup's width, from popupWidthOf
      * @return Vector of UiElement for the popup items
      */
-    static std::vector<UiElement> buildPopup(const Ui::Res::Type::menu_t & menu, const Ui::Res::ResManager & resManager)
+    static std::vector<UiElement> buildPopup(const Ui::Res::Type::menu_t & menu,
+                                             const Ui::Res::ResManager &   resManager,
+                                             fpx_t                         cssWidth)
     {
         const auto & popupStyle = resManager.popup();
-        const fpx_t  popupCssW  = resManager.layout().topMenuDropdown.width;
 
         std::vector<UiElement> items {};
 
@@ -227,7 +283,7 @@ public:
                 sep.accepts = defaultAccepts(UiElementType::Separator);
                 sep.bound   = { popupStyle.separatorMarginH,
                                 cursorY + popupStyle.separatorMarginV,
-                                popupCssW - popupStyle.separatorMarginH * 2,
+                                cssWidth - popupStyle.separatorMarginH * 2,
                                 popupStyle.separatorHeight };
                 items.emplace_back(sep);
                 cursorY += popupStyle.separatorHeight + popupStyle.separatorMarginV * 2;
@@ -236,7 +292,7 @@ public:
 
             UiElement el;
             el.type  = UiElementType::MenuItem;
-            el.bound = { 0, cursorY, popupCssW, popupStyle.itemHeight };
+            el.bound = { 0, cursorY, cssWidth, popupStyle.itemHeight };
             el.id    = item.id;
             // A submenu parent opens on hover and is not clickable. This is the
             // one place that knows whether an item has children, so the rule is
@@ -355,6 +411,8 @@ private:
     Ui::font_handle_t      m_itemFont      = 0;
     Ui::font_handle_t      m_itemFontBold  = 0;
     Ui::font_handle_t      m_popupFont     = 0;
+    Ui::font_handle_t      m_popupFontBold = 0;
+    Ui::font_handle_t      m_shortcutFont  = 0;
     Ui::font_handle_t      m_statusBarFont = 0;
     int                    m_buttonImgSize = 24;
 

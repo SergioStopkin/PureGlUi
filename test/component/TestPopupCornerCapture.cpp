@@ -563,7 +563,8 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
         });
         auto &       popupRendererRef = popup->emplaceRenderer([&window = popup->window()] { window.makeCurrent(); },
                                                          m_resManager,
-                                                         *menuIt);
+                                                         *menuIt,
+                                                         Ui::toCss(popupW));
         popupRendererRef.resize(popup->window().bound().w, popup->window().bound().h);
         popupRendererRef.setAlpha(popup->window().hasAlpha());
 

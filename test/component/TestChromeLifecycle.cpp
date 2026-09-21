@@ -241,8 +241,11 @@ TEST_F(ChromeLifecycleTest, FullFlowMenuBarClickToItemAction)
     click(Ui::Render::UiElementType::MenuButton, barHit->id);
 
     // (c) build the popup, resolve the leaf item by coordinate.
-    const std::vector<Ui::Render::UiElement> popup     = Ui::Render::UiLayout::buildPopup(*parent, resManager);
-    const Ui::Render::UiElement *            popupItem = nullptr;
+    const std::vector<Ui::Render::UiElement> popup = Ui::Render::UiLayout::buildPopup(
+    *parent,
+    resManager,
+    resManager.layout().topMenuDropdown.width);
+    const Ui::Render::UiElement * popupItem = nullptr;
     for (const auto & element : popup) {
         if (element.type == Ui::Render::UiElementType::MenuItem && element.id == item->id) {
             popupItem = &element;

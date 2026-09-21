@@ -47,7 +47,8 @@ Content (text, icons, shortcuts) and appearance (colors, fonts) are NOT stored h
 Methods:
 
 - `void build(const layout_t &, const theme_t &, const std::vector<menu_t> &, const std::vector<button_t> &, const TabBar &, const LocaleManager &, fpx_t windowCssW, fpx_t windowCssH, Ui::IRender * render, const std::string & statusText = "")` - build the main-window layout: top-menu buttons (left-aligned label menus, right-aligned square icon/action menus), left toolbar buttons, status-bar text, and workspace tabs. Resolves and caches the font handles via `render->createFont`. `render` may be null (measurement falls back to `layout.fallbackCharWidth`).
-- `static std::vector<UiElement> buildPopup(const menu_t & menu, const ResManager &)` - build popup dropdown items (`MenuItem` rows + `Separator`s) from menu data.
+- `fpx_t popupWidthOf(const std::vector<menu_t> & items, const ResManager &, Ui::IRender &) const` - the width a popup needs: its widest visible row (item padding, label - bold for the active radio choice - a padding gap, then the right icon or theme swatch at the far edge), never under `top-menu-dropdown`'s `width`, which is the floor every popup shares. Shortcuts sit in one column, left-aligned where the widest starts (`PopupRenderer` draws them there), so any row with a shortcut must clear the whole column. Measures with the fonts the last `build` created, so a popup is sized before its own renderer exists; `UiRenderer::popupWidthOf(items)` and `WindowManager::menuPopupCssWidth(items)` are the entry points.
+- `static std::vector<UiElement> buildPopup(const menu_t & menu, const ResManager &, fpx_t cssWidth)` - build popup dropdown items (`MenuItem` rows + `Separator`s) from menu data, `cssWidth` wide.
 - `UiElement * hitTest(fpx_t cssX, fpx_t cssY, EventKind event)` - topmost non-disabled element at CSS coords that ACCEPTS `event`, or `nullptr`. Iterates in reverse (last drawn wins). Passing the kind is what lets a hover pass and a click pass disagree about which element is under the same pixel - a `Text` status bar answers a click but not a hover.
 - `UiElement * elementById(id_t)` - first element with matching id, or `nullptr`.
 - `const UiElement * parentOf(const UiElement & child) const` - the element sharing the child's id but with a different type (e.g. a `Tab` for a `TabClose`), or `nullptr`.
@@ -261,7 +262,7 @@ Protected helpers for subclasses: `bool beginRender()` (clear/viewport/blend + c
 
 `ui/render/popup/popuprenderer.h` - `class PopupRenderer final : public PopupRendererBase`. Renderer for popup menus and submenus. Builds its element list once from a `menu_t` via `UiLayout::buildPopup`.
 
-- `PopupRenderer(Ui::task_fn_t makeCurrent, const Ui::Res::ResManager &, const Ui::Res::Type::menu_t & menu)`
+- `PopupRenderer(Ui::task_fn_t makeCurrent, const Ui::Res::ResManager &, const Ui::Res::Type::menu_t & menu, fpx_t cssWidth)` - `cssWidth` is the window's, which `UiLayout::popupWidthOf` decided
 - `static Ui::Res::Type::font_t boldVariant(Ui::Res::Type::font_t)` - bold-weight copy of a font (marks the active row in radio-group popups).
 - `using SubmenuHoverFn = std::function<void(const bound_t &, const menu_t &, bool isFirst, bool isLast)>`; `void setSubmenuHoverCallback(SubmenuHoverFn)` - fired when hovering an item that has children, so the coordinator can open the submenu (bounds are rounded to physical pixels via `toPhysRound`).
 - `void setSubmenuParentId(id_t)` - mark the row whose submenu is open (keeps it visually hovered; clears the previous parent).

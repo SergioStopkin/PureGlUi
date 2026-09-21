@@ -296,6 +296,13 @@ public:
         return m_render->textWidth(font, Common::Unicode::fromUtf8(text));
     }
 
+    // Measured here rather than by the popup's own renderer, which is built after
+    // its window - and the window needs the width first
+    [[nodiscard]] fpx_t popupWidthOf(const std::vector<Ui::Res::Type::menu_t> & items) const
+    {
+        return m_layout.popupWidthOf(items, m_resManager, *m_render);
+    }
+
     // Nothing clips a draw op, so text that must stay inside its box is cut here
     [[nodiscard]] std::string truncate(Ui::font_handle_t font, const std::string & text, fpx_t maxW) const
     {

@@ -1174,7 +1174,7 @@ private:
         // top/right.
         const fpx_t buttonX    = mainWindowScreenX + toPhysRound(anchorXCss);
         const fpx_t buttonY    = mainWindowScreenY + toPhysRound(anchorYCss);
-        const fpx_t popupWidth = toPhysRound(menuPopupCssWidth());
+        const fpx_t popupWidth = toPhysRound(m_windowManager.menuPopupCssWidth(menu.items));
 
         const fpx_t contentCssH = menuPopupCssHeight(menu);
         const fpx_t popupHeight = toPhysRound(contentCssH);
@@ -1231,10 +1231,6 @@ private:
             std::cout << "[Shell] Popup renderer initialized successfully" << std::endl;
         }
     }
-
-    // Every popup menu shares the dropdown width res gives the top bar, so a row's
-    // menu reads as the same kind of object as File or View
-    [[nodiscard]] fpx_t menuPopupCssWidth() const { return m_resManager.layout().topMenuDropdown.width; }
 
     [[nodiscard]] fpx_t menuPopupCssHeight(const Ui::Res::Type::menu_t & menu) const
     {
@@ -1387,7 +1383,7 @@ private:
         const fpx_t                    height  = menuPopupCssHeight(menu);
         const fpx_t                    below   = row.y + row.h;
         const bool                     isBelow = below + height <= toCss(m_windowManager.windowHeight());
-        const fpx_t                    x       = std::max(0.0F, row.x + row.w - menuPopupCssWidth());
+        const fpx_t x = std::max(0.0F, row.x + row.w - m_windowManager.menuPopupCssWidth(menu.items));
         showMenuPopup(menu, x, isBelow ? below : row.y - height);
         m_rowMenuElement = elementId;
     }
