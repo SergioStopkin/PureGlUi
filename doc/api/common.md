@@ -141,21 +141,6 @@ for (const auto & entry : std::filesystem::directory_iterator(themeDir)) {
 }
 ```
 
-## Common::homeDir
-
-Header: `include/common/fs.h`
-
-Free function.
-
-```cpp
-inline std::filesystem::path homeDir();
-```
-
-- Returns the user's home: `%USERPROFILE%` on Windows (read as a wide string, so a name outside the code page survives), `$HOME` on Linux and macOS.
-- Returns an empty path when the variable is unset, so a path joined to it stays relative.
-
-Notes: `ResManager::sessionPath()` anchors the session under it, so where the app was started from never decides where it saves.
-
 ## Common::System
 
 Header: `include/common/system.h`
@@ -165,13 +150,17 @@ Static-only host/system-info class (all constructors/destructor deleted). OS pri
 Methods (all `static`):
 
 ```cpp
-static unsigned int cpuCores();
-static std::string  cpuFrequency();
-static std::string  systemRam();
-static void         setSystemName(const std::string & name);
+static unsigned int          cpuCores();
+static std::string           environmentVariable(std::string_view name);
+static std::filesystem::path homeDir();
+static std::string           cpuFrequency();
+static std::string           systemRam();
+static void                  setSystemName(const std::string & name);
 ```
 
 - `cpuCores` - number of hardware threads via `std::thread::hardware_concurrency()`, clamped to a minimum of 1.
+- `environmentVariable` - the variable's value as UTF-8, or an empty string when unset. Windows reads it wide, so a value outside the code page survives. The only place the process reads its environment: `getenv` races nothing but a `setenv`, and nothing in the process ever sets one - so the `concurrency-mt-unsafe` suppression lives here once instead of at every call site.
+- `homeDir` - the user's home: `%USERPROFILE%` on Windows, `$HOME` on Linux and macOS. An empty path when unset, so a path joined to it stays relative. `ResManager::sessionPath()` anchors the session under it, so where the app was started from never decides where it saves.
 - `cpuFrequency` - base CPU clock formatted as `"X.XX GHz"`, or `"N/A"` if unavailable. Linux prefers the rated frequency in `/proc/cpuinfo` `model name` (`@ ...GHz`), falling back to sysfs `cpuinfo_max_freq`; macOS uses `hw.cpufrequency_max` and falls back to parsing the CPU brand string (Apple Silicon exposes no frequency sysctl); Windows reads `~MHz` from the CPU registry key.
 - `systemRam` - total physical RAM as `"N GB"`, or `"N/A"` if unavailable. Linux reads `/proc/meminfo` `MemTotal`; macOS reads `hw.memsize`; Windows uses `GlobalMemoryStatusEx` and rounds to the nearest GB.
 - `setSystemName` - sets the application name shown by the OS (Windows AppUserModelID for taskbar grouping; macOS NSApplication dock name). No-op where unsupported; the `name` argument is ignored on those platforms.

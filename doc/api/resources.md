@@ -104,7 +104,7 @@ Persistence seam:
   whose own state objects fire their own persist hooks (reached through the
   registry setters, which the fw cannot suppress) checks this in its save path.
 - `sessionDir()`, `sessionFile()`, `sessionPath()` - storage location, from
-  app.json. `sessionPath()` joins the two under the user's home (`Common::homeDir()`:
+  app.json. `sessionPath()` joins the two under the user's home (`Common::System::homeDir()`:
   `%USERPROFILE%` on Windows, `$HOME` elsewhere), never the start directory - an app
   started from a network share or a read-only install could not save there.
 - `loadSession(path)` / `static writeSession(path, blob)` - the file I/O, path

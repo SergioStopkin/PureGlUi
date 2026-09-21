@@ -21,6 +21,7 @@
 #include "common/fs.h"
 #include "common/json.h"
 #include "common/sanitize.h"
+#include "common/system.h"
 #include "nlohmann/json.hpp"
 #include "ui/convert.h"
 #include "ui/io/filefilter.h"
@@ -541,7 +542,7 @@ public:
     // install cannot save where it started
     [[nodiscard]] std::string sessionPath() const
     {
-        return (Common::homeDir() / m_sessionDir / m_sessionFile).string();
+        return (Common::System::homeDir() / m_sessionDir / m_sessionFile).string();
     }
 
     // Read the session blob back - the counterpart of writeSession. Takes the path

@@ -20,6 +20,7 @@
 #include "common/bit.h"
 #include "common/bytes.h"
 #include "common/cstr.h"
+#include "common/system.h"
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
 #include "ui/window/eglcontext.h"
@@ -514,10 +515,9 @@ private:
             m_ownsDisplay = true;
         }
         if (m_display == nullptr) {
-            // getenv is safe here: single-threaded init and the process never setenv's.
-            std::cerr << "[X11Window] XOpenDisplay failed (DISPLAY="
-                      // NOLINTNEXTLINE(concurrency-mt-unsafe)
-                      << (std::getenv("DISPLAY") != nullptr ? std::getenv("DISPLAY") : "unset") << ")" << std::endl;
+            const std::string display = Common::System::environmentVariable("DISPLAY");
+            std::cerr << "[X11Window] XOpenDisplay failed (DISPLAY=" << (display.empty() ? "unset" : display) << ")"
+                      << std::endl;
             return false;
         }
         return true;

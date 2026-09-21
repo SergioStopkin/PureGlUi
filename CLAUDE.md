@@ -149,8 +149,8 @@ Two include roots (see "Architecture: two roles"). Paths below are relative to e
 - `json.h` - `loadJson(file, json&) -> bool`: domain-blind JSON file parse, shared by the fw loaders.
 - `sanitize.h` - `Sanitize`: string/URL/path validators (strip control chars, length caps, log on modify).
 - `unicode.h` - `Unicode`: UTF-8 <-> wide conversions for the text pipeline.
-- `fs.h` - filesystem helpers (`dirExists`, `homeDir` - `%USERPROFILE%`/`$HOME`, where the session lives).
-- `system.h` - `System`: general host info (CPU cores + base clock, RAM, process name). OS primitive; depends only on the platform + `Common::Unicode`.
+- `fs.h` - filesystem helpers (`dirExists`).
+- `system.h` - `System`: general host info (CPU cores + base clock, RAM, process name, `environmentVariable`, `homeDir` - `%USERPROFILE%`/`$HOME`, where the session lives). OS primitive; depends only on the platform + `Common::Unicode`. `environmentVariable` is the ONLY place the process reads its environment - never call `getenv` anywhere else.
 - `backgroundworker.h` - `BackgroundWorker` + process-scoped `backgroundWorker()`: a CPU-budgeted async task pool (max(1, cores-2) threads) for moving heavy work off the UI thread. Depends only on `Common::System`.
 
 ### ui/ - framework vocabulary (`Ui::`)

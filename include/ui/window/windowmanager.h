@@ -20,6 +20,7 @@
 #include "common/bit.h"
 #include "common/noncopyable.h"
 #include "common/sanitize.h"
+#include "common/system.h"
 #include "common/unicode.h"
 #include "ui/config.h"
 #include "ui/elementid.h"
@@ -679,9 +680,7 @@ public:
 #ifdef HAVE_WAYLAND
         g_config.isCompositing = false;
 #else
-        // getenv is safe here: single-threaded init and the process never setenv's.
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        g_config.isCompositing = (std::getenv("WAYLAND_DISPLAY") != nullptr);
+        g_config.isCompositing = !Common::System::environmentVariable("WAYLAND_DISPLAY").empty();
 #endif
 
         const auto & layout = m_resManager.layout();

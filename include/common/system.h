@@ -43,6 +43,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -52,9 +53,9 @@
 
 namespace Common {
 
-// General host/system info (CPU cores + base clock, RAM, process name). OS
-// primitive - depends only on the platform + Common::Unicode, never on the
-// framework or any app domain.
+// General host/system info (CPU cores + base clock, RAM, process name, the
+// environment and the user's home). OS primitive - depends only on the platform +
+// Common::Unicode, never on the framework or any app domain.
 class System final {
 public:
     System()  = delete;
@@ -67,6 +68,33 @@ public:
     {
         const unsigned int cores = std::thread::hardware_concurrency();
         return (cores > 0) ? cores : 1;
+    }
+
+    // An environment variable as UTF-8, empty when unset. The only place the
+    // process reads its environment: getenv races nothing but a setenv, and
+    // nothing here ever sets one
+    static std::string environmentVariable(std::string_view name)
+    {
+#if defined(WINDOWS)
+        // Wide, so a value outside the code page survives
+        const wchar_t * value = _wgetenv(Common::Unicode::fromUtf8(name).c_str());
+        return (value != nullptr) ? Common::Unicode::toUtf8(value) : std::string {};
+#else
+        // NOLINTNEXTLINE(concurrency-mt-unsafe)
+        const char * value = std::getenv(std::string(name).c_str());
+        return (value != nullptr) ? std::string(value) : std::string {};
+#endif
+    }
+
+    // The user's home: %USERPROFILE% on Windows, $HOME elsewhere. Empty when
+    // unset, which leaves a path joined to it relative
+    static std::filesystem::path homeDir()
+    {
+#if defined(WINDOWS)
+        return Common::Unicode::fromUtf8(environmentVariable("USERPROFILE"));
+#else
+        return environmentVariable("HOME");
+#endif
     }
 
 private:
