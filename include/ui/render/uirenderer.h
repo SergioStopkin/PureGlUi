@@ -22,17 +22,19 @@
 #include "common/unicode.h"
 #include "ui/color.h"
 #include "ui/config.h"
-#include "ui/elementid.h"
+#include "ui/const.h"
 #include "ui/gl/fontrenderer.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/gl/textalign.h"
+#include "ui/idkind.h"
 #include "ui/interface/irender.h"
 #include "ui/interface/irenderer.h"
 #include "ui/render/elementstyle.h"
 #include "ui/render/truncate.h"
 #include "ui/render/uilayout.h"
+#include "ui/res/dock/anchor.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/changed.h"
@@ -303,6 +305,25 @@ public:
         return m_layout.popupWidthOf(items, m_resManager, *m_render);
     }
 
+    // A tooltip's CSS width, measured here for the same reason
+    [[nodiscard]] fpx_t tooltipWidthOf(const std::string & text) const
+    {
+        return textWidth(m_layout.tooltipFont(), text) + (m_resManager.layout().tooltip.padding * 2.0F);
+    }
+
+    // The toolbar or menu-bar button the pointer is on, hovered or pressed - what may
+    // carry a tooltip; nullptr over none
+    [[nodiscard]] const UiElement * hoveredButton() const
+    {
+        for (const auto & el : m_layout.elements()) {
+            if ((el.type == UiElementType::ToolbarButton || el.type == UiElementType::MenuButton)
+                && (el.state == UiElementState::Hovered || el.state == UiElementState::Active)) {
+                return &el;
+            }
+        }
+        return nullptr;
+    }
+
     // Nothing clips a draw op, so text that must stay inside its box is cut here
     [[nodiscard]] std::string truncate(Ui::font_handle_t font, const std::string & text, fpx_t maxW) const
     {
@@ -442,8 +463,8 @@ public:
 
     bool onMouseLeave() override
     {
-        m_mouseX    = -1;
-        m_mouseY    = -1;
+        m_mouseX    = Ui::NO_POINTER;
+        m_mouseY    = Ui::NO_POINTER;
         m_mouseDown = false;
 
         bool changed = false;
@@ -551,6 +572,10 @@ private:
                     } else if (el.state == UiElementState::Hovered) {
                         op.radius = layout.menuButtonHoverBorder;
                     }
+                } else if (el.type == UiElementType::ToolbarButton) {
+                    // Rounded against the toolbar it belongs to (resolveStyle, its anchor)
+                    op.radius    = layout.toolbarButton.border;
+                    op.colors.bg = style.backdrop;
                 }
                 m_bgOps.emplace_back(op);
             }
@@ -597,13 +622,16 @@ private:
             if (!style.imageSrc.empty()) {
                 const std::string & imageSrc = style.imageSrc;
                 ImageOp             op;
-                op.src            = imageSrc;
-                op.isSvg          = isSvgFile(imageSrc);
-                const fpx_t imgSz = (el.type == UiElementType::TabClose) ? layout.tabCloseIconSize
-                                  : (el.type == UiElementType::TabArrow) ? el.bound.h
-                                                                         : m_layout.buttonImgSize();
-                fpx_t       imgW  = imgSz;
-                fpx_t       imgH  = imgSz;
+                op.src   = imageSrc;
+                op.isSvg = isSvgFile(imageSrc);
+                // A toolbar button's icon is the button inset by its padding
+                const fpx_t buttonIcon = std::min(el.bound.w, el.bound.h) - (layout.toolbarButton.padding * 2.0F);
+                const fpx_t imgSz      = (el.type == UiElementType::TabClose)      ? layout.tabCloseIconSize
+                                       : (el.type == UiElementType::TabArrow)      ? el.bound.h
+                                       : (el.type == UiElementType::ToolbarButton) ? buttonIcon
+                                                                                   : m_layout.buttonImgSize();
+                fpx_t       imgW       = imgSz;
+                fpx_t       imgH       = imgSz;
                 if (op.isSvg) {
                     float svgW = 0;
                     float svgH = 0;
@@ -628,79 +656,23 @@ private:
                     op.tinted = true;
                     op.tint   = style.colors.fg;
                 }
-                // A disabled element's icon is flat-tinted with the same colour
-                // disabled menu text uses, so buttons and menu items read as one
-                // system. Wins over any tint above - being unusable outranks
-                // whatever the element normally looks like. The no-animation half
-                // is already free: a Disabled element never becomes Hovered or
-                // Active, so it gets neither the hover shadow nor the press scale.
+                // A disabled element's icon is flat-tinted: a toolbar button's with
+                // its own (toolbar-button:disabled), anything else's with the colour
+                // disabled menu text uses. Wins over any tint above - being unusable
+                // outranks whatever the element normally looks like. The
+                // no-animation half is already free: a Disabled element never
+                // becomes Hovered or Active, so it gets neither the hover shadow nor
+                // the press scale.
                 if (el.state == UiElementState::Disabled) {
                     op.tinted = true;
-                    op.tint   = theme.menuItemDisabledColor;
+                    op.tint   = (el.type == UiElementType::ToolbarButton) ? theme.toolbarButtonDisabledColor
+                                                                          : theme.menuItemDisabledColor;
                 }
                 op.hovered = (el.state == UiElementState::Hovered);
                 op.active  = (el.state == UiElementState::Active);
                 m_imageOps.emplace_back(op);
             }
         }
-
-        appendToolbarTooltip(theme, m_resManager.buttons(), m_resManager.localeManager());
-    }
-
-    // Tooltip for whichever toolbar button is hovered. Emitted after every
-    // element so it overlays them, and as raw ops rather than a UiElement -
-    // a tooltip is decoration and must not be hit-testable.
-    void appendToolbarTooltip(const Ui::Res::Type::theme_t &               theme,
-                              const std::vector<Ui::Res::Type::button_t> & buttons,
-                              const Ui::Res::LocaleManager &               localeMgr)
-    {
-        const Ui::font_handle_t font = m_layout.statusBarFont();
-        if (font == 0) {
-            return;
-        }
-
-        const UiElement * hovered = nullptr;
-        for (const auto & el : m_layout.elements()) {
-            if (el.type == UiElementType::ToolbarButton && el.state == UiElementState::Hovered) {
-                hovered = &el;
-                break;
-            }
-        }
-        if (hovered == nullptr) {
-            return;
-        }
-
-        std::string tip;
-        bool        isRight = false;
-        for (const auto & button : buttons) {
-            if (button.id == hovered->id) {
-                tip     = localeMgr.get(button.tooltip);
-                isRight = (button.anchor == Ui::Res::Dock::DockAnchor::Right);
-                break;
-            }
-        }
-        if (tip.empty()) {
-            return;
-        }
-
-        // Sized like a one-row popup, since it borrows the dropdown surface
-        const Ui::Res::Type::popup_t & popup = m_resManager.popup();
-
-        const std::wstring wide = Common::Unicode::fromUtf8(tip);
-        const fpx_t        padH = popup.itemPaddingH;
-        const fpx_t        tipW = m_render->textWidth(font, wide) + (padH * 2.0F);
-        const fpx_t        tipH = popup.itemHeight;
-        const fpx_t        tipY = hovered->bound.y + ((hovered->bound.h - tipH) / 2.0F);
-        const fpx_t        tipX = isRight ? hovered->bound.x - tipW - padH : hovered->bound.x + hovered->bound.w + padH;
-
-        addBgOp({ tipX, tipY, tipW, tipH }, theme.dropdown.bg);
-
-        TextOp op;
-        op.text  = tip;
-        op.hFont = font;
-        op.color = theme.dropdown.fg;
-        op.pos   = { tipX + padH, tipY, tipW - (padH * 2.0F), tipH };
-        m_textOps.emplace_back(op);
     }
 
     // Resolve color pair for an element from ResManager theme
@@ -751,20 +723,20 @@ private:
             return theme.tabArrow;
         }
         case UiElementType::ToolbarButton:
-            // Keep the normal background - the greyed icon carries the signal - but
-            // match MenuButton's disabled foreground so a button that renders a
-            // label instead of an icon greys too.
+            // Disabled - no action behind it - it keeps its normal background: its
+            // icon, flat-tinted (toolbar-button:disabled), carries the signal
             if (el.state == UiElementState::Disabled) {
-                return { theme.menuItemDisabledColor, theme.button.bg };
+                return theme.toolbarButton;
             }
-            // Armed tool: shifted away from the button background, derived via
-            // the same theme-aware helper edges use, so darkening does not
-            // vanish on a dark theme and no theme needs a new key
+            // Armed - the tool it stands for is on - as a menu item's active is the
+            // current value; hovered and pressed alike otherwise
             if (m_resManager.isActiveButton(el.id)) {
-                return { theme.button.fg,
-                         theme.button.bg.edgeColor(theme.buttonActiveContrast, m_resManager.isThemeDark()) };
+                return theme.toolbarButtonActive;
             }
-            return theme.button;
+            if (el.state == UiElementState::Hovered || el.state == UiElementState::Active) {
+                return theme.toolbarButtonHover;
+            }
+            return theme.toolbarButton;
         case UiElementType::Text:
             if (el.state == UiElementState::Active) {
                 return theme.statusBarActive;
@@ -805,19 +777,13 @@ private:
             }
             return style;
         case UiElementType::ToolbarButton:
-            for (const auto & button : m_resManager.buttons()) {
-                if (button.id != el.id) {
-                    continue;
+            if (const Ui::Res::Type::button_t * button = m_resManager.findButton(el.id)) {
+                style.text     = localeMgr.get(button->label);
+                style.backdrop = (button->anchor == Ui::Res::Dock::DockAnchor::Right) ? theme.rightToolbar.bg
+                                                                                      : theme.leftToolbar.bg;
+                if (!button->icon.empty()) {
+                    style.imageSrc = m_resManager.resPath().iconPathOf(button->icon);
                 }
-                style.text = localeMgr.get(button.label);
-                if (!button.icon.empty()) {
-                    // A bare name is a bundled icon; anything with a separator
-                    // is a path the res data supplied outright
-                    style.imageSrc = (button.icon.find('/') == std::string::npos)
-                                   ? m_resManager.resPath().icon(button.icon)
-                                   : button.icon;
-                }
-                break;
             }
             return style;
         case UiElementType::Tab: {
@@ -998,8 +964,8 @@ private:
     std::function<void(UiLayout &)>   m_extraElementsHook;
 
     // Mouse state
-    fpx_t m_mouseX        = -1;
-    fpx_t m_mouseY        = -1;
+    fpx_t m_mouseX        = Ui::NO_POINTER;
+    fpx_t m_mouseY        = Ui::NO_POINTER;
     bool  m_mouseDown     = false;
     fpx_t m_lastMouseCssX = -1;
     fpx_t m_lastMouseCssY = -1;

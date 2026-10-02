@@ -27,4 +27,7 @@ namespace Ui {
 // shader split angles) so std::numbers::pi_v isn't repeated at call sites.
 inline constexpr fpx_t PI = std::numbers::pi_v<fpx_t>;
 
+// A pointer coordinate while the pointer is off the window
+inline constexpr int NO_POINTER = -1;
+
 } // namespace Ui

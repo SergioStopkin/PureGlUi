@@ -19,9 +19,10 @@
 
 #include "common/unicode.h"
 #include "ui/convert.h"
-#include "ui/elementid.h"
 #include "ui/gl/fontrenderer.h"
+#include "ui/idkind.h"
 #include "ui/interface/irender.h"
+#include "ui/render/tabstripwidthof.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
 #include "ui/res/dock/anchor.h"
@@ -93,6 +94,7 @@ public:
         m_popupFontBold = 0;
         m_shortcutFont  = 0;
         m_statusBarFont = 0;
+        m_tooltipFont   = 0;
         m_buttonImgSize = layout.buttonImgSize;
 
         // Resolve font handles (create once, reuse)
@@ -102,6 +104,7 @@ public:
             m_itemFontBold = render->createFont(
             { theme.workspaceTabFont.family, theme.workspaceTabFont.size, theme.workspaceTabActiveWeight });
             m_statusBarFont = render->createFont(theme.statusBarFont);
+            m_tooltipFont   = render->createFont(theme.tooltipFont);
             m_popupFont     = render->createFont(theme.menuItemFont);
             m_popupFontBold = render->createFont(
             { theme.menuItemFont.family, theme.menuItemFont.size, Ui::Res::Type::FontWeight::Bold });
@@ -158,9 +161,12 @@ public:
 
         // ---- Toolbar buttons, both edges ----
         {
-            // Each edge stacks independently from under the menu bar
-            fpx_t leftCursorY  = layout.topMenu.height;
-            fpx_t rightCursorY = layout.topMenu.height;
+            // Every button the one size (layout's "toolbar-button"), centred across
+            // its toolbar, each edge stacking from under the menu bar with the margin
+            // above the first and between each
+            const Ui::Res::Type::region_t & shape        = layout.toolbarButton;
+            fpx_t                           leftCursorY  = layout.topMenu.height + shape.margin;
+            fpx_t                           rightCursorY = layout.topMenu.height + shape.margin;
 
             for (const auto & button : buttons) {
                 if (!button.visible) {
@@ -169,19 +175,19 @@ public:
 
                 const bool  isRight = (button.anchor == Ui::Res::Dock::DockAnchor::Right);
                 const fpx_t barW    = isRight ? layout.rightToolbar.width : layout.leftToolbar.width;
-
-                const fpx_t btnW = button.width > 0 ? button.width : barW;
-                const fpx_t btnH = button.height > 0 ? button.height : barW;
+                const fpx_t barX    = isRight ? windowCssW - barW : 0;
 
                 fpx_t &     cursorY = isRight ? rightCursorY : leftCursorY;
-                const fpx_t btnX    = isRight ? windowCssW - barW : 0;
+                const fpx_t btnX    = barX + ((barW - shape.width) / 2.0F);
 
-                auto & btn = addElement(UiElementType::ToolbarButton, { btnX, cursorY, btnW, btnH }, button.id);
+                auto & btn = addElement(UiElementType::ToolbarButton,
+                                        { btnX, cursorY, shape.width, shape.height },
+                                        button.id);
                 if (!button.enabled) {
                     btn.state = UiElementState::Disabled;
                 }
 
-                cursorY += btnH;
+                cursorY += shape.height + shape.margin;
             }
         }
 
@@ -201,8 +207,11 @@ public:
 
         // ---- Workspace tabs ----
         {
-            const fpx_t availW = windowCssW - layout.leftToolbar.width - layout.rightToolbar.width;
-            buildWorkspaceTab(layout, tabBar, layout.leftToolbar.width, layout.topMenu.height, availW);
+            buildWorkspaceTab(layout,
+                              tabBar,
+                              layout.leftToolbar.width,
+                              layout.topMenu.height,
+                              Ui::Render::tabStripWidthOf(layout, windowCssW));
         }
     }
 
@@ -384,6 +393,9 @@ public:
      */
     [[nodiscard]] Ui::font_handle_t statusBarFont() const { return m_statusBarFont; }
 
+    // Measures a tooltip before its window exists; the tooltip draws with its own
+    [[nodiscard]] Ui::font_handle_t tooltipFont() const { return m_tooltipFont; }
+
     /**
      * @brief Get the button image size in CSS pixels
      */
@@ -414,6 +426,7 @@ private:
     Ui::font_handle_t      m_popupFontBold = 0;
     Ui::font_handle_t      m_shortcutFont  = 0;
     Ui::font_handle_t      m_statusBarFont = 0;
+    Ui::font_handle_t      m_tooltipFont   = 0;
     int                    m_buttonImgSize = 24;
 
     void addTabClose(fpx_t              tabX,

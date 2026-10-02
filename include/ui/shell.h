@@ -23,22 +23,26 @@
 #include "sig.h"
 #include "ui/action/actionmap.h"
 #include "ui/action/registry.h"
-#include "ui/elementid.h"
+#include "ui/config.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/gl/svgrenderer.h"
+#include "ui/idkind.h"
 #include "ui/inithooks.h"
 #include "ui/intent.h"
 #include "ui/interface/ichromecommands.h"
-#include "ui/pubsub/subscribeid.h"
 #include "ui/render/context.h"
 #include "ui/render/elementevent.h"
 #include "ui/render/renderscope.h"
+#include "ui/render/tabsshownof.h"
+#include "ui/render/tabstripwidthof.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/layout.h"
 #include "ui/res/util.h"
 #include "ui/result.h"
+#include "ui/tabbar.h"
 #include "ui/type.h"
 #include "ui/window/event.h"
 #include "ui/window/windowmanager.h"
@@ -112,6 +116,32 @@ public:
     // the host runs the domain side (workspaces, content surfaces, mouse-rotation toggle).
     void setOnTabActivated(std::function<void(id_t)> fn) { m_onTabActivated = std::move(fn); }
     void setOnTabClosed(std::function<void(id_t)> fn) { m_onTabClosed = std::move(fn); }
+
+    // Activate a tab as a click on it does. The one chrome command in public, for
+    // an action that picks the tab itself (CycleTab), so the strip scrolls it into
+    // view - a click's tab is already in it
+    void setActiveTab(id_t tabId) override
+    {
+        if (m_onTabActivated) {
+            m_onTabActivated(tabId);
+        }
+        Ui::TabBar &              tabBar = m_resManager.tabBar();
+        const std::vector<id_t> & order  = tabBar.order();
+        const auto                it     = std::ranges::find(order, tabId);
+        if (it == order.end()) {
+            return;
+        }
+        const Ui::Res::Type::layout_t & layout = m_resManager.layout();
+        const std::size_t               before = tabBar.scrollOffset();
+        tabBar.reveal(static_cast<std::size_t>(it - order.begin()),
+                      Ui::Render::tabsShownOf(Ui::Render::tabStripWidthOf(layout, toCss(m_windowManager.windowWidth())),
+                                              layout.tabMinWidth,
+                                              layout.tabArrowWidth,
+                                              order.size()));
+        if (tabBar.scrollOffset() != before) {
+            m_windowManager.requestContentRefresh();
+        }
+    }
 
     // Dock rows the host projected via WindowManager::setDockRows. rowId is the
     // host's own row id, so it must be unique across docks - the framework
@@ -360,10 +390,7 @@ public:
             if (button.icon.empty()) {
                 continue;
             }
-            const std::string path = button.icon.find('/') == std::string::npos
-                                   ? m_resManager.resPath().icon(button.icon)
-                                   : button.icon;
-            if (!Ui::Gl::SvgRenderer::loadFromFile(path).empty()) {
+            if (!Ui::Gl::SvgRenderer::loadFromFile(m_resManager.resPath().iconPathOf(button.icon)).empty()) {
                 ++preloaded;
             }
         }
@@ -426,18 +453,13 @@ public:
         auto & sub = m_windowManager.subscribe();
 
         // CloseRequested
-        sub.add(Ui::PubSub::eventSourceId(Ui::Window::EventType::CloseRequested),
-                Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
-                [this]() {
-                    std::cout << "[Event] Window close requested" << std::endl;
-                    m_windowManager.stop();
-                });
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::CloseRequested), Ui::APP_ID, [this]() {
+            std::cout << "[Event] Window close requested" << std::endl;
+            m_windowManager.stop();
+        });
 
         // Resize
-        sub.add(
-        Ui::PubSub::eventSourceId(Ui::Window::EventType::Resize),
-        Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
-        [this]() {
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::Resize), Ui::APP_ID, [this]() {
             const auto & event = m_windowManager.currentEvent();
             if (event.childWindowId != Ui::INVALID_ID) {
                 return;
@@ -485,10 +507,7 @@ public:
         });
 
         // MouseButtonPress
-        sub.add(
-        Ui::PubSub::eventSourceId(Ui::Window::EventType::MouseButtonPress),
-        Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
-        [this]() {
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::MouseButtonPress), Ui::APP_ID, [this]() {
             if (m_windowManager.hasDialog()) {
                 return;
             }
@@ -599,102 +618,98 @@ public:
         });
 
         // MouseButtonRelease
-        sub.add(Ui::PubSub::eventSourceId(Ui::Window::EventType::MouseButtonRelease),
-                Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
-                [this]() {
-                    if (m_windowManager.hasDialog()) {
-                        return;
-                    }
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::MouseButtonRelease), Ui::APP_ID, [this]() {
+            if (m_windowManager.hasDialog()) {
+                return;
+            }
 
-                    const auto & event = m_windowManager.currentEvent();
+            const auto & event = m_windowManager.currentEvent();
 
-                    // Popup release -- handle click result or close
-                    if (event.isPopupEvent && m_windowManager.hasPopup()) {
-                        if (m_windowManager.popupEventConsumed()) {
-                            const auto & result = m_windowManager.lastClickResult();
-                            if (result.id != Ui::INVALID_ID) {
-                                dispatchClick(result);
-                            }
-                        } else {
-                            if constexpr (SHELL_DEBUG) {
-                                std::cout << "[Shell] Popup MouseButtonRelease outside visual region - closing popup"
-                                          << std::endl;
-                            }
-                            destroyPopup();
-                        }
-                        return;
-                    }
-
-                    // Main/child release -- handle click result
+            // Popup release -- handle click result or close
+            if (event.isPopupEvent && m_windowManager.hasPopup()) {
+                if (m_windowManager.popupEventConsumed()) {
                     const auto & result = m_windowManager.lastClickResult();
                     if (result.id != Ui::INVALID_ID) {
                         dispatchClick(result);
                     }
-                    if (event.childWindowId == Ui::INVALID_ID) {
-                        m_windowManager.requestMainRender();
+                } else {
+                    if constexpr (SHELL_DEBUG) {
+                        std::cout << "[Shell] Popup MouseButtonRelease outside visual region - closing popup"
+                                  << std::endl;
                     }
-                });
+                    destroyPopup();
+                }
+                return;
+            }
+
+            // Main/child release -- handle click result
+            const auto & result = m_windowManager.lastClickResult();
+            if (result.id != Ui::INVALID_ID) {
+                dispatchClick(result);
+            }
+            if (event.childWindowId == Ui::INVALID_ID) {
+                m_windowManager.requestMainRender();
+            }
+        });
 
         // MouseMove
-        sub.add(Ui::PubSub::eventSourceId(Ui::Window::EventType::MouseMove),
-                Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
-                [this]() {
-                    if (m_windowManager.hasDialog()) {
-                        return;
-                    }
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::MouseMove), Ui::APP_ID, [this]() {
+            if (m_windowManager.hasDialog()) {
+                return;
+            }
 
-                    const auto & event = m_windowManager.currentEvent();
+            const auto & event = m_windowManager.currentEvent();
 
-                    // Popup move -- handle menu bar hover detection
-                    if (event.isPopupEvent) {
-                        if (m_windowManager.hasUiRenderer() && m_windowManager.hasPopup()) {
-                            int mainX = 0;
-                            int mainY = 0;
-                            m_windowManager.popupToMainCoords(event.mouse.x, event.mouse.y, mainX, mainY);
+            // Popup move -- handle menu bar hover detection
+            if (event.isPopupEvent) {
+                if (m_windowManager.hasUiRenderer() && m_windowManager.hasPopup()) {
+                    int mainX = 0;
+                    int mainY = 0;
+                    m_windowManager.popupToMainCoords(event.mouse.x, event.mouse.y, mainX, mainY);
 
-                            const int menuBarHeight = toPhysFloor(m_resManager.layout().topMenu.height);
-                            if (mainY >= 0 && mainY < menuBarHeight) {
-                                if (m_windowManager.onMouseMove(mainX, mainY)) {
-                                    m_windowManager.requestMainRender();
-                                }
-                            }
-                        }
-                        return;
-                    }
-
-                    // Child move -- clear ONLY main-window UI hover. The app-wide
-                    // onMouseLeave() would also reset the active content surface's drag
-                    // state, which kills rotation right after the first frame: press
-                    // sets dragging=true, first move rotates + notifies, this branch
-                    // would then clear dragging before the second move arrives.
-                    if (event.childWindowId != Ui::INVALID_ID) {
-                        if (m_windowManager.mainWindowMouseLeave()) {
+                    const int menuBarHeight = toPhysFloor(m_resManager.layout().topMenu.height);
+                    if (mainY >= 0 && mainY < menuBarHeight) {
+                        if (m_windowManager.onMouseMove(mainX, mainY)) {
                             m_windowManager.requestMainRender();
                         }
-                        return;
                     }
+                }
+                return;
+            }
 
-                    // Main window move -- render queued by forwardEvent on hover change
-                    if (m_windowManager.hasUiRenderer()) {
-                        const fpx_t cssX = toCss(event.mouse.x);
-                        const fpx_t cssY = toCss(event.mouse.y);
-                        for (const auto & m : m_resManager.menus()) {
-                            const auto & b = m_windowManager.elementBound(m.id);
-                            if (b.w > 0 && b.contains(cssX, cssY)) {
-                                if (m_hoveredMenuId != m.id) {
-                                    m_hoveredMenuId = m.id;
-                                    handleMenuHover(m.id);
-                                }
-                                break;
-                            }
+            // Child move -- clear ONLY main-window UI hover. The app-wide
+            // onMouseLeave() would also reset the active content surface's drag
+            // state, which kills rotation right after the first frame: press
+            // sets dragging=true, first move rotates + notifies, this branch
+            // would then clear dragging before the second move arrives.
+            if (event.childWindowId != Ui::INVALID_ID) {
+                if (m_windowManager.mainWindowMouseLeave()) {
+                    m_windowManager.requestMainRender();
+                }
+                return;
+            }
+
+            // Main window move -- render queued by forwardEvent on hover change
+            if (m_windowManager.hasUiRenderer()) {
+                const fpx_t cssX = toCss(event.mouse.x);
+                const fpx_t cssY = toCss(event.mouse.y);
+                for (const auto & m : m_resManager.menus()) {
+                    const auto & b = m_windowManager.elementBound(m.id);
+                    if (b.w > 0 && b.contains(cssX, cssY)) {
+                        if (m_hoveredMenuId != m.id) {
+                            m_hoveredMenuId = m.id;
+                            handleMenuHover(m.id);
                         }
+                        break;
                     }
-                });
+                }
+            }
+        });
 
         // KeyPress
-        sub.add(Ui::PubSub::eventSourceId(Ui::Window::EventType::KeyPress),
-                Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App),
-                [this]() { handleKeyPress(m_windowManager.currentEvent()); });
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::KeyPress), Ui::APP_ID, [this]() {
+            handleKeyPress(m_windowManager.currentEvent());
+        });
 
         // Hover handler for menu switching.
         m_windowManager.setOnElementHover([this](Ui::Render::UiElementType type, id_t id) {
@@ -806,6 +821,10 @@ public:
                 }
                 m_windowManager.drainDeferred();
             }
+
+            // A toolbar tooltip waiting out its delay: a resting pointer sends no
+            // event to show it on
+            m_windowManager.showDueTooltip();
 
             if (m_windowManager.renderQueue().hasPending()) {
                 m_windowManager.renderAll();
@@ -975,6 +994,8 @@ private:
         m_rowMenuElement = Ui::INVALID_ID;
         m_resManager.clearActiveMenu();
         m_windowManager.requestContentRefresh();
+        // Last, once no menu is open: a hover then switches to no other
+        m_windowManager.rehover();
     }
 
     void handleKeyPress(const Ui::Window::Event & event)
@@ -1205,17 +1226,12 @@ private:
         // Initialize renderer with corner capture (renders main window, captures corners)
         m_windowManager.initPopupRenderer(menu);
 
-        // Render first frame before showing to avoid visible flat/unrounded flash
-        if (m_windowManager.renderPopup()) {
-            if (g_config.isCompositing) {
-                m_windowManager.capturePopupPixels();
-                m_windowManager.refreshComposite();
-            } else {
+        // Render first frame before showing to avoid visible flat/unrounded flash.
+        // Composited, initPopupRenderer's recapture already drew it into the main frame
+        if (!g_config.isCompositing) {
+            if (m_windowManager.renderPopup()) {
                 popupWindow->swapBuffers();
             }
-        }
-
-        if (!g_config.isCompositing) {
             popupWindow->show();
         }
 
@@ -1305,7 +1321,7 @@ private:
 
     // Execute one intent emitted by the Context facade. The intent -> chrome
     // command routing lives in Ui::routeIntent (shared with tests); the commands
-    // themselves are the private IChromeCommands overrides below.
+    // themselves are the IChromeCommands overrides below (setActiveTab is public).
     void execute(const Ui::intent_t & intent) { Ui::routeIntent(intent, *this); }
 
     // -- IChromeCommands: the window/chrome commands routeIntent() drives. Each
@@ -1338,13 +1354,6 @@ private:
         m_hoveredMenuId                  = Ui::INVALID_ID;
         m_windowManager.onMouseLeave();
         m_windowManager.subscribe().defer([this, dialog = item.dialog]() { m_windowManager.openDialog(dialog); });
-    }
-
-    void switchTab(id_t tabId) override
-    {
-        if (m_onTabActivated) {
-            m_onTabActivated(tabId);
-        }
     }
 
     void closeTab(id_t tabId) override

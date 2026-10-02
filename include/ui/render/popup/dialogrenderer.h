@@ -153,7 +153,7 @@ public:
     {
         updateSmoothScroll();
         updateKeyAnimation();
-        const bool premultiplied = beginRender();
+        const bool premultiplied = beginRender(m_resManager.theme().dropdown.bg);
         renderDialog(premultiplied);
         return true;
     }
@@ -321,10 +321,8 @@ private:
             return;
         }
 
-        const auto  now     = std::chrono::steady_clock::now();
-        const fpx_t elapsed = std::chrono::duration<fpx_t>(now - m_keyAnimationStart).count();
-
-        const fpx_t delay = m_resManager.input().keyAnimationDelay;
+        const auto elapsed = std::chrono::steady_clock::now() - m_keyAnimationStart;
+        const auto delay   = std::chrono::milliseconds(m_resManager.input().keyAnimationDelayMs);
         if (m_keyAnimationPhase == 0 && elapsed >= delay) {
             // Phase 1: hover -> active
             m_keyAnimationPhase = 1;

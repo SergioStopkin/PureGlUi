@@ -32,6 +32,7 @@
 #include "ui/res/type/popup.h"
 #include "ui/res/type/region.h"
 
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -154,10 +155,15 @@ public:
 
         const Ui::Res::Type::layout_t oldLayout = m_layout;
 
-        // True when the named block exists and is an object.
-        auto hasObject = [&j](ElementKey key) {
+        // True when the named block exists and is an object. Every block asked for is
+        // one the layout needs, so a missing one is said: its values stay zero
+        auto hasObject = [&j, &file](ElementKey key) {
             const std::string name = elementKeyName(key);
-            return j.contains(name) && j[name].is_object();
+            if (j.contains(name) && j[name].is_object()) {
+                return true;
+            }
+            std::cerr << "[LayoutStore] " << file << " has no \"" << name << "\" block" << std::endl;
+            return false;
         };
         // Json::object, not j[...]: operator[] on a CONST json requires the key to
         // exist, so an unguarded block() on a theme missing that selector was
@@ -243,6 +249,12 @@ public:
         }
         if (hasObject(ElementKey::RightToolbar)) {
             m_layout.rightToolbar = parseRegion(block(ElementKey::RightToolbar));
+        }
+        if (hasObject(ElementKey::ToolbarButton)) {
+            m_layout.toolbarButton = parseRegion(block(ElementKey::ToolbarButton));
+        }
+        if (hasObject(ElementKey::Tooltip)) {
+            m_layout.tooltip = parseRegion(block(ElementKey::Tooltip));
         }
         if (hasObject(ElementKey::StatusBar)) {
             m_layout.statusBar = parseRegion(block(ElementKey::StatusBar));

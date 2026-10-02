@@ -29,6 +29,10 @@ struct alignas(16) bound_t final {
 
     [[nodiscard]] bool contains(fpx_t px, fpx_t py) const { return px >= x && px < x + w && py >= y && py < y + h; }
     [[nodiscard]] bool contains(int px, int py) const { return px >= x && px < x + w && py >= y && py < y + h; }
+    [[nodiscard]] bool overlaps(const bound_t & other) const
+    {
+        return x < other.x + other.w && other.x < x + w && y < other.y + other.h && other.y < y + h;
+    }
 
     bool operator==(const bound_t &) const = default;
 };

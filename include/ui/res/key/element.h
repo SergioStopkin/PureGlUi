@@ -62,8 +62,12 @@ enum class ElementKey : unsigned char {
     WorkspaceTabCloseHover, // workspace-tab-close:hover
     WorkspaceTabArrow,      // workspace-tab-arrow
 
-    Button,       // button
-    ThemePreview, // theme-preview
+    ToolbarButton,         // toolbar-button
+    ToolbarButtonHover,    // toolbar-button:hover
+    ToolbarButtonActive,   // toolbar-button:active - armed, as a menu item's active is the current value
+    ToolbarButtonDisabled, // toolbar-button:disabled - no action behind it
+    Tooltip,               // tooltip - a popup beside a hovered toolbar or menu-bar button, or a content surface's mark
+    ThemePreview,          // theme-preview
 
     Dialog,              // dialog
     DialogTitle,         // dialog-title
@@ -135,7 +139,11 @@ enum class ElementKey : unsigned char {
     case ElementKey::WorkspaceTabCloseHover: return "workspace-tab-close:hover";
     case ElementKey::WorkspaceTabArrow: return "workspace-tab-arrow";
 
-    case ElementKey::Button: return "button";
+    case ElementKey::ToolbarButton: return "toolbar-button";
+    case ElementKey::ToolbarButtonHover: return "toolbar-button:hover";
+    case ElementKey::ToolbarButtonActive: return "toolbar-button:active";
+    case ElementKey::ToolbarButtonDisabled: return "toolbar-button:disabled";
+    case ElementKey::Tooltip: return "tooltip";
     case ElementKey::ThemePreview: return "theme-preview";
 
     case ElementKey::Dialog: return "dialog";

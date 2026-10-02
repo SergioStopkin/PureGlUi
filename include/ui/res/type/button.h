@@ -18,25 +18,24 @@
 #pragma once
 
 #include "ui/res/dock/anchor.h"
-#include "ui/res/type/colorpair.h"
 #include "ui/type.h"
 
+#include <cstdint>
 #include <string>
 
 namespace Ui::Res::Type {
 
+// One toolbar button as its file states it. Size and colours are every button's
+// alike - layout.json's and the theme's "toolbar-button" - so none is here
 struct alignas(128) button_t final {
-    id_t                        id     = INVALID_ID; // numeric runtime id (hit-test, click routing, m_actionMap)
-    fpx_t                       width  = 0;
-    fpx_t                       height = 0;
-    int16_t                     order  = 0;
-    Ui::Res::Type::color_pair_t colors;
-    std::string                 actionKey;
-    std::string                 label;
-    std::string                 tooltip;
-    bool                        enabled = true;
-    bool                        visible = true;
-    std::string                 icon;
+    id_t        id    = INVALID_ID; // numeric runtime id (hit-test, click routing, m_actionMap)
+    int16_t     order = 0;
+    std::string actionKey;
+    std::string label;
+    std::string tooltip;
+    bool        enabled = true;
+    bool        visible = true;
+    std::string icon;
     // Which toolbar edge this button sits on. DockAnchor rather than a third
     // Left/Right enum - it already means "screen edge" and carries the JSON
     // name mapping, even though it is named for the dock that first needed it

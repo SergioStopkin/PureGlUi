@@ -147,7 +147,7 @@ public:
 
     bool render() override
     {
-        const bool premultiplied = beginRender();
+        const bool premultiplied = beginRender(m_resManager.theme().dropdown.bg);
         renderPopupElements(premultiplied);
         return true;
     }
@@ -507,10 +507,7 @@ private:
                     // physical pixels for items past index ~4, which becomes a
                     // half-point NSWindow origin on macOS and composites with a 1px
                     // AA band (visible as a dark line at the top of the submenu).
-                    const Ui::Res::Type::bound_t physBound = { toPhysRound(el.bound.x),
-                                                               toPhysRound(el.bound.y),
-                                                               toPhysRound(el.bound.w),
-                                                               toPhysRound(el.bound.h) };
+                    const Ui::Res::Type::bound_t physBound = toPhysRound(el.bound);
                     const bool                   isFirst   = (i == 0);
                     const bool                   isLast    = (i == m_popupElements.size() - 1);
                     m_onSubmenuHover(physBound, menuItem, isFirst, isLast);

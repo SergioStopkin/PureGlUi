@@ -124,11 +124,16 @@ Methods:
 - `void cleanup()` (pure) - release resources.
 - `const std::string &statusText() const` (virtual, default empty string) -
   status text, e.g. content stats for a content-surface renderer.
-- `std::vector<uint8_t> readPixels(int &outWidth, int &outHeight)` (virtual,
-  default empty) - read the rendered surface as RGBA pixels (top-left origin) so
-  the window layer can snapshot any content surface for compositing without
-  knowing the renderer type. UI chrome and popups (never composited) need not
-  implement it; a content-surface renderer overrides it with a framebuffer read.
+- `std::vector<uint8_t> readPixels(const Ui::Res::Type::bound_t & region)`
+  (virtual, default empty) - read a region of the rendered surface (its own
+  physical px, top-left origin) as RGBA, top row first: `region.w * region.h * 4`
+  bytes, or empty when the region is not inside the surface or nothing has
+  rendered. It is how a popup's corner reads what stands under it without knowing
+  the renderer type (non-composited: composited, the main frame already drew the
+  surface), and only the pixels it needs are read - a read stalls the GPU for as
+  much as it copies. UI chrome and popups
+  need not implement it; a content-surface renderer overrides it with a
+  framebuffer read.
 
 Implemented by: `Ui::Render::UiRenderer` (the UI chrome), the popup renderers
 `Ui::Render::Popup::PopupRenderer` / `DialogRenderer` (via
@@ -157,7 +162,7 @@ Pure-virtual methods:
 - `void closePopup()` - close the open popup.
 - `void openDialog(id_t itemId)` - open the modal dialog carried by a menu item
   (resolved by item id).
-- `void switchTab(id_t tabId)` - switch active tab (host-domain reaction behind
+- `void setActiveTab(id_t tabId)` - activate a tab (host-domain reaction behind
   the shell's tab hook).
 - `void closeTab(id_t tabId)` - close a tab (host-domain reaction).
 - `void copyText(const std::string &text)` - copy text to the clipboard

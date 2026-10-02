@@ -39,6 +39,16 @@ inline constexpr Ui::fpx_t Ui::PI = std::numbers::pi_v<fpx_t>;
 
 Pi as `fpx_t`, shared by degree/radian conversions so `std::numbers::pi_v` is not repeated at call sites.
 
+## Ui::NO_POINTER
+
+Header: `include/ui/const.h`
+
+```cpp
+inline constexpr int Ui::NO_POINTER = -1;
+```
+
+A pointer coordinate while the pointer is off the window: what `UiRenderer` and `WindowManager` remember after a leave, so neither hovers where the pointer no longer is.
+
 ## Ui::Codepoint + Ui::wstr()
 
 Header: `include/ui/codepoint.h`
@@ -260,26 +270,48 @@ public:
 
 Composed over `Registry` rather than reimplementing map + order, so the two stay one storage strategy: `Registry` means "one value per key, in order", `Index` means "many values per key". Keeping them separate keeps `Registry`'s meaning intact. Insertion order is preserved within a group, which is what a tree walk needs - children come out in the order the source listed them.
 
-## Ui::ElementId
+## Ui::IdKind
 
-Header: `include/ui/elementid.h`
+Header: `include/ui/idkind.h`
 
-Element-id range starts the resource loader assigns from at load time. Each authored element gets `base + counter` so a click - which carries only a numeric id - routes back to its `actionKey`.
+Every id in the app, framework and host alike - an element, a window, a pubsub source or subscriber, a render-queue entry - is a kind byte over a 56-bit serial. A serial cannot run into another kind, so no two objects share an id however long the app runs, and the kind is readable from the id itself.
 
 ```cpp
-enum class Ui::ElementId : id_t {
-    MenuBase       = 1000,    // 1000-1999: menu buttons
-    ButtonBase     = 2000,    // 2000-2999: toolbar buttons
-    ItemBase       = 5000,    // 5000-5999: menu items
-    DockGripBase   = 90'000,  // + dock id
-    DockScrollBase = 95'000,  // + dock id
-    DockRowBase    = 100'000, // + HOST row id, open-ended
+enum class Ui::IdKind : std::uint8_t {
+    Untagged      = 0,   // a raw number that never went through idOf, never assigned
+    MainWindow    = 1,
+    Popup         = 2,   // a menu popup, submenu, dialog or tooltip - a serial per open
+    Dock          = 3,   // + dock index in the parsed res
+    Event         = 4,   // + Ui::Window::EventType, a pubsub source
+    App           = 5,   // the shell, as a pubsub subscriber
+    MenuButton    = 6,   // + index in res order
+    ToolbarButton = 7,   // + index in res order
+    MenuItem      = 8,   // + index in res order, submenu items included
+    TabArrow      = 9,   // 0 left, 1 right
+    StatusText    = 10,
+    DockGrip      = 11,  // + dock index
+    DockScroll    = 12,  // + dock index
+    FrameworkLast = 127, // the last kind the framework may take
+    HostFirst     = 128, // a host numbers its own kinds from here
+    HostLast      = 254, // the last kind a host may take
+    Invalid       = 255, // INVALID_ID's
 };
+
+inline constexpr id_t SERIAL_LAST;                          // the last serial of any kind
+template <typename Kind, typename Serial> constexpr id_t idOf(Kind kind, Serial serial);
+template <typename Kind = IdKind> constexpr Kind kindOf(id_t id);
+constexpr id_t serialOf(id_t id);
+constexpr bool isHostId(id_t id);                            // a kind in HostFirst..HostLast
+
+inline constexpr id_t MAIN_WINDOW_ID, APP_ID, TAB_ARROW_LEFT, TAB_ARROW_RIGHT, STATUS_TEXT_ID;
+constexpr id_t toDockGripElementId(id_t dockId);
+constexpr id_t toDockScrollElementId(id_t dockId);
+constexpr id_t toDockId(id_t elementId);                     // a grip's or a scrollbar's dock
 ```
 
-`9997-9999` are the framework's single-element ids, declared beside the enum: `TAB_ARROW_LEFT = 9997`, `TAB_ARROW_RIGHT = 9998`, `STATUS_TEXT_ID = 9999`.
+`idOf` and `kindOf` take any kind enum, so a host declares its own kinds from `HostFirst` in one file of its own and builds its ids here - the layout is defined once. What the framework takes from a host (a dock row id, a content surface's id, a tab's id) it uses as it is: a dock row's element id IS the host's row id, and a content surface's render-queue entry IS its host id. So a host id has to carry a host kind - two untagged ids it hands over (a tab's and a row's) could be the same number - and `setDockRows`/`addContentSurface` log one that does not (`isHostId`).
 
-`DockRowBase` is open-ended and sits far above the rest because dock content is host-projected: the host supplies the row id and the framework only offsets it, applying the base when a row becomes an element and removing it when the intent is built, so a host id round-trips unchanged. The ranges never overlap because the id space is global: one id names one element across the whole system.
+A running serial is never handed back (`Popup`'s, `nextPopupId`). A stale id of that kind then names nothing, rather than whatever was made after it - a render request, a subscription or a posted task outliving its object misses instead of hitting a new one - and at 56 bits nothing needs the numbers kept small. The kinds numbered by position in res (`Dock`, `MenuButton`, `ToolbarButton`, `MenuItem`) start over on every load, so their ids hold only until the next reload: what must outlive one is kept by key, as `Shell::reloadChrome` reopens the active menu by its hierarchical key.
 
 ## Ui::tab_t
 
@@ -319,10 +351,11 @@ public:
     void setLoading(id_t id, bool isLoading, int progress);// cheap in-place progress tick
     void scrollLeft();
     void scrollRight();
+    void reveal(std::size_t index, std::size_t shown);     // scroll the least that shows tab `index`
 };
 ```
 
-`setTabs` replaces the projected tabs in one shot (vector order = visual order) and clamps the preserved scroll offset to the new count. `setLoading` updates only the volatile loading fields in place (no rebuild/allocation), leaving structure/label/active untouched. `scrollLeft`/`scrollRight` step the offset within bounds.
+`setTabs` replaces the projected tabs in one shot (vector order = visual order) and clamps the preserved scroll offset to the new count. `setLoading` updates only the volatile loading fields in place (no rebuild/allocation), leaving structure/label/active untouched. `scrollLeft`/`scrollRight` step the offset within bounds. `reveal` brings a tab into view among the `shown` from the offset (`Ui::Render::tabsShownOf` - every tab while they fit at their narrowest, else as many as fit between both arrows): `Shell::setActiveTab` calls it, so a tab activated other than by a click on it (`CycleTab`) is never off the strip.
 
 ## Ui::intent_t
 

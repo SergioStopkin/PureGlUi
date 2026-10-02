@@ -280,8 +280,9 @@ public:
         return m_menuStore.findMenuItemByKey(key);
     }
 
-    const std::vector<Ui::Res::Type::button_t> & buttons() const { return m_menuStore.buttons(); }
-    const std::vector<Ui::Res::Type::menu_t> &   menus() const { return m_menuStore.menus(); }
+    const std::vector<Ui::Res::Type::button_t> &  buttons() const { return m_menuStore.buttons(); }
+    const std::vector<Ui::Res::Type::menu_t> &    menus() const { return m_menuStore.menus(); }
+    [[nodiscard]] const Ui::Res::Type::button_t * findButton(id_t id) const { return m_menuStore.findButton(id); }
 
     // Mark every menu item bound to `action` as enabled / disabled.
     // Recurses into submenus so radio-group children
@@ -779,8 +780,11 @@ public:
         m_input.scrollSmooth        = Common::Json::number(scroll, "smooth", m_input.scrollSmooth);
         m_input.scrollSnapThreshold = Common::Json::number(scroll, "snapThreshold", m_input.scrollSnapThreshold);
 
-        const auto & keyAnimation = Common::Json::object(j, "keyAnimation");
-        m_input.keyAnimationDelay = Common::Json::number(keyAnimation, "delay", m_input.keyAnimationDelay);
+        const auto & keyAnimation   = Common::Json::object(j, "keyAnimation");
+        m_input.keyAnimationDelayMs = Common::Json::number(keyAnimation, "delayMs", m_input.keyAnimationDelayMs);
+
+        const auto & tooltip   = Common::Json::object(j, "tooltip");
+        m_input.tooltipDelayMs = Common::Json::number(tooltip, "delayMs", m_input.tooltipDelayMs);
     }
 
     // Each file under res/dock/ describes one dock (anchor, order, default

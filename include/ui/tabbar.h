@@ -86,6 +86,17 @@ public:
             ++m_scrollOffset;
         }
     }
+
+    // Scroll the least that brings tab `index` in among the `shown` from the offset
+    // (Ui::Render::tabsShownOf): a tab activated other than by a click on it
+    void reveal(std::size_t index, std::size_t shown)
+    {
+        if (index < m_scrollOffset) {
+            m_scrollOffset = index;
+        } else if (index >= m_scrollOffset + shown) {
+            m_scrollOffset = index + 1 - shown;
+        }
+    }
 };
 
 } // namespace Ui

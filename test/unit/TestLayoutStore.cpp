@@ -70,6 +70,17 @@ TEST(LayoutStore, TopMenuRegionParsed)
     EXPECT_GT(store.layout().topMenu.height, 0.0F);
 }
 
+// layout.json alone sizes the toolbar buttons and the tooltip: a block it leaves out
+// makes every button 0x0 and the tooltip 0 px tall
+TEST(LayoutStore, ToolbarButtonAndTooltipSized)
+{
+    LayoutStore store;
+    store.load(resPath().layoutFile());
+    EXPECT_GT(store.layout().toolbarButton.width, 0.0F);
+    EXPECT_GT(store.layout().toolbarButton.height, 0.0F);
+    EXPECT_GT(store.layout().tooltip.height, 0.0F);
+}
+
 TEST(LayoutStore, ReloadIdenticalIsNoOp)
 {
     LayoutStore store;

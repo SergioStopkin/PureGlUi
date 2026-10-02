@@ -46,8 +46,8 @@ public:
     virtual void openDialog(id_t itemId) = 0;
 
     // Tab intents (host-domain reactions behind the shell's tab hooks).
-    virtual void switchTab(id_t tabId) = 0;
-    virtual void closeTab(id_t tabId)  = 0;
+    virtual void setActiveTab(id_t tabId) = 0;
+    virtual void closeTab(id_t tabId)     = 0;
 
     // Copy text to the clipboard (status-bar text click).
     virtual void copyText(const std::string & text) = 0;
@@ -77,7 +77,7 @@ inline void routeIntent(const intent_t & intent, IChromeCommands & chrome)
         break;
     case IntentKind::OpenSubmenu: break; // submenus open on hover; no click path
     case IntentKind::OpenDialog: chrome.openDialog(intent.id); break;
-    case IntentKind::SwitchTab: chrome.switchTab(intent.id); break;
+    case IntentKind::SwitchTab: chrome.setActiveTab(intent.id); break;
     case IntentKind::CloseTab: chrome.closeTab(intent.id); break;
     case IntentKind::CopyText:
         if (!intent.arg.empty()) {

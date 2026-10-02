@@ -47,6 +47,12 @@ public:
     [[nodiscard]] std::string file(std::string_view name) const { return join(name); }
 
     [[nodiscard]] std::string icon(std::string_view name) const { return join("icon/") + std::string(name); }
+    // A res "icon" field: a bare name is a bundled icon, anything with a separator
+    // a path the res data supplied outright
+    [[nodiscard]] std::string iconPathOf(std::string_view iconField) const
+    {
+        return (iconField.find('/') == std::string_view::npos) ? icon(iconField) : std::string(iconField);
+    }
     [[nodiscard]] std::string fontDir() const { return join("font"); }
     [[nodiscard]] std::string fontFile(std::string_view name) const { return join("font/") + std::string(name); }
     [[nodiscard]] std::string theme(std::string_view name, std::string_view mode) const

@@ -26,6 +26,8 @@
  * the element list, and only a content refresh rebuilds it.
  */
 
+#include "testidkind.h"
+#include "ui/idkind.h"
 #include "ui/render/uielement.h"
 #include "ui/res/dock/row.h"
 #include "ui/res/resmanager.h"
@@ -135,7 +137,7 @@ TEST_F(WindowGeometryTest, SettingDockRowsMarksTheContentDirty)
 
     std::vector<Ui::Res::Dock::row_t> rows;
     Ui::Res::Dock::row_t              row;
-    row.id    = 1;
+    row.id    = Ui::idOf(TestIdKind::Row, 1);
     row.label = "projected";
     rows.emplace_back(row);
     windowManager.setDockRows(docks.front().name, std::move(rows));

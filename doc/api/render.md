@@ -42,7 +42,7 @@ Content (text, icons, shortcuts) and appearance (colors, fonts) are NOT stored h
 
 ### UiLayout
 
-`ui/render/uilayout.h` - `class UiLayout final`. Lightweight layout engine: turns `layout_t`/`theme_t`/menu/button/tab data into a flat `std::vector<UiElement>` for direct rendering. Coordinates are CSS pixels. The tab-arrow and status-text ids it assigns come from `ui/elementid.h`.
+`ui/render/uilayout.h` - `class UiLayout final`. Lightweight layout engine: turns `layout_t`/`theme_t`/menu/button/tab data into a flat `std::vector<UiElement>` for direct rendering. Coordinates are CSS pixels. The tab-arrow and status-text ids it assigns come from `ui/idkind.h`.
 
 Methods:
 
@@ -53,8 +53,8 @@ Methods:
 - `UiElement * elementById(id_t)` - first element with matching id, or `nullptr`.
 - `const UiElement * parentOf(const UiElement & child) const` - the element sharing the child's id but with a different type (e.g. a `Tab` for a `TabClose`), or `nullptr`.
 - `const std::vector<UiElement> & elements() const` / `std::vector<UiElement> & elements()` - the flat draw list (draw in order).
-- Cached font-handle getters: `menuFont()`, `itemFont()`, `itemFontBold()`, `popupFont()`, `statusBarFont()` (all `Ui::font_handle_t`).
-- `int buttonImgSize() const` - toolbar-button image size (CSS px).
+- Cached font-handle getters: `menuFont()`, `itemFont()`, `itemFontBold()`, `popupFont()`, `statusBarFont()`, `tooltipFont()` (all `Ui::font_handle_t`).
+- `int buttonImgSize() const` - a top-menu icon button's image size (CSS px); a toolbar button's icon is its `toolbar-button` box inset by the box's padding.
 - `UiElement & addElement(UiElementType type, const bound_t & bound, id_t id = INVALID_ID)` - append an element, stamping `accepts` from `defaultAccepts(type)`. Override `accepts` on the returned reference for the exceptions (a submenu parent takes `Hover` only). Insertion order is z-order, so a contributor added after `build()` - a dock, via the extra-ops hook - sits on top of the chrome it overlaps.
 
 Text fitting is not a `UiLayout` member: `truncateText` / `truncateFileName` are free functions in `ui/render/truncate.h` - see [Text fitting](#text-fitting-uirender).
@@ -87,6 +87,8 @@ Other methods:
 - `void appendBg(const bound_t & rect, const color_pair_t & elementColors, const Ui::Color & parentBg, const border_t & radius = {})` - op-emitter for hook users: a colored (optionally rounded) rect, no shadow. `elementColors` is the natural theme block `{fg, bg}`; `parentBg` is the surrounding fill used for edge anti-aliasing.
 - `void appendImage(const bound_t & rect, const std::string & svgPath, Ui::Color tint)` - op-emitter for hook users: a tinted SVG in a rect.
 - `void setOnElementHover(std::function<void(UiElementType, id_t)>)` - hover callback for menu buttons (fires by position so a disabled menu under the cursor is still reported).
+- `const UiElement * hoveredButton() const` - the toolbar or menu-bar button the pointer is on, hovered or pressed - what may carry a tooltip; `nullptr` over none. What `WindowManager::syncTooltip` asks after every event.
+- `fpx_t tooltipWidthOf(const std::string & text) const` - a tooltip's CSS width: `text` in the `tooltip` font plus `layout.tooltip.padding` each side, measured here because its window needs the width before its renderer exists (as `popupWidthOf`).
 
 `Ui::IEventApp` overrides: `bool onMouseMove(int,int)`, `element_event_t onMousePress(int,int,MouseButton,int clickCount)`, `element_event_t onMouseRelease(int,int,MouseButton)`, `bool onMouseLeave()`, `element_event_t onScroll(int,int,fpx_t)` (no-op, returns `{}`). All translate physical input to CSS via `toCss`, update element `state`, and report whether a redraw is needed via `changed`. Press and release are Left-only here; the other buttons belong to content surfaces. Hit-testing is capability-driven - `UiLayout::hitTest(x, y, EventKind)` only returns elements whose `accepts` mask includes that kind.
 
@@ -256,7 +258,7 @@ Software-rounded corner support (popup/dialog corners composited over parent pix
 
 `Ui::IRenderer` boilerplate: `void resize(fpx_t,fpx_t)` (caches size), `void apply(Changed)` (no-op), `void cleanup()` (make current + `Rounded::cleanup`), `element_event_t onScroll(int,int,fpx_t)` (`{}`).
 
-Protected helpers for subclasses: `bool beginRender()` (clear/viewport/blend + corner underlay; returns true when premultiplied alpha is active), `void drawTextVerts(const std::vector<float> &, const Ui::Color &, FontRenderer::font_rec_t &) const`, `void beginSvgDraw()`, `static void endSvgDraw()`. Protected members: `m_resManager`, `m_makeCurrent`, `m_width`/`m_height`, `m_fontRenderer`, `m_svgRenderer`, `m_rounded`.
+Protected helpers for subclasses: `bool beginRender(const Ui::Color & background)` (clear/viewport/blend + corner underlay, an opaque window clearing to `background`; returns true when premultiplied alpha is active), `void drawTextVerts(const std::vector<float> &, const Ui::Color &, FontRenderer::font_rec_t &) const`, `void beginSvgDraw()`, `static void endSvgDraw()`. Protected members: `m_resManager`, `m_makeCurrent`, `m_width`/`m_height`, `m_fontRenderer`, `m_svgRenderer`, `m_rounded`.
 
 ### PopupRenderer
 
@@ -270,9 +272,18 @@ Protected helpers for subclasses: `bool beginRender()` (clear/viewport/blend + c
 - `bool isFirstElement(id_t) const`, `bool isLastElement(id_t) const`.
 - `void setContainerBorder(const Ui::Res::Type::border_t &)` - the popup container corner radii.
 - `void updateCorner(id_t cornerIndex, const std::vector<uint8_t> & pixels, fpx_t radius)` - update a single captured corner.
-- `bool render()` - `beginRender()` then draw container, item backgrounds/hover pills, theme-preview split swatches, item labels, per-item SVG icons (honoring `iconPlace`), preview letters, and right-aligned shortcut text.
+- `bool render()` - `beginRender(dropdown.bg)` then draw container, item backgrounds/hover pills, theme-preview split swatches, item labels, per-item SVG icons (honoring `iconPlace`), preview letters, and right-aligned shortcut text.
 - `void cleanup()` - clear elements + base cleanup.
 - `Ui::IEventApp` overrides: `bool onMouseMove(int,int)` (hover + submenu-open detection), `bool onMouseLeave()`, `element_event_t onMousePress(int,int,MouseButton,int)`, `element_event_t onMouseRelease(int,int,MouseButton)`. Presses/releases only fire for enabled leaf `MenuItem`s (submenu parents open on hover).
+
+### TooltipRenderer
+
+`ui/render/popup/tooltiprenderer.h` - `class TooltipRenderer final : public PopupRendererBase`. The tooltip, a toolbar or menu-bar button's or the one a content surface asks for (`WindowManager::setContentTooltip`, a snap's name): the `layout.json` `tooltip` box (its `border-radius`, text inset by its `padding`) in the theme's `tooltip` colours, and one line of text in the theme's `tooltip` font, cap-height centred.
+
+- `TooltipRenderer(Ui::task_fn_t makeCurrent, const Ui::Res::ResManager &, std::string text)` - `text` is already resolved through the locale.
+- `void setText(std::string text)` - the next tooltip's text: where its window can move (`PopupWindow::isMovable`) `WindowManager` keeps the one renderer and window, moved and retexted between shows, rather than a window, an EGL context and a font per tooltip.
+- `bool render()` - `beginRender(tooltip.bg)`, the rounded box, the text.
+- `Ui::IEventApp` overrides all do nothing: it takes no input - its window is input-transparent, so the pointer goes to what it covers - and `WindowManager` alone shows, moves and hides it beside its anchor (`syncTooltip`).
 
 ### DialogRenderer
 
@@ -291,7 +302,7 @@ Also defined here: `struct alignas(64) dialog_button_t final` - `{ bound_t bound
 - `void cleanup()` - clear buttons + base cleanup.
 - `Ui::IEventApp` overrides: `bool onMouseMove(int,int)` (button/close hover + scrollbar thumb drag), `bool onMouseLeave()`, `element_event_t onScroll(int,int,fpx_t deltaY)` (scrolls content; honors `input().scrollNatural`/`scrollSpeed`), `element_event_t onMousePress(int,int,MouseButton,int)`, `element_event_t onMouseRelease(int,int,MouseButton)`.
 
-Content scrolling is smoothed (exponential lerp toward a target); the scrollbar has a draggable thumb and track paging. Keyboard-triggered actions run a two-phase hover -> active -> fire animation timed off `input().keyAnimationDelay`.
+Content scrolling is smoothed (exponential lerp toward a target); the scrollbar has a draggable thumb and track paging. Keyboard-triggered actions run a two-phase hover -> active -> fire animation timed off `input().keyAnimationDelayMs`.
 
 ---
 
@@ -340,7 +351,7 @@ Two output modes controlled by `bgColor.a`: opaque composite (`a > 0`, blends fg
 
 `ui/gl/svgrenderer.h` - `class SvgRenderer : private Common::NonCopyable`. Header-only SVG rendering via librsvg + Cairo, with OpenGL texture caching. Loads/caches SVG documents process-wide, renders to a size-keyed texture cache, and draws textured quads. Supports tinting, scaling, and layered soft shadows.
 
-Nested types: `struct cache_key_t { std::string svgId; int width; int height; }` (with `std::hash` specialization) and `struct svg_texture_t { GLuint textureId; int width; int height; bool valid; }`.
+Types: `struct cache_key_t { std::string svgId; int width; int height; }` (with `std::hash` specialization) and, in `ui/gl/svgtexture.h`, `struct svg_texture_t { GLuint textureId; int width; int height; bool valid; }`.
 
 Frame + config:
 

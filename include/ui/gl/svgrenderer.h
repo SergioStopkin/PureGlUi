@@ -31,6 +31,7 @@
 #include "ui/config.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
+#include "ui/gl/svgtexture.h"
 #include "ui/res/type/bound.h"
 #include "ui/type.h"
 
@@ -100,18 +101,6 @@ struct std::hash<Ui::Gl::cache_key_t> { // NOLINT(altera-struct-pack-align)
 namespace Ui::Gl {
 
 class SvgRenderer : private Common::NonCopyable {
-public:
-    // Control whether textures are uploaded premultiplied for composited popups
-    static void setUploadPremultiplied(bool v) { s_svg_upload_premultiplied = v; }
-
-    struct alignas(16) svg_texture_t final {
-        GLuint textureId = 0;
-        int    width     = 0;
-        int    height    = 0;
-        bool   valid     = false;
-    };
-
-private:
     using RsvgHandlePtr = std::shared_ptr<RsvgHandle>;
 
     static RsvgHandlePtr wrapHandle(RsvgHandle * raw)
@@ -618,6 +607,9 @@ private:
     }
 
 public:
+    // Control whether textures are uploaded premultiplied for composited popups
+    static void setUploadPremultiplied(bool v) { s_svg_upload_premultiplied = v; }
+
     SvgRenderer() = default;
 
     ~SvgRenderer()

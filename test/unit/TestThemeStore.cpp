@@ -28,6 +28,7 @@
 #include "ui/res/respath.h"
 #include "ui/res/store/themestore.h"
 #include "ui/res/type/changed.h"
+#include "ui/res/type/theme.h"
 
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -114,6 +115,30 @@ TEST(ThemeStore, ScanThemeNamesDiscoversAndOrders)
     EXPECT_NE(std::find(names.begin(), names.end(), "graphite"), names.end());
     // The rest are sorted alphabetically after "default".
     EXPECT_TRUE(std::is_sorted(names.begin() + 1, names.end()));
+}
+
+// Every shipped theme, both modes, names each colour the tooltip and the toolbar
+// buttons draw with: one it leaves out or misspells falls back to its error colour
+TEST(ThemeStore, EveryThemeHasTooltipAndToolbarButtonColours)
+{
+    ThemeStore                     store;
+    LocaleManager                  locale;
+    const std::vector<std::string> names = store.scanThemeNames(resPath(), locale);
+    ASSERT_FALSE(names.empty()); // or the loop checks nothing and passes
+    for (const std::string & name : names) {
+        for (const std::string mode : { "dark", "light" }) {
+            SCOPED_TRACE(name + "-" + mode);
+            store.setThemeModeValue(mode);
+            (void)store.setThemeName(name, resPath());
+            const Ui::Res::Type::theme_t & theme = store.theme();
+            EXPECT_NE(theme.tooltip.fg, theme.colorError);
+            EXPECT_NE(theme.tooltip.bg, theme.colorError);
+            EXPECT_NE(theme.toolbarButton.bg, theme.colorError);
+            EXPECT_NE(theme.toolbarButtonHover.bg, theme.colorError);
+            EXPECT_NE(theme.toolbarButtonActive.bg, theme.colorError);
+            EXPECT_NE(theme.toolbarButtonDisabledColor, theme.colorError);
+        }
+    }
 }
 
 TEST(ThemeStore, PreviewColorsCachedForKnownMissingForUnknown)

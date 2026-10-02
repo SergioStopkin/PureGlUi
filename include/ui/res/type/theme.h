@@ -36,10 +36,8 @@ struct alignas(128) theme_t final {
     Ui::Res::Type::font_t topMenuFont;      // "top-menu"                (fallback: fontSans, 16, regular)
     Ui::Res::Type::font_t menuItemFont;     // "top-menu-item"           (fallback: fontSans, 16, regular)
     Ui::Res::Type::font_t shortcutFont;     // "top-menu-item-shortcut"  (fallback: fontMono, 16, regular)
-    Ui::Res::Type::font_t leftToolbarFont;  // "left-toolbar"            (fallback: fontSans, 24, bold)
-    Ui::Res::Type::font_t buttonFont;       // "button"                  (fallback: fontSans, 24, bold)
-    Ui::Res::Type::font_t rightToolbarFont; // "right-toolbar"           (fallback: fontSans, 24, regular)
     Ui::Res::Type::font_t statusBarFont;    // "status-bar"              (fallback: fontMono, 14, regular)
+    Ui::Res::Type::font_t tooltipFont;      // "tooltip"                 (fallback: fontSans, 16, regular)
     Ui::Res::Type::font_t workspaceTabFont; // "workspace-tab"           (fallback: fontSans, 14, regular)
     Ui::Res::Type::font_t dialogFont;       // "dialog" font
     Ui::Res::Type::font_t dialogTitleFont;  // "dialog-title" font
@@ -63,7 +61,10 @@ struct alignas(128) theme_t final {
     Ui::Res::Type::color_pair_t menuItem;            // "top-menu-item" color + transparent bg
     Ui::Res::Type::color_pair_t menuItemHover;       // "top-menu-item:hover"
     Ui::Res::Type::color_pair_t menuItemActive;      // "top-menu-item:active"
-    Ui::Res::Type::color_pair_t button;              // "button" color + background
+    Ui::Res::Type::color_pair_t toolbarButton;       // "toolbar-button" background; no text, so no color
+    Ui::Res::Type::color_pair_t toolbarButtonHover;  // "toolbar-button:hover" background, and while pressed
+    Ui::Res::Type::color_pair_t toolbarButtonActive; // "toolbar-button:active" background - armed (isActiveButton)
+    Ui::Res::Type::color_pair_t tooltip;             // "tooltip" color + background
     Ui::Res::Type::color_pair_t workspaceTab;        // "workspace-tab" color + background
     Ui::Res::Type::color_pair_t workspaceTabHover;   // "workspace-tab:hover"
     Ui::Res::Type::color_pair_t workspaceTabActive;  // "workspace-tab:active"
@@ -81,11 +82,7 @@ struct alignas(128) theme_t final {
     Ui::Res::Type::color_pair_t statusBar;           // "status-bar"
     Ui::Res::Type::color_pair_t statusBarActive;     // "status-bar:active"
 
-    // HSL lightness delta marking an armed toolbar button, in percentage
-    // points. Applied through Color::edgeColor so it lightens on a dark theme
-    // and darkens on a light one, rather than needing a second colour block
-    fpx_t buttonActiveContrast = 12.0F; // "button" active-contrast
-    fpx_t dialogLineHeight     = 1.4F;  // "dialog" line-height
+    fpx_t dialogLineHeight = 1.4F; // "dialog" line-height
     fpx_t shadowOpacity {};
 
     Ui::Res::Type::FontWeight workspaceTabActiveWeight =
@@ -102,12 +99,13 @@ struct alignas(128) theme_t final {
     Ui::Color colorModel;
     Ui::Color colorError;
     Ui::Color colorLoad;
-    Ui::Color colorInfo;             // "--cl-info" (Info dialog icon tint)
-    Ui::Color colorWarn;             // "--cl-warn" (Warning dialog icon tint)
-    Ui::Color menuItemDisabledColor; // "top-menu-item:disabled" color
-    Ui::Color separatorColor;        // "top-menu-separator"     background
-    Ui::Color shortcutColor;         // "top-menu-item-shortcut" color
-    Ui::Color shortcutHoverColor;    // "top-menu-item-shortcut:hover" color
+    Ui::Color colorInfo;                  // "--cl-info" (Info dialog icon tint)
+    Ui::Color colorWarn;                  // "--cl-warn" (Warning dialog icon tint)
+    Ui::Color menuItemDisabledColor;      // "top-menu-item:disabled" color
+    Ui::Color toolbarButtonDisabledColor; // "toolbar-button:disabled" color - its icon's flat tint
+    Ui::Color separatorColor;             // "top-menu-separator"     background
+    Ui::Color shortcutColor;              // "top-menu-item-shortcut" color
+    Ui::Color shortcutHoverColor;         // "top-menu-item-shortcut:hover" color
 
     bool operator==(const theme_t &) const = default;
 };

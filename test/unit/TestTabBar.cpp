@@ -254,3 +254,46 @@ TEST(TabBar, SetLoadingMissingIdIsNoop)
     EXPECT_FALSE(bar.find(1)->isLoading);
     EXPECT_EQ(bar.find(1)->progress, 0);
 }
+
+// ============================================================================
+// reveal - a tab activated other than by a click comes into view
+// ============================================================================
+
+TEST(TabBar, RevealInViewDoesNotScroll)
+{
+    TabBar bar;
+    bar.setTabs(tabs(10));
+    bar.scrollRight();
+    bar.scrollRight(); // tabs 2..5 shown, 4 at a time
+    bar.reveal(2, 4);
+    EXPECT_EQ(bar.scrollOffset(), 2U);
+    bar.reveal(5, 4);
+    EXPECT_EQ(bar.scrollOffset(), 2U);
+}
+
+TEST(TabBar, RevealPastTheRightEdgeShowsItLast)
+{
+    TabBar bar;
+    bar.setTabs(tabs(10));
+    bar.reveal(6, 4); // 0..3 shown -> 3..6
+    EXPECT_EQ(bar.scrollOffset(), 3U);
+}
+
+TEST(TabBar, RevealLeftOfTheOffsetShowsItFirst)
+{
+    TabBar bar;
+    bar.setTabs(tabs(10));
+    for (int step = 0; step < 6; ++step) {
+        bar.scrollRight();
+    }
+    bar.reveal(0, 4); // wrapping round from the last tab
+    EXPECT_EQ(bar.scrollOffset(), 0U);
+}
+
+TEST(TabBar, RevealOneShownPutsItAtTheOffset)
+{
+    TabBar bar;
+    bar.setTabs(tabs(10));
+    bar.reveal(7, 1);
+    EXPECT_EQ(bar.scrollOffset(), 7U);
+}

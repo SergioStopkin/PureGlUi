@@ -468,6 +468,79 @@ public:
         XFlush(m_display);
     }
 
+    void setWindowIcon(const std::string & mainIconPath, const std::string & symbolicIconPath) override
+    {
+        // Load main icon
+        GError *     gerr       = nullptr;
+        GFile *      gfile      = g_file_new_for_path(mainIconPath.c_str());
+        RsvgHandle * mainHandle = rsvg_handle_new_from_gfile_sync(gfile, RSVG_HANDLE_FLAGS_NONE, nullptr, &gerr);
+        g_object_unref(gfile);
+        if (mainHandle == nullptr) {
+            std::cerr << "[X11Window] Failed to load icon: " << mainIconPath;
+            if (gerr != nullptr) {
+                std::cerr << " (" << gerr->message << ")";
+                g_error_free(gerr);
+            }
+            std::cerr << std::endl;
+            return;
+        }
+
+        // Try to load symbolic icon (optional)
+        RsvgHandle * symbolicHandle = nullptr;
+        if (!symbolicIconPath.empty()) {
+            GError * serr   = nullptr;
+            GFile *  sgfile = g_file_new_for_path(symbolicIconPath.c_str());
+            symbolicHandle  = rsvg_handle_new_from_gfile_sync(sgfile, RSVG_HANDLE_FLAGS_NONE, nullptr, &serr);
+            g_object_unref(sgfile);
+            if (serr != nullptr) {
+                g_error_free(serr);
+            }
+        }
+
+        // NOLINTNEXTLINE(google-runtime-int)
+        std::vector<Ui::Window::Platform::X11::Cardinal> iconData;
+
+        // Render symbolic icon for desktop environment contexts (panels, menus, notifications)
+        if (symbolicHandle != nullptr) {
+            constexpr std::array<int, 6> symbolicSizes = { 8, 16, 22, 24, 32, 48 };
+            for (const int size : symbolicSizes) {
+                renderSvgToIconData(symbolicHandle, size, iconData);
+            }
+        }
+
+        // Render main icon for window decorations and large contexts
+        constexpr std::array<int, 2> mainSizes = { 512, 1024 };
+        for (const int size : mainSizes) {
+            renderSvgToIconData(mainHandle, size, iconData);
+        }
+
+        if (!iconData.empty()) {
+            const Atom netWmIcon = XInternAtom(m_display, "_NET_WM_ICON", X11::False);
+            const Atom cardinal  = XInternAtom(m_display, "CARDINAL", X11::False);
+
+            XChangeProperty(m_display,
+                            m_xWindow,
+                            netWmIcon,
+                            cardinal,
+                            32,
+                            PropModeReplace,
+                            Common::asBytes(iconData.data()),
+                            iconData.size());
+
+            std::cout << "[X11Window] Window icon set from " << mainIconPath;
+            if (symbolicHandle != nullptr) {
+                std::cout << " (with symbolic variant for small sizes)";
+            }
+            std::cout << std::endl;
+        }
+
+        // Clean up
+        g_object_unref(mainHandle);
+        if (symbolicHandle != nullptr) {
+            g_object_unref(symbolicHandle);
+        }
+    }
+
 protected:
     // -------- X11-specific members (protected for derived classes like PopupWindow) --------
 
@@ -706,80 +779,6 @@ private:
         cairo_destroy(cr);
         cairo_surface_destroy(surface);
         return true;
-    }
-
-public:
-    void setWindowIcon(const std::string & mainIconPath, const std::string & symbolicIconPath) override
-    {
-        // Load main icon
-        GError *     gerr       = nullptr;
-        GFile *      gfile      = g_file_new_for_path(mainIconPath.c_str());
-        RsvgHandle * mainHandle = rsvg_handle_new_from_gfile_sync(gfile, RSVG_HANDLE_FLAGS_NONE, nullptr, &gerr);
-        g_object_unref(gfile);
-        if (mainHandle == nullptr) {
-            std::cerr << "[X11Window] Failed to load icon: " << mainIconPath;
-            if (gerr != nullptr) {
-                std::cerr << " (" << gerr->message << ")";
-                g_error_free(gerr);
-            }
-            std::cerr << std::endl;
-            return;
-        }
-
-        // Try to load symbolic icon (optional)
-        RsvgHandle * symbolicHandle = nullptr;
-        if (!symbolicIconPath.empty()) {
-            GError * serr   = nullptr;
-            GFile *  sgfile = g_file_new_for_path(symbolicIconPath.c_str());
-            symbolicHandle  = rsvg_handle_new_from_gfile_sync(sgfile, RSVG_HANDLE_FLAGS_NONE, nullptr, &serr);
-            g_object_unref(sgfile);
-            if (serr != nullptr) {
-                g_error_free(serr);
-            }
-        }
-
-        // NOLINTNEXTLINE(google-runtime-int)
-        std::vector<Ui::Window::Platform::X11::Cardinal> iconData;
-
-        // Render symbolic icon for desktop environment contexts (panels, menus, notifications)
-        if (symbolicHandle != nullptr) {
-            constexpr std::array<int, 6> symbolicSizes = { 8, 16, 22, 24, 32, 48 };
-            for (const int size : symbolicSizes) {
-                renderSvgToIconData(symbolicHandle, size, iconData);
-            }
-        }
-
-        // Render main icon for window decorations and large contexts
-        constexpr std::array<int, 2> mainSizes = { 512, 1024 };
-        for (const int size : mainSizes) {
-            renderSvgToIconData(mainHandle, size, iconData);
-        }
-
-        if (!iconData.empty()) {
-            const Atom netWmIcon = XInternAtom(m_display, "_NET_WM_ICON", X11::False);
-            const Atom cardinal  = XInternAtom(m_display, "CARDINAL", X11::False);
-
-            XChangeProperty(m_display,
-                            m_xWindow,
-                            netWmIcon,
-                            cardinal,
-                            32,
-                            PropModeReplace,
-                            Common::asBytes(iconData.data()),
-                            iconData.size());
-
-            std::cout << "[X11Window] Window icon set from " << mainIconPath;
-            if (symbolicHandle != nullptr) {
-                std::cout << " (with symbolic variant for small sizes)";
-            }
-            std::cout << std::endl;
-        }
-
-        // Clean up
-        g_object_unref(mainHandle);
-        if (symbolicHandle != nullptr) {
-            g_object_unref(symbolicHandle);
-        }
     }
 };
 

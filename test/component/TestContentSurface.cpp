@@ -29,9 +29,12 @@
 
 #if defined(HAVE_X11)
 
+#include "testidkind.h"
+#include "ui/idkind.h"
 #include "ui/interface/irenderer.h"
 #include "ui/interface/iwindow.h"
 #include "ui/res/resmanager.h"
+#include "ui/window/pointershape.h"
 #include "ui/window/windowmanager.h"
 
 #include <gtest/gtest.h>
@@ -42,6 +45,10 @@
 #endif
 
 namespace PureGlUi {
+
+constexpr Ui::id_t SURFACE_A = Ui::idOf(TestIdKind::Surface, 10);
+constexpr Ui::id_t SURFACE_B = Ui::idOf(TestIdKind::Surface, 20);
+constexpr Ui::id_t UNKNOWN   = Ui::idOf(TestIdKind::Surface, 999);
 
 // Pure-surface IWindow stub with a settable native handle - enough to register
 // as a content surface and be resolved by handle.
@@ -90,9 +97,12 @@ private:
     Ui::Window::NativeWindowHandle m_handle;
 };
 
-// IRenderer stub - never rendered here, just fills the pairing slot.
+// IRenderer stub - never rendered here, just fills the pairing slot and counts the
+// leaves it is told of
 class FakeRenderer final : public Ui::IRenderer {
 public:
+    [[nodiscard]] int leaveCount() const { return m_leaveCount; }
+
     bool                        render() override { return true; }
     void                        resize(Ui::fpx_t /*width*/, Ui::fpx_t /*height*/) override { }
     void                        apply(Ui::Res::Type::Changed /*changed*/) override { }
@@ -110,8 +120,15 @@ public:
     {
         return {};
     }
-    bool                        onMouseLeave() override { return false; }
+    bool onMouseLeave() override
+    {
+        ++m_leaveCount;
+        return false;
+    }
     Ui::Render::element_event_t onScroll(int /*x*/, int /*y*/, Ui::fpx_t /*deltaY*/) override { return {}; }
+
+private:
+    int m_leaveCount = 0;
 };
 
 class ContentSurfaceTest : public ::testing::Test {
@@ -130,14 +147,14 @@ TEST_F(ContentSurfaceTest, RegisteredHandleResolvesToId)
     FakeRenderer rendererA;
     FakeRenderer rendererB;
 
-    windowManager.addContentSurface(10, windowA, rendererA);
-    windowManager.addContentSurface(20, windowB, rendererB);
+    windowManager.addContentSurface(SURFACE_A, windowA, rendererA);
+    windowManager.addContentSurface(SURFACE_B, windowB, rendererB);
 
-    EXPECT_EQ(windowManager.childIdForHandle(1001), 10);
-    EXPECT_EQ(windowManager.childIdForHandle(1002), 20);
+    EXPECT_EQ(windowManager.childIdForHandle(1001), SURFACE_A);
+    EXPECT_EQ(windowManager.childIdForHandle(1002), SURFACE_B);
     EXPECT_EQ(windowManager.childIdForHandle(9999), Ui::INVALID_ID); // unregistered
-    EXPECT_EQ(windowManager.contentWindow(10), &windowA);
-    EXPECT_EQ(windowManager.contentPairing(20), &rendererB);
+    EXPECT_EQ(windowManager.contentWindow(SURFACE_A), &windowA);
+    EXPECT_EQ(windowManager.contentPairing(SURFACE_B), &rendererB);
 }
 
 // Removing a surface drops it from the lookup and clears the active id when it was
@@ -146,13 +163,13 @@ TEST_F(ContentSurfaceTest, RemoveDropsLookupAndResetsActive)
 {
     FakeWindow   window { 1001 };
     FakeRenderer renderer;
-    windowManager.addContentSurface(10, window, renderer);
-    windowManager.setActiveContentSurface(10);
+    windowManager.addContentSurface(SURFACE_A, window, renderer);
+    windowManager.setActiveContentSurface(SURFACE_A);
     EXPECT_EQ(windowManager.activeContentWindow(), &window);
 
-    windowManager.removeContentSurface(10);
+    windowManager.removeContentSurface(SURFACE_A);
     EXPECT_EQ(windowManager.childIdForHandle(1001), Ui::INVALID_ID);
-    EXPECT_EQ(windowManager.activeContentWindow(), nullptr); // active was 10 -> reset
+    EXPECT_EQ(windowManager.activeContentWindow(), nullptr); // active was A -> reset
 }
 
 // The ready flag defaults true, toggles, and reads false for an unknown id.
@@ -160,14 +177,66 @@ TEST_F(ContentSurfaceTest, ReadyFlagTracks)
 {
     FakeWindow   window { 1001 };
     FakeRenderer renderer;
-    windowManager.addContentSurface(10, window, renderer);
+    windowManager.addContentSurface(SURFACE_A, window, renderer);
 
-    EXPECT_TRUE(windowManager.isContentReady(10));
-    windowManager.setContentSurfaceReady(10, false);
-    EXPECT_FALSE(windowManager.isContentReady(10));
-    windowManager.setContentSurfaceReady(10, true);
-    EXPECT_TRUE(windowManager.isContentReady(10));
-    EXPECT_FALSE(windowManager.isContentReady(999)); // unknown id
+    EXPECT_TRUE(windowManager.isContentReady(SURFACE_A));
+    windowManager.setContentSurfaceReady(SURFACE_A, false);
+    EXPECT_FALSE(windowManager.isContentReady(SURFACE_A));
+    windowManager.setContentSurfaceReady(SURFACE_A, true);
+    EXPECT_TRUE(windowManager.isContentReady(SURFACE_A));
+    EXPECT_FALSE(windowManager.isContentReady(UNKNOWN));
+}
+
+// The surfaces overlap, so switching the active one under the pointer takes it off
+// the one hidden: that one is told, once, so its snap name and pointer go with it
+TEST_F(ContentSurfaceTest, SwitchingUnderThePointerLeavesTheHiddenOne)
+{
+    FakeWindow   windowA { 1001 };
+    FakeWindow   windowB { 1002 };
+    FakeRenderer rendererA;
+    FakeRenderer rendererB;
+    windowManager.addContentSurface(SURFACE_A, windowA, rendererA);
+    windowManager.addContentSurface(SURFACE_B, windowB, rendererB);
+    windowManager.setActiveContentSurface(SURFACE_A);
+    windowManager.onMouseMove(5, 5, SURFACE_A);
+
+    windowManager.setActiveContentSurface(SURFACE_B);
+    EXPECT_EQ(rendererA.leaveCount(), 1);
+    EXPECT_EQ(rendererB.leaveCount(), 0);
+
+    windowManager.setActiveContentSurface(SURFACE_B); // already under the pointer
+    EXPECT_EQ(rendererA.leaveCount(), 1);
+
+    windowManager.setActiveContentSurface(SURFACE_A);
+    EXPECT_EQ(rendererB.leaveCount(), 1);
+}
+
+// A surface removed from under the pointer is forgotten there too: nothing tells
+// it of a leave once it is gone
+TEST_F(ContentSurfaceTest, RemovingTheOneUnderThePointerForgetsIt)
+{
+    FakeWindow   windowA { 1001 };
+    FakeWindow   windowB { 1002 };
+    FakeRenderer rendererA;
+    FakeRenderer rendererB;
+    windowManager.addContentSurface(SURFACE_A, windowA, rendererA);
+    windowManager.addContentSurface(SURFACE_B, windowB, rendererB);
+    windowManager.setActiveContentSurface(SURFACE_A);
+    windowManager.onMouseMove(5, 5, SURFACE_A);
+
+    windowManager.removeContentSurface(SURFACE_A);
+    windowManager.setActiveContentSurface(SURFACE_B);
+    EXPECT_EQ(rendererA.leaveCount(), 0);
+    EXPECT_EQ(rendererB.leaveCount(), 0);
+}
+
+// A tooltip or pointer for an id never registered makes no surface of it
+TEST_F(ContentSurfaceTest, TooltipAndPointerForAnUnknownIdDoNothing)
+{
+    windowManager.setContentTooltip(UNKNOWN, "name", { 0.0F, 0.0F, 8.0F, 8.0F });
+    windowManager.setContentPointer(UNKNOWN, Ui::Window::PointerShape::Crosshair);
+    EXPECT_FALSE(windowManager.isContentReady(UNKNOWN)); // an entry made by either would read ready
+    EXPECT_EQ(windowManager.contentWindow(UNKNOWN), nullptr);
 }
 
 } // namespace PureGlUi

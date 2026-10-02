@@ -29,7 +29,8 @@
  * half - a rounded number must never lose digits.
  */
 
-#include "ui/elementid.h"
+#include "testidkind.h"
+#include "ui/idkind.h"
 #include "ui/intent.h"
 #include "ui/intentkind.h"
 #include "ui/interface/irender.h"
@@ -373,16 +374,15 @@ TEST_F(DockRowLayoutTest, ACollapsedDockDrawsNoRows)
 // What a row offers to hit-testing
 // ============================================================================
 
-// A row with no id renders but never reports, so it offers no element at all.
-// The dock-row offset wraps INVALID_ID into an id that looks real, and a click on
-// it came back to the host as activateRow(INVALID_ID)
+// A row with no id renders but never reports, so it offers no element at all - a
+// click on one would come back to the host as activateRow(INVALID_ID)
 TEST_F(DockRowLayoutTest, ARowWithNoIdOffersNoElement)
 {
     Ui::Render::DockColumn dock(1, seed("row-inert"), resManager);
     dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
 
     Ui::Res::Dock::row_t selectable;
-    selectable.id    = 3;
+    selectable.id    = Ui::idOf(TestIdKind::Row, 3);
     selectable.label = "Part";
     Ui::Res::Dock::row_t inert;
     inert.label = "Area";
@@ -398,22 +398,22 @@ TEST_F(DockRowLayoutTest, ARowWithNoIdOffersNoElement)
             rowIds.emplace_back(element.id);
         }
     }
-    EXPECT_EQ(rowIds, std::vector<Ui::id_t> { Ui::toDockRowElementId(selectable.id) });
+    EXPECT_EQ(rowIds, std::vector<Ui::id_t> { selectable.id });
 }
 
 // ============================================================================
 // Row clicks reach the host with its own id
 // ============================================================================
 
-// The dock offsets a row id into the reserved range and Context takes it off
-// again - two layers, so only the round trip shows the host gets back what it sent
+// The row id passes through the dock and Context as the element id - two layers,
+// so only the round trip shows the host gets back what it sent
 TEST_F(DockRowLayoutTest, ARowClickActivatesTheHostsOwnId)
 {
     Ui::Render::DockColumn dock(1, seed("row-activate"), resManager);
     dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
 
     Ui::Res::Dock::row_t row;
-    row.id          = 42;
+    row.id          = Ui::idOf(TestIdKind::Row, 42);
     row.label       = "Part";
     row.hasChildren = true;
     dock.setRows({ row });
@@ -422,7 +422,9 @@ TEST_F(DockRowLayoutTest, ARowClickActivatesTheHostsOwnId)
     dock.appendElements(layout);
 
     const Ui::result_t              result = clickMiddleOf(layout, Ui::Render::UiElementType::DockRow);
-    const std::vector<Ui::intent_t> expected { Ui::intent_t { Ui::IntentKind::ActivateRow, 42, {}, {} } };
+    const std::vector<Ui::intent_t> expected {
+        Ui::intent_t { Ui::IntentKind::ActivateRow, Ui::idOf(TestIdKind::Row, 42), {}, {} }
+    };
     EXPECT_EQ(result.intents, expected);
 }
 
@@ -434,7 +436,7 @@ TEST_F(DockRowLayoutTest, AnExpanderClickTogglesTheSameRow)
     dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
 
     Ui::Res::Dock::row_t row;
-    row.id          = 42;
+    row.id          = Ui::idOf(TestIdKind::Row, 42);
     row.label       = "Part";
     row.hasChildren = true;
     dock.setRows({ row });
@@ -443,7 +445,9 @@ TEST_F(DockRowLayoutTest, AnExpanderClickTogglesTheSameRow)
     dock.appendElements(layout);
 
     const Ui::result_t              result = clickMiddleOf(layout, Ui::Render::UiElementType::DockExpander);
-    const std::vector<Ui::intent_t> expected { Ui::intent_t { Ui::IntentKind::ToggleRow, 42, {}, {} } };
+    const std::vector<Ui::intent_t> expected {
+        Ui::intent_t { Ui::IntentKind::ToggleRow, Ui::idOf(TestIdKind::Row, 42), {}, {} }
+    };
     EXPECT_EQ(result.intents, expected);
 }
 
@@ -456,7 +460,7 @@ namespace {
     Ui::Res::Dock::row_t unitRow()
     {
         Ui::Res::Dock::row_t row;
-        row.id    = 42;
+        row.id    = Ui::idOf(TestIdKind::Row, 42);
         row.label = "Units";
         row.value = "mm";
         row.kind  = Ui::Res::Dock::RowKind::Menu;
@@ -500,7 +504,7 @@ TEST_F(DockRowLayoutTest, AValueClickOpensTheRowMenuByElementId)
 
     const Ui::result_t              result = clickMiddleOf(layout, Ui::Render::UiElementType::DockMenu);
     const std::vector<Ui::intent_t> expected {
-        Ui::intent_t { Ui::IntentKind::OpenRowMenu, Ui::toDockRowElementId(42), {}, {} }
+        Ui::intent_t { Ui::IntentKind::OpenRowMenu, Ui::idOf(TestIdKind::Row, 42), {}, {} }
     };
     EXPECT_EQ(result.intents, expected);
 }
@@ -517,7 +521,9 @@ TEST_F(DockRowLayoutTest, ALabelClickOnAMenuRowStillActivatesIt)
     const Ui::fpx_t                 x      = dock.content().x + resManager.popup().itemPaddingH + 1.0F;
     const Ui::fpx_t                 y      = dock.content().y + (resManager.popup().itemHeight / 2.0F);
     const Ui::result_t              result = clickAt(layout, x, y);
-    const std::vector<Ui::intent_t> expected { Ui::intent_t { Ui::IntentKind::ActivateRow, 42, {}, {} } };
+    const std::vector<Ui::intent_t> expected {
+        Ui::intent_t { Ui::IntentKind::ActivateRow, Ui::idOf(TestIdKind::Row, 42), {}, {} }
+    };
     EXPECT_EQ(result.intents, expected);
 }
 
@@ -546,13 +552,13 @@ TEST_F(DockRowLayoutTest, OnlyAMenuRowNamesAMenu)
     dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
 
     Ui::Res::Dock::row_t text = unitRow();
-    text.id                   = 43;
+    text.id                   = Ui::idOf(TestIdKind::Row, 43);
     text.kind                 = Ui::Res::Dock::RowKind::Text;
     dock.setRows({ unitRow(), text });
 
-    EXPECT_EQ(dock.menuKeyOf(42), "View:Units");
-    EXPECT_EQ(dock.menuKeyOf(43), "");
-    EXPECT_EQ(dock.menuKeyOf(44), "");
+    EXPECT_EQ(dock.menuKeyOf(Ui::idOf(TestIdKind::Row, 42)), "View:Units");
+    EXPECT_EQ(dock.menuKeyOf(Ui::idOf(TestIdKind::Row, 43)), "");
+    EXPECT_EQ(dock.menuKeyOf(Ui::idOf(TestIdKind::Row, 44)), "");
 }
 
 // ============================================================================
@@ -572,20 +578,20 @@ namespace {
         std::vector<Ui::Res::Dock::row_t> rows;
 
         Ui::Res::Dock::row_t group;
-        group.id          = 1;
+        group.id          = Ui::idOf(TestIdKind::Row, 1);
         group.label       = "Geometry";
         group.hasChildren = true;
         group.isExpanded  = true;
         rows.emplace_back(group);
 
         Ui::Res::Dock::row_t deep = group;
-        deep.id                   = 2;
+        deep.id                   = Ui::idOf(TestIdKind::Row, 2);
         deep.label                = "Centroid";
         deep.depth                = 2;
         rows.emplace_back(deep);
 
         Ui::Res::Dock::row_t slider;
-        slider.id    = 3;
+        slider.id    = Ui::idOf(TestIdKind::Row, 3);
         slider.label = "Offset";
         slider.kind  = Ui::Res::Dock::RowKind::Slider;
         slider.ratio = 0.5F;
@@ -593,9 +599,9 @@ namespace {
 
         rows.emplace_back(unitRow());
 
-        for (Ui::id_t id = 100; id < 120; ++id) {
+        for (Ui::id_t serial = 100; serial < 120; ++serial) {
             Ui::Res::Dock::row_t text;
-            text.id    = id;
+            text.id    = Ui::idOf(TestIdKind::Row, serial);
             text.label = "Row";
             text.value = "1.0";
             rows.emplace_back(text);

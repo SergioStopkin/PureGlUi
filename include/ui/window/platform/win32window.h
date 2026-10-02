@@ -431,18 +431,30 @@ public:
 
     // -------- Win32-specific methods (called by WindowBase via CRTP) --------
 
-    bool createPopup(int screenX, int screenY, fpx_t width, fpx_t height, HWND parentHwnd)
+    // An input-transparent popup's hit test hands the pointer on to the window it
+    // covers, which is this thread's, so HTTRANSPARENT reaches it
+    static LRESULT CALLBACK inputTransparentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
-        WNDCLASSW wc     = {};
-        wc.lpfnWndProc   = DefWindowProcW;
-        wc.hInstance     = GetModuleHandle(nullptr);
-        wc.lpszClassName = L"PureGlUiPopupClass";
+        if (msg == WM_NCHITTEST) {
+            return HTTRANSPARENT;
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    bool createPopup(int screenX, int screenY, fpx_t width, fpx_t height, HWND parentHwnd, bool isInputTransparent)
+    {
+        // A class each, since the window procedure is the class's
+        const LPCWSTR className = isInputTransparent ? L"PureGlUiInputTransparentPopupClass" : L"PureGlUiPopupClass";
+        WNDCLASSW     wc        = {};
+        wc.lpfnWndProc          = isInputTransparent ? inputTransparentWndProc : DefWindowProcW;
+        wc.hInstance            = GetModuleHandle(nullptr);
+        wc.lpszClassName        = className;
         RegisterClassW(&wc);
 
         // WS_POPUP: no decorations. WS_EX_TOPMOST: always on top. WS_EX_TOOLWINDOW: no taskbar entry.
         // Created hidden - caller renders first frame then calls show() to avoid flash.
         m_hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
-                                 L"PureGlUiPopupClass",
+                                 className,
                                  L"",
                                  WS_POPUP,
                                  screenX,

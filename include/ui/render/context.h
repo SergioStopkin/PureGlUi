@@ -18,7 +18,6 @@
 #pragma once
 
 #include "common/noncopyable.h"
-#include "ui/elementid.h"
 #include "ui/intent.h"
 #include "ui/render/binding.h"
 #include "ui/render/elementevent.h"
@@ -103,14 +102,9 @@ public:
         case Ui::IntentKind::CopyText:
             result.intents.push_back({ binding.intent, INVALID_ID, {}, m_resManager.statusText() });
             break;
-        case Ui::IntentKind::ActivateRow:
-        case Ui::IntentKind::ToggleRow:
-            // Back out of the reserved range, so the host receives the row id
-            // it projected rather than an element id it never issued
-            result.intents.push_back({ binding.intent, Ui::toDockRowId(click.id), {}, {} });
-            break;
         default:
-            // id-carrying intents (SwitchTab, CloseTab, OpenPopup, OpenDialog)
+            // id-carrying intents (SwitchTab, CloseTab, OpenPopup, OpenDialog, and
+            // ActivateRow/ToggleRow, a dock row's element id being the host's row id)
             result.intents.push_back({ binding.intent, click.id, {}, {} });
             break;
         }

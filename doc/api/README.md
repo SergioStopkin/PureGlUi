@@ -52,7 +52,7 @@ Input and execution are decoupled through a tagged intent vocabulary:
 - Intents-out: `Ui::Render::Context` maps clicks/keys to a `Ui::intent_t`
   (a tagged `IntentKind` + payload). See [render.md](render.md), [vocabulary.md](vocabulary.md).
 - Intents-in: `Ui::routeIntent(intent, chrome)` is a pure `IntentKind -> command`
-  switch over `Ui::IChromeCommands` (emitAction/openPopup/openDialog/switchTab/...).
+  switch over `Ui::IChromeCommands` (emitAction/openPopup/openDialog/setActiveTab/...).
   `Ui::Shell` privately implements `IChromeCommands`. See [interfaces.md](interfaces.md).
 
 This is why the framework is host-free: the same intent stream can be recorded,
@@ -71,7 +71,8 @@ hook, and work the framework can finish itself (tab scroll, dock resize) sets
 
 - Content surfaces: `WindowManager::addContentSurface` / `removeContentSurface` /
   `setActiveContentSurface` / `setContentSurfaceReady` register host-owned child
-  render surfaces (e.g. a 3D viewport). The framework drives
+  render surfaces (e.g. a 3D viewport), and `setContentPointer` says what the
+  pointer shows over one. The framework drives
   `[main window] + content surfaces` blind through `IWindow` + `IRenderer` + `IEventApp`.
 - Dock content: `WindowManager::setDockRows(dockName, rows)` projects host rows
   into a dock the way `TabBar` takes tabs - the framework renders and hit-tests

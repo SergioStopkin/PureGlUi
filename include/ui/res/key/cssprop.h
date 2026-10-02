@@ -44,7 +44,6 @@ enum class CssPropKey : unsigned char {
     MinWidth,        // min-width
     MinHeight,       // min-height
     LineHeight,      // line-height
-    ActiveContrast,  // active-contrast
     FontFamily,      // font-family
     FontSize,        // font-size
     FontWeight,      // font-weight
@@ -82,7 +81,6 @@ enum class CssPropKey : unsigned char {
     case CssPropKey::MinWidth: return "min-width";
     case CssPropKey::MinHeight: return "min-height";
     case CssPropKey::LineHeight: return "line-height";
-    case CssPropKey::ActiveContrast: return "active-contrast";
     case CssPropKey::FontFamily: return "font-family";
     case CssPropKey::FontSize: return "font-size";
     case CssPropKey::FontWeight: return "font-weight";

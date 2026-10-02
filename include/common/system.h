@@ -97,15 +97,6 @@ public:
 #endif
     }
 
-private:
-    static std::string formatGHz(double ghz)
-    {
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(2) << ghz << " GHz";
-        return oss.str();
-    }
-
-public:
     // Base CPU clock frequency as "X.XX GHz", or "N/A" if unavailable.
     // Apple Silicon does not expose hw.cpufrequency; we fall back to parsing
     // "@ X.YGHz" out of the CPU brand string when present.
@@ -240,6 +231,14 @@ public:
             ((void (*)(id, SEL, id))objc_msgSend)(nsApp, sel_registerName("setApplicationName:"), nsStr);
         }
 #endif
+    }
+
+private:
+    static std::string formatGHz(double ghz)
+    {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(2) << ghz << " GHz";
+        return oss.str();
     }
 };
 

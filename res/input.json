@@ -6,7 +6,10 @@
     "snapThreshold": 0.5
   },
   "keyAnimation": {
-    "delay": 0.12
+    "delayMs": 120
+  },
+  "tooltip": {
+    "delayMs": 400
   },
   "zoom": {
     "step": 0.03,

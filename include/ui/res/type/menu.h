@@ -30,23 +30,24 @@ namespace Ui::Res::Type {
 // entry, a dropdown row, a separator, or a submenu - distinguished only by
 // which fields are set and whether `items` is empty. Recursive via `items`.
 struct alignas(128) menu_t final {
-    id_t                     id    = INVALID_ID; // numeric runtime id (hit-test, click routing, m_actionMap)
-    int16_t                  order = 0;          // bar ordering; top-level only, 0 when nested
-    std::string              actionKey; // canonical action key ("" = none); dispatched via Ui::Action::Registry
-    bool                     showsThemePreview = false; // render hint: draw theme-preview swatch
-    std::string              label; // value + display: get(label) -> display text, and the value passed to the action
-    bool                     visible     = true;
-    bool                     enabled     = true;
-    bool                     separator   = false; // render as a separator line
-    fpx_t                    popupHeight = 0;     // precomputed dropdown content height (CSS px); top-level only
-    std::string              submenu;             // auto-key: subdir under res/submenu/ to auto-populate children
-    std::string              submenuActionKey;    // canonical action key attached to each auto-generated child
-    std::string              shortcut;            // display text (e.g. "Ctrl+O")
-    std::string              icon;                // SVG icon filename
-    Ui::Res::Type::IconPlace iconPlace = Ui::Res::Type::IconPlace::Left; // icon position relative to the label
-    Ui::Res::Type::dialog_t  dialog;                                     // dialog config (empty title = no dialog)
-    std::vector<menu_t>      items;                                      // child nodes (empty = leaf)
+    Ui::Res::Type::dialog_t dialog;          // dialog config (empty title = no dialog)
+    id_t                    id = INVALID_ID; // numeric runtime id (hit-test, click routing, m_actionMap)
+    std::vector<menu_t>     items;           // child nodes (empty = leaf)
+    std::string             actionKey;       // canonical action key ("" = none); dispatched via Ui::Action::Registry
+    std::string             label;   // value + display: get(label) -> display text, and the value passed to the action
+    std::string             submenu; // auto-key: subdir under res/submenu/ to auto-populate children
+    std::string             submenuActionKey; // canonical action key attached to each auto-generated child
+    std::string             shortcut;         // display text (e.g. "Ctrl+O")
+    std::string             icon;             // SVG icon filename
+    std::string             tooltip;          // locale key shown beside it as a menu-bar button ("" = none)
     Ui::key_t key; // authored hierarchical identity, e.g. "view:displayMode:shaded" (forward-looking; "" = none)
+    fpx_t     popupHeight              = 0;     // precomputed dropdown content height (CSS px); top-level only
+    int16_t   order                    = 0;     // bar ordering; top-level only, 0 when nested
+    bool      showsThemePreview        = false; // render hint: draw theme-preview swatch
+    bool      visible                  = true;
+    bool      enabled                  = true;
+    bool      separator                = false;                          // render as a separator line
+    Ui::Res::Type::IconPlace iconPlace = Ui::Res::Type::IconPlace::Left; // icon position relative to the label
 
     bool operator==(const menu_t &) const = default;
 };

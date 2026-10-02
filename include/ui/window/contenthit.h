@@ -25,7 +25,7 @@ namespace Ui::Window {
 // frame. In xwaylandComposite mode the offscreen child receives main-local
 // coords, so the renderer would otherwise see out-of-bounds x/y.
 // Events route to the surface's pairing (the host's Connector).
-struct alignas(16) ContentHit final {
+struct alignas(16) content_hit_t final {
     Ui::IRenderer * pairing = nullptr;
     int             lx      = 0;
     int             ly      = 0;

@@ -26,6 +26,8 @@
  * "scrollbar" block; dock state is seeded per test so nothing leaks between them.
  */
 
+#include "testidkind.h"
+#include "ui/idkind.h"
 #include "ui/render/dockcolumn.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uilayout.h"
@@ -82,7 +84,7 @@ protected:
         rows.reserve(count);
         for (std::size_t i = 0; i < count; ++i) {
             row_t row;
-            row.id    = static_cast<Ui::id_t>(i + 1);
+            row.id    = Ui::idOf(PureGlUi::TestIdKind::Row, i + 1);
             row.label = "row" + std::to_string(i);
             rows.emplace_back(std::move(row));
         }

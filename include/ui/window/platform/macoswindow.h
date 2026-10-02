@@ -341,7 +341,7 @@ public:
     // Create a borderless popup NSWindow as a child of `parent`, shared GL context.
     // screenX/screenY are top-left in physical pixels; width/height are physical pixels.
     // Leaves m_bound.x/y untouched (callers set those via setPosition() as parent-relative).
-    bool createAsPopup(int screenX, int screenY, fpx_t width, fpx_t height, NSWindow* parent)
+    bool createAsPopup(int screenX, int screenY, fpx_t width, fpx_t height, NSWindow* parent, bool isInputTransparent)
     {
         if (!parent) {
             std::cerr << "[MacOsWindow] createAsPopup requires parent NSWindow" << std::endl;
@@ -372,8 +372,9 @@ public:
             [m_nsWindow setOpaque:NO];
             [m_nsWindow setBackgroundColor:[NSColor clearColor]];
             [m_nsWindow setHasShadow:NO];
-            [m_nsWindow setIgnoresMouseEvents:NO];
-            [m_nsWindow setAcceptsMouseMovedEvents:YES];
+            // An input-transparent popup hands every pointer event to the window it covers
+            [m_nsWindow setIgnoresMouseEvents:isInputTransparent];
+            [m_nsWindow setAcceptsMouseMovedEvents:!isInputTransparent];
 
             // Share GL pixel format with the parent for context sharing (works with either HW or SW renderer).
             NSOpenGLPixelFormatAttribute attrs[] = { NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion3_2Core,

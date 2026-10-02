@@ -50,7 +50,7 @@ public:
         log.emplace_back("closePopup");
     }
     void openDialog(Ui::id_t itemId) override { log.emplace_back("openDialog(" + std::to_string(itemId) + ")"); }
-    void switchTab(Ui::id_t tabId) override { log.emplace_back("switchTab(" + std::to_string(tabId) + ")"); }
+    void setActiveTab(Ui::id_t tabId) override { log.emplace_back("setActiveTab(" + std::to_string(tabId) + ")"); }
     void closeTab(Ui::id_t tabId) override { log.emplace_back("closeTab(" + std::to_string(tabId) + ")"); }
     void copyText(const std::string & text) override { log.emplace_back("copyText(" + text + ")"); }
     void activateRow(Ui::id_t rowId) override { log.emplace_back("activateRow(" + std::to_string(rowId) + ")"); }

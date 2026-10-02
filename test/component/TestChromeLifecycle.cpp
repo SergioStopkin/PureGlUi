@@ -30,7 +30,8 @@
 
 #include "fakerender.h"
 #include "recordingchrome.h"
-#include "ui/elementid.h"
+#include "testidkind.h"
+#include "ui/idkind.h"
 #include "ui/intent.h"
 #include "ui/interface/ichromecommands.h"
 #include "ui/render/context.h"
@@ -178,16 +179,19 @@ TEST_F(ChromeLifecycleTest, LeafDialogClosesPopupAndOpensDialog)
 // A workspace tab click switches; its close button closes - both via host hooks.
 TEST_F(ChromeLifecycleTest, TabClickSwitchesAndCloseCloses)
 {
-    click(Ui::Render::UiElementType::Tab, 42);
-    click(Ui::Render::UiElementType::TabClose, 42);
-    EXPECT_EQ(chrome.log, (std::vector<std::string> { "switchTab(42)", "closeTab(42)" }));
+    const Ui::id_t tabId = Ui::idOf(TestIdKind::Tab, 42);
+    click(Ui::Render::UiElementType::Tab, tabId);
+    click(Ui::Render::UiElementType::TabClose, tabId);
+    EXPECT_EQ(chrome.log,
+              (std::vector<std::string> { "setActiveTab(" + std::to_string(tabId) + ")",
+                                          "closeTab(" + std::to_string(tabId) + ")" }));
 }
 
-// A dock Menu row's value column reaches the chrome with its element id untouched,
-// unlike ActivateRow: the chrome anchors the popup on the element, not the host row
+// A dock Menu row's value column reaches the chrome with its element id untouched:
+// the chrome anchors the popup on the element, which is the host's row
 TEST_F(ChromeLifecycleTest, RowMenuValueOpensTheRowMenu)
 {
-    const Ui::id_t elementId = Ui::toDockRowElementId(7);
+    const Ui::id_t elementId = Ui::idOf(TestIdKind::Row, 7);
     click(Ui::Render::UiElementType::DockMenu, elementId);
     EXPECT_EQ(chrome.log, (std::vector<std::string> { "openRowMenu(" + std::to_string(elementId) + ")" }));
 }

@@ -20,6 +20,7 @@
 #include "common/noncopyable.h"
 #include "ui/interface/irenderer.h"
 #include "ui/render/elementevent.h"
+#include "ui/res/type/bound.h"
 #include "ui/res/type/changed.h"
 #include "ui/type.h"
 
@@ -140,13 +141,13 @@ public:
         m_renderer->cleanup();
     }
 
-    std::vector<uint8_t> readPixels(int & outWidth, int & outHeight) override
+    std::vector<uint8_t> readPixels(const Ui::Res::Type::bound_t & region) override
     {
         if (!m_renderer.has_value()) {
-            return Ui::IRenderer::readPixels(outWidth, outHeight);
+            return Ui::IRenderer::readPixels(region);
         }
         m_window.makeCurrent();
-        return m_renderer->readPixels(outWidth, outHeight);
+        return m_renderer->readPixels(region);
     }
 
     // -------- Ui::IEventApp: renderer consumes, window re-renders --------

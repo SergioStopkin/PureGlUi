@@ -391,19 +391,24 @@ public:
                                   blockColor(ElementKey::WorkspaceTabs, CssPropKey::Background) };
 
         // Interactive elements: normal {fg, bg}, hover {fg, bg}, active {fg, bg}
-        m_theme.topMenuButton         = m_theme.topMenu;
-        m_theme.topMenuButtonHover    = { blockColor(ElementKey::TopMenuButtonLabelHover, CssPropKey::Color),
-                                          blockColor(ElementKey::TopMenuButtonLabelHover, CssPropKey::Background) };
-        m_theme.topMenuButtonActive   = { blockColor(ElementKey::TopMenuButtonLabelActive, CssPropKey::Color),
-                                          blockColor(ElementKey::TopMenuButtonLabelActive, CssPropKey::Background) };
-        m_theme.menuItem              = { blockColor(ElementKey::TopMenuItem, CssPropKey::Color),
-                                          blockColor(ElementKey::TopMenuItem, CssPropKey::Background) };
-        m_theme.menuItemHover         = { blockColor(ElementKey::TopMenuItemHover, CssPropKey::Color),
-                                          blockColor(ElementKey::TopMenuItemHover, CssPropKey::Background) };
-        m_theme.menuItemActive        = { blockColor(ElementKey::TopMenuItemActive, CssPropKey::Color),
-                                          blockColor(ElementKey::TopMenuItemActive, CssPropKey::Background) };
-        m_theme.button                = { blockColor(ElementKey::Button, CssPropKey::Color),
-                                          blockColor(ElementKey::Button, CssPropKey::Background) };
+        m_theme.topMenuButton       = m_theme.topMenu;
+        m_theme.topMenuButtonHover  = { blockColor(ElementKey::TopMenuButtonLabelHover, CssPropKey::Color),
+                                        blockColor(ElementKey::TopMenuButtonLabelHover, CssPropKey::Background) };
+        m_theme.topMenuButtonActive = { blockColor(ElementKey::TopMenuButtonLabelActive, CssPropKey::Color),
+                                        blockColor(ElementKey::TopMenuButtonLabelActive, CssPropKey::Background) };
+        m_theme.menuItem            = { blockColor(ElementKey::TopMenuItem, CssPropKey::Color),
+                                        blockColor(ElementKey::TopMenuItem, CssPropKey::Background) };
+        m_theme.menuItemHover       = { blockColor(ElementKey::TopMenuItemHover, CssPropKey::Color),
+                                        blockColor(ElementKey::TopMenuItemHover, CssPropKey::Background) };
+        m_theme.menuItemActive      = { blockColor(ElementKey::TopMenuItemActive, CssPropKey::Color),
+                                        blockColor(ElementKey::TopMenuItemActive, CssPropKey::Background) };
+        m_theme.toolbarButton = { Ui::Color::Inherit(), blockColor(ElementKey::ToolbarButton, CssPropKey::Background) };
+        m_theme.toolbarButtonHover    = { Ui::Color::Inherit(),
+                                          blockColor(ElementKey::ToolbarButtonHover, CssPropKey::Background) };
+        m_theme.toolbarButtonActive   = { Ui::Color::Inherit(),
+                                          blockColor(ElementKey::ToolbarButtonActive, CssPropKey::Background) };
+        m_theme.tooltip               = { blockColor(ElementKey::Tooltip, CssPropKey::Color),
+                                          blockColor(ElementKey::Tooltip, CssPropKey::Background) };
         m_theme.workspaceTab          = { blockColor(ElementKey::WorkspaceTab, CssPropKey::Color),
                                           blockColor(ElementKey::WorkspaceTab, CssPropKey::Background) };
         m_theme.workspaceTabHover     = { blockColor(ElementKey::WorkspaceTabHover, CssPropKey::Color),
@@ -422,14 +427,6 @@ public:
         // is 0, which would collapse every dialog line.
         if (!lineHeight.empty()) {
             m_theme.dialogLineHeight = Ui::Convert::parseCssNumber(lineHeight);
-        }
-        // Same guard as line-height: an absent key parses to 0, which would
-        // make an armed toolbar button indistinguishable from an idle one
-        const auto &      buttonTheme    = Common::Json::object(j, elementKeyName(ElementKey::Button));
-        const std::string activeContrast = Common::Json::string(buttonTheme,
-                                                                cssPropKeyName(CssPropKey::ActiveContrast));
-        if (!activeContrast.empty()) {
-            m_theme.buttonActiveContrast = Ui::Convert::parseCssNumber(activeContrast);
         }
         m_theme.dialogTitleColor    = blockColor(ElementKey::DialogTitle, CssPropKey::Color);
         m_theme.dialogLinkColor     = blockColor(ElementKey::DialogLink, CssPropKey::Color);
@@ -459,10 +456,11 @@ public:
                                         blockColor(ElementKey::StatusBarActive, CssPropKey::Background) };
 
         // Standalone colors
-        m_theme.menuItemDisabledColor = blockColor(ElementKey::TopMenuItemDisabled, CssPropKey::Color);
-        m_theme.separatorColor        = blockColor(ElementKey::TopMenuSeparator, CssPropKey::Background);
-        m_theme.shortcutColor         = blockColor(ElementKey::TopMenuItemShortcut, CssPropKey::Color);
-        m_theme.shortcutHoverColor    = blockColor(ElementKey::TopMenuItemShortcutHover, CssPropKey::Color);
+        m_theme.menuItemDisabledColor      = blockColor(ElementKey::TopMenuItemDisabled, CssPropKey::Color);
+        m_theme.toolbarButtonDisabledColor = blockColor(ElementKey::ToolbarButtonDisabled, CssPropKey::Color);
+        m_theme.separatorColor             = blockColor(ElementKey::TopMenuSeparator, CssPropKey::Background);
+        m_theme.shortcutColor              = blockColor(ElementKey::TopMenuItemShortcut, CssPropKey::Color);
+        m_theme.shortcutHoverColor         = blockColor(ElementKey::TopMenuItemShortcutHover, CssPropKey::Color);
 
         // Worker: read a Ui::Res::Type::font_t {family, size, weight} from a named JSON block.
         auto blockFontBy = [&](const std::string &       block,
@@ -508,13 +506,8 @@ public:
                                          fontMono,
                                          16,
                                          Ui::Res::Type::FontWeight::Regular);
-        m_theme.leftToolbarFont  = blockFont(ElementKey::LeftToolbar, fontSans, 24, Ui::Res::Type::FontWeight::Bold);
-        m_theme.buttonFont       = blockFont(ElementKey::Button, fontSans, 24, Ui::Res::Type::FontWeight::Bold);
-        m_theme.rightToolbarFont = blockFont(ElementKey::RightToolbar,
-                                             fontSans,
-                                             24,
-                                             Ui::Res::Type::FontWeight::Regular);
         m_theme.statusBarFont    = blockFont(ElementKey::StatusBar, fontMono, 14, Ui::Res::Type::FontWeight::Regular);
+        m_theme.tooltipFont      = blockFont(ElementKey::Tooltip, fontSans, 16, Ui::Res::Type::FontWeight::Regular);
         m_theme.workspaceTabFont = blockFont(ElementKey::WorkspaceTab,
                                              fontSans,
                                              14,

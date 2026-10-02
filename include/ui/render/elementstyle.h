@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "ui/color.h"
 #include "ui/res/type/colorpair.h"
 #include "ui/type.h"
 
@@ -33,6 +34,7 @@ struct alignas(128) element_style_t final {
     std::string                 imageSrc; // icon path, empty when the element has none
     Ui::font_handle_t           font = 0; // 0 = draws no text
     fpx_t                       padH = 0; // horizontal text inset
+    Ui::Color                   backdrop; // what its rounded corners blend into: a toolbar button's toolbar
 };
 
 } // namespace Ui::Render

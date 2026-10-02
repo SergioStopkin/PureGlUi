@@ -23,19 +23,20 @@
 #include "common/system.h"
 #include "common/unicode.h"
 #include "ui/config.h"
-#include "ui/elementid.h"
+#include "ui/const.h"
 #include "ui/gl/glrender.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/svgrenderer.h"
+#include "ui/idkind.h"
 #include "ui/interface/ieventapp.h"
 #include "ui/interface/ieventos.h"
 #include "ui/interface/irenderer.h"
 #include "ui/interface/iwindow.h"
 #include "ui/pubsub/subscribe.h"
-#include "ui/pubsub/subscribeid.h"
 #include "ui/render/dockcolumn.h"
 #include "ui/render/popup/dialogrenderer.h"
 #include "ui/render/popup/popuprenderer.h"
+#include "ui/render/popup/tooltiprenderer.h"
 #include "ui/render/uirenderer.h"
 #include "ui/res/key/iconrole.h"
 #include "ui/res/resmanager.h"
@@ -48,10 +49,15 @@
 #include "ui/window/contentsurface.h"
 #include "ui/window/event.h"
 #include "ui/window/eventfactory.h"
+#include "ui/window/istooltipdelayed.h"
 #include "ui/window/nativewindow.h"
 #include "ui/window/popup/dialogwindow.h"
 #include "ui/window/popup/popupwindow.h"
 #include "ui/window/renderqueue.h"
+#include "ui/window/spentbuttonof.h"
+#include "ui/window/tooltip.h"
+#include "ui/window/tooltipboundof.h"
+#include "ui/window/tooltipwantedof.h"
 
 #include <algorithm>
 #include <array>
@@ -89,6 +95,11 @@ using Ui::Window::NativeWindowHandle;
 // Pair with WIN32_EVENT_DEBUG to see the full press->classify->dispatch chain.
 constexpr bool WM_ROUTE_DEBUG = false;
 
+// Flip to true to time every tooltip change - one line per close and per show,
+// the kept window moved or a new one made - and every frame drawn while one is
+// open, which should hold one vsync (16.7 ms at 60 Hz, 11.1 at 90), not two
+constexpr bool TOOLTIP_DEBUG = true;
+
 /**
  * @brief Manages the main window and all child window contexts
  *
@@ -106,7 +117,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     std::unique_ptr<MainConnector> m_main;
     const Ui::Res::ResManager &    m_resManager; // non-owning; lifetime guaranteed by the owner (Shell/host)
 
-    // Dock columns (left/right collapsible panels). Keyed by dockSourceId
+    // Dock columns (left/right collapsible panels). Keyed by an IdKind::Dock id
     // so the map key doubles as the Subscribe source id for state-change
     // events. Built in initialize() from m_resManager.layout().docks and
     // rebuilt in apply() on Ui::Res::Type::Changed::Layout (resource reload picks up new
@@ -158,14 +169,29 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     Ui::Res::Type::DialogAction      m_lastDialogResult = Ui::Res::Type::DialogAction::None;
     Ui::Res::Type::dialog_t          m_lastDialogData;
 
+    // Tooltip pairing: a PopupWindow beside a toolbar button or a content surface's mark, so it floats
+    // over a content surface as a menu does. Takes no input
+    using TooltipConnector = Ui::Window::Connector<Ui::Window::Popup::PopupWindow, Ui::Render::Popup::TooltipRenderer>;
+    std::unique_ptr<TooltipConnector> m_tooltipWindow {};
+    id_t                   m_spentButton = Ui::INVALID_ID; // a press silenced its tooltip until the pointer leaves it
+    Ui::Res::Type::bound_t m_spentBound;                   // its rect, main-window CSS px (spentButtonOf)
+    bool                   m_isTooltipShown = false;       // its first frame presented (renderFrame)
+    tooltip_t              m_pendingTooltip;               // a toolbar button's, waiting out its delay (showDueTooltip)
+    std::chrono::steady_clock::time_point m_tooltipDue;    // when m_pendingTooltip shows
+    tooltip_t                             m_tooltip;       // what the window shows, anchored in main-window CSS px
+
     CompositeTexture m_popupComposite;
     CompositeTexture m_submenuComposite;
     CompositeTexture m_dialogComposite;
+    CompositeTexture m_tooltipComposite;
 
-    // Content surfaces by id (the id doubles as the WsBase render-queue source).
+    // Content surfaces by the host's id, which doubles as the render-queue entry.
     // m_activeContent is the only visible/interactive one (children overlap).
     std::unordered_map<id_t, content_surface_t> m_contentSurfaces;
-    id_t                                        m_activeContent = Ui::INVALID_ID;
+    id_t                                        m_activeContent  = Ui::INVALID_ID;
+    id_t                                        m_pointerContent = Ui::INVALID_ID; // the surface the pointer is over
+    int m_pointerX = Ui::NO_POINTER; // where the pointer is, main-window physical px, whichever window has it
+    int m_pointerY = Ui::NO_POINTER;
 
     // UI margins for child windows
     fpx_t m_uiLeft   = 0;
@@ -209,12 +235,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     // string is shown verbatim.
     std::function<std::wstring(const std::string &)> m_dialogContentResolver;
 
-    static constexpr id_t MAIN_WINDOW_ID = Ui::PubSub::sourceId(Ui::PubSub::SourceId::MainWindow);
-    static constexpr id_t WS_GROUP_ID    = Ui::PubSub::sourceId(Ui::PubSub::SourceId::WsBase);
-    static constexpr id_t POPUP_GROUP_ID = Ui::PubSub::sourceId(Ui::PubSub::SourceId::PopupBase);
-
-    // id_t m_nextWsId    = WS_GROUP_ID;
-    id_t m_nextPopupId = POPUP_GROUP_ID;
+    id_t m_popupSerial = 0; // the latest popup's (nextPopupId)
 
     // Event dispatch state
     Event                       m_currentEvent {};
@@ -232,9 +253,330 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
                  std::min(maxR, std::round(radii.bottomLeft)) };
     }
 
-public:
-    static constexpr id_t APP_SUBSCRIBER_ID = Ui::PubSub::subscriberId(Ui::PubSub::SubscriberId::App);
+    // A new id per open, never handed back (Ui::IdKind)
+    [[nodiscard]] id_t nextPopupId()
+    {
+        ++m_popupSerial;
+        return Ui::idOf(Ui::IdKind::Popup, m_popupSerial);
+    }
 
+    // Milliseconds between two steady_clock marks, fractional (TOOLTIP_DEBUG)
+    [[nodiscard]] static double millisecondsBetween(std::chrono::steady_clock::time_point from,
+                                                    std::chrono::steady_clock::time_point to)
+    {
+        return std::chrono::duration<double, std::milli>(to - from).count();
+    }
+
+    // A popup-type window at `closed` (main-window physical px) closed or hid. Not
+    // composited it was a window of its own, and the surface under it has to draw what
+    // it covered - nothing else asks it to. Composited, the next main frame draws the
+    // surface; one over the chrome only needs the main frame
+    //
+    // Call it before the window's reset(), passing its bound: it only queues a frame
+    void requestActiveContentRender(const Ui::Res::Type::bound_t & closed) const
+    {
+        if (g_config.isCompositing || !closed.overlaps(viewportBound())) {
+            return;
+        }
+        if (Ui::IWindow * content = activeContentWindow()) {
+            content->requestRender();
+        }
+    }
+
+    // The pointer has left the content surface it was over, if any: its hover,
+    // snap, tooltip and pointer shape go with it
+    void leaveContent()
+    {
+        Ui::IRenderer * left = contentPairing(m_pointerContent);
+        if (left == nullptr) {
+            return;
+        }
+        left->onMouseLeave();
+        m_pointerContent = Ui::INVALID_ID;
+        setCursor(Ui::Window::PointerShape::Default);
+    }
+
+    // Makes a menu, submenu or tooltip window at `bound` (main-window physical px) and
+    // wires it as all of them are: `recapture` runs on every main frame, which a
+    // content surface redrawing under it asks for too (renderContentSurfaces)
+    template <typename Connector, typename Fn>
+    bool makePopupWindow(const Ui::Res::Type::bound_t &  bound,
+                         const Ui::Res::Type::border_t & radii,
+                         const Ui::Color &               background,
+                         bool                            isInputTransparent,
+                         Fn &&                           recapture,
+                         std::unique_ptr<Connector> &    slot)
+    {
+        slot          = std::make_unique<Connector>(m_subscribe, nextPopupId());
+        auto & window = slot->window();
+        window.setPosition(bound.x, bound.y);
+        window.setBackground(background);
+        window.setInputTransparent(isInputTransparent);
+        if (radii.anyNonZero()) {
+            window.setCornerRadii(radii);
+        }
+        if (!window.create(m_main->window(), bound.w, bound.h)) {
+            slot.reset();
+            return false;
+        }
+        if (m_eventHandler) {
+            m_eventHandler->addPopupWindow(window.nativeHandle());
+        }
+        // On Wayland, move popup offscreen to prevent XWayland surface flicker.
+        // Keep it mapped for valid EGL rendering
+        if (g_config.isCompositing) {
+            window.move(-bound.w, -bound.h);
+            window.setPosition(bound.x, bound.y);
+        }
+        window.setRenderRequest([this, &slot]() { m_renderQueue.request(slot->window().subscribeId()); });
+        m_subscribe.add(MAIN_WINDOW_ID, window.subscribeId(), std::forward<Fn>(recapture));
+        return true;
+    }
+
+    // Closes what makePopupWindow made, and the dialog: unregistered from the event
+    // handler, and the surface under it asked to draw what it covered, before reset()
+    template <typename Connector>
+    void closePopupWindow(std::unique_ptr<Connector> & slot, CompositeTexture & composite)
+    {
+        if (!slot) {
+            return;
+        }
+        if (m_eventHandler) {
+            m_eventHandler->removePopupWindow(slot->window().nativeHandle());
+        }
+        requestActiveContentRender(slot->window().bound());
+        slot.reset();
+        composite.clear();
+    }
+
+    // Open, keep or close the tooltip (spentButtonOf, tooltipWantedOf); none while a
+    // menu or dialog is open. The window stays while what it shows does
+    void syncTooltip()
+    {
+        const Ui::Render::UiElement * button = (hasUiRenderer() && !isChromeOpen()) ? m_main->renderer().hoveredButton()
+                                                                                    : nullptr;
+        const id_t                    hoveredButton = (button != nullptr) ? button->id : Ui::INVALID_ID;
+        // A press silences its tooltip; only a pointer move off it ends that (onMouseMove)
+        if (button != nullptr && button->state == Ui::Render::UiElementState::Active) {
+            m_spentButton = hoveredButton;
+            m_spentBound  = button->bound;
+        }
+        const tooltip_t wanted = tooltipWantedOf(
+        (button != nullptr) ? tooltip_t { tooltipTextOf(hoveredButton), button->bound } : tooltip_t {},
+        hoveredButton,
+        m_spentButton,
+        contentTooltip());
+        // Held for showDueTooltip
+        if (isTooltipDelayed(wanted, hoveredButton, m_tooltip)) {
+            if (wanted != m_pendingTooltip) {
+                m_pendingTooltip = wanted;
+                m_tooltipDue     = std::chrono::steady_clock::now()
+                             + std::chrono::milliseconds(m_resManager.input().tooltipDelayMs);
+            }
+            return;
+        }
+        m_pendingTooltip = {};
+        if (wanted == m_tooltip) {
+            return;
+        }
+        const auto closing = std::chrono::steady_clock::now();
+        hideTooltip();
+        if constexpr (TOOLTIP_DEBUG) {
+            std::cout << "[WindowManager] tooltip closed in "
+                      << millisecondsBetween(closing, std::chrono::steady_clock::now()) << " ms" << std::endl;
+        }
+        if (!wanted.text.empty()) {
+            showTooltip(wanted);
+        }
+    }
+
+    // The tooltip the content surface under the pointer asks for (setContentTooltip),
+    // in the main window's CSS px where the toolbar's anchors are; none while a menu
+    // or dialog is open
+    [[nodiscard]] tooltip_t contentTooltip() const
+    {
+        const auto surface = m_contentSurfaces.find(m_pointerContent);
+        if (isChromeOpen() || surface == m_contentSurfaces.end() || surface->second.tooltipText.empty()) {
+            return {};
+        }
+        const Ui::Res::Type::bound_t & anchor   = surface->second.tooltipAnchor;
+        const Ui::Res::Type::bound_t   viewport = viewportBound();
+        return { surface->second.tooltipText,
+                 { toCss(viewport.x + anchor.x), toCss(viewport.y + anchor.y), toCss(anchor.w), toCss(anchor.h) } };
+    }
+
+    // Where the pointer is, main-window physical px, from an event of any window before
+    // routing rebases it: a popup, submenu, dialog or content surface stands on the main
+    // window at its bound (composited, all of them already report main-window px). A
+    // leave takes it off: the next event from whichever window has it puts it back
+    void trackPointer(const Event & event)
+    {
+        if (event.type == EventType::MouseLeave) {
+            m_pointerX = Ui::NO_POINTER;
+            m_pointerY = Ui::NO_POINTER;
+            return;
+        }
+        if (!isMouseEvent(event)) {
+            return;
+        }
+        Ui::Res::Type::bound_t origin {};
+        if (!g_config.isCompositing) {
+            if (const Ui::IWindow * content = contentWindow(event.childWindowId)) {
+                origin = content->bound();
+            }
+            const auto standsOn = [&event, &origin](const auto & slot) {
+                if (slot && event.sourceWindow == slot->window().nativeHandle()) {
+                    origin = slot->window().bound();
+                }
+            };
+            standsOn(m_popupWindow);
+            standsOn(m_submenuWindow);
+            standsOn(m_dialogWindow);
+        }
+        m_pointerX = event.mouse.x + static_cast<int>(origin.x);
+        m_pointerY = event.mouse.y + static_cast<int>(origin.y);
+    }
+
+    // A menu or dialog is open, and no tooltip shows over it
+    [[nodiscard]] bool isChromeOpen() const { return m_popupWindow || m_dialogWindow; }
+
+    // A tooltip is wanted - presented or not yet (m_isTooltipShown)
+    [[nodiscard]] bool hasTooltip() const { return !m_tooltip.text.empty(); }
+
+    // A toolbar or menu-bar button's tooltip text, empty for one without. A menu-bar
+    // button is a top-level menu, read where it is rather than copied out of the
+    // index - this runs on every move over one
+    [[nodiscard]] std::string tooltipTextOf(id_t buttonId) const
+    {
+        std::string key;
+        if (const Ui::Res::Type::button_t * button = m_resManager.findButton(buttonId)) {
+            key = button->tooltip;
+        }
+        for (const Ui::Res::Type::menu_t & menu : m_resManager.menus()) {
+            if (menu.id == buttonId) {
+                key = menu.tooltip;
+            }
+        }
+        return key.empty() ? std::string {} : m_resManager.localeManager().get(key);
+    }
+
+    // Beside its anchor (tooltipBoundOf), drawn by the next frame and shown once it
+    // has one (renderFrame). The window made for the first is kept, moved and told
+    // the new text while its size holds - a window, its EGL context and its font made
+    // per snap was most of what a tooltip cost
+    void showTooltip(const tooltip_t & tooltip)
+    {
+        const auto started = std::chrono::steady_clock::now();
+        // Main context current: a glyph measured for the first time is uploaded
+        // into the main renderer's atlas
+        m_main->window().makeCurrent();
+        const Ui::Res::Type::bound_t css   = tooltipBoundOf(tooltip.anchor,
+                                                          m_resManager.layout().tooltip,
+                                                          m_main->renderer().tooltipWidthOf(tooltip.text),
+                                                          toCss(m_windowWidth),
+                                                          toCss(m_windowHeight));
+        const Ui::Res::Type::bound_t bound = toPhysRound(css);
+
+        // Kept only at the size it was made: its window never presents (composited), so it
+        // keeps the buffers it was made with, and a wider tooltip read back from it is cut
+        if (m_tooltipWindow
+            && (m_tooltipWindow->window().bound().w != bound.w || m_tooltipWindow->window().bound().h != bound.h)) {
+            closePopupWindow(m_tooltipWindow, m_tooltipComposite);
+            m_isTooltipShown = false;
+        }
+        const bool isKept = m_tooltipWindow != nullptr;
+        if (isKept) {
+            // Composited it stays parked offscreen and only its bound moves, as when made
+            auto & window = m_tooltipWindow->window();
+            window.moveResize(g_config.isCompositing ? Ui::Res::Type::bound_t { -bound.w, -bound.h, bound.w, bound.h }
+                                                     : bound);
+            window.setPosition(bound.x, bound.y);
+            m_tooltipWindow->resize(bound.w, bound.h);
+            m_tooltipWindow->renderer().setText(tooltip.text);
+        } else if (!makeTooltip(bound, tooltip.text)) {
+            m_tooltip = tooltip; // counted as shown, or every frame would retry it
+            return;
+        }
+        m_main->window().makeCurrent();
+        m_tooltip = tooltip;
+
+        // Drawn by the next frame, not here - a second main swap in one loop waits
+        // on vsync: its main frame recaptures the corners (composited, draws it in)
+        // and asks for the tooltip's own, after which it is shown (renderFrame)
+        requestMainRender();
+        if constexpr (TOOLTIP_DEBUG) {
+            std::cout << "[WindowManager] tooltip " << (isKept ? "moved" : "made") << " in "
+                      << millisecondsBetween(started, std::chrono::steady_clock::now()) << " ms" << std::endl;
+        }
+    }
+
+    // The tooltip's window, `bound` in main-window physical px; false when it
+    // cannot be made
+    bool makeTooltip(const Ui::Res::Type::bound_t & bound, const std::string & text)
+    {
+        // Corners recaptured only while it is wanted, since a hidden one is kept for the next
+        if (!makePopupWindow(
+            bound,
+            m_resManager.layout().tooltip.border.scaled(g_config.scale),
+            m_resManager.theme().tooltip.bg,
+            true,
+            [this]() {
+                if (hasTooltip()) {
+                    recaptureCorners(*m_tooltipWindow, m_tooltipComposite);
+                }
+            },
+            m_tooltipWindow)) {
+            std::cerr << "[WindowManager] Failed to create tooltip window" << std::endl;
+            return false;
+        }
+
+        auto & window   = m_tooltipWindow->window();
+        auto & renderer = m_tooltipWindow->emplaceRenderer([&window] { window.makeCurrent(); }, m_resManager, text);
+        renderer.resize(bound.w, bound.h);
+        renderer.setAlpha(window.hasAlpha());
+        return true;
+    }
+
+    // Shows nothing, keeping the window for the next tooltip where it can move
+    // (PopupWindow::isMovable). Composited, it was a texture on the main window,
+    // gone with its next frame
+    void hideTooltip()
+    {
+        m_tooltip        = {};
+        m_isTooltipShown = false;
+        if (!m_tooltipWindow) {
+            return;
+        }
+        if (!m_tooltipWindow->window().isMovable()) {
+            destroyTooltip();
+            return;
+        }
+        if (!g_config.isCompositing) {
+            m_tooltipWindow->window().hide();
+        }
+        m_tooltipComposite.clear();
+        requestActiveContentRender(m_tooltipWindow->window().bound());
+        requestMainRender();
+    }
+
+    // Forgets what it showed too, so the next syncTooltip shows it again if wanted
+    void destroyTooltip()
+    {
+        m_tooltip        = {};
+        m_pendingTooltip = {};
+        m_isTooltipShown = false;
+        if (!m_tooltipWindow) {
+            return;
+        }
+        closePopupWindow(m_tooltipWindow, m_tooltipComposite);
+        if (m_main) {
+            m_main->window().makeCurrent();
+        }
+        // Composited, it is only a texture on the main window, gone with its next frame
+        requestMainRender();
+    }
+
+public:
     explicit WindowManager(const Ui::Res::ResManager & resManager)
         : m_resManager(resManager)
     {
@@ -308,6 +650,11 @@ public:
     // declare without special-casing.
     void setDockRows(std::string_view dockName, std::vector<Ui::Res::Dock::row_t> rows)
     {
+        for (const auto & row : rows) {
+            if (row.id != Ui::INVALID_ID && !Ui::isHostId(row.id)) {
+                std::cerr << "[WindowManager] Dock row id " << row.id << " carries no host kind" << std::endl;
+            }
+        }
         for (auto & [id, dock] : m_docks) {
             if (dock.name() == dockName) {
                 dock.setRows(std::move(rows));
@@ -324,9 +671,8 @@ public:
     // dock is asked, since an element carries the row and not the dock it came from
     [[nodiscard]] std::string rowMenuKey(id_t elementId) const
     {
-        const id_t rowId = Ui::toDockRowId(elementId);
         for (const auto & [id, dock] : m_docks) {
-            if (std::string key = dock.menuKeyOf(rowId); !key.empty()) {
+            if (std::string key = dock.menuKeyOf(elementId); !key.empty()) {
                 return key;
             }
         }
@@ -381,12 +727,14 @@ public:
     // it in the viewport. window/renderer must outlive the registration.
     void addContentSurface(id_t id, Ui::IWindow & window, Ui::IRenderer & pairing)
     {
+        if (!Ui::isHostId(id)) {
+            std::cerr << "[WindowManager] Content surface id " << id << " carries no host kind" << std::endl;
+        }
         content_surface_t & entry = m_contentSurfaces[id];
         entry.window              = &window;
         entry.pairing             = &pairing;
 
-        const id_t renderId = WS_GROUP_ID + id;
-        window.setRenderRequest([this, renderId]() { m_renderQueue.request(renderId); });
+        window.setRenderRequest([this, id]() { m_renderQueue.request(id); });
 
         positionContentSurface(window);
     }
@@ -406,12 +754,24 @@ public:
         if (m_activeContent == id) {
             m_activeContent = Ui::INVALID_ID;
         }
+        if (m_pointerContent == id) {
+            m_pointerContent = Ui::INVALID_ID;
+        }
     }
 
     // Make one content surface active: only it is shown (the windows overlap).
     void setActiveContentSurface(id_t id)
     {
         m_activeContent = id;
+        // The surfaces overlap, so a pointer over the one hidden now is over this
+        // one: the hidden one has lost it, and this one's cursor shows
+        if (m_pointerContent != Ui::INVALID_ID && m_pointerContent != id) {
+            leaveContent();
+            if (const auto shown = m_contentSurfaces.find(id); shown != m_contentSurfaces.end()) {
+                m_pointerContent = id;
+                setCursor(shown->second.pointer);
+            }
+        }
         for (auto & [surfaceId, entry] : m_contentSurfaces) {
             if (entry.window == nullptr) {
                 continue;
@@ -439,6 +799,36 @@ public:
         auto it = m_contentSurfaces.find(id);
         if (it != m_contentSurfaces.end()) {
             it->second.isReady = isReady;
+        }
+    }
+
+    // What the pointer shows over a content surface - its host's to say, as a tool
+    // armed there changes what a click does. At once when the pointer is over it -
+    // a key arms a tool without a move - and from then on every move over it sets
+    // it, on either route a move takes (main-window hit test or its own events)
+    void setContentPointer(id_t id, Ui::Window::PointerShape shape)
+    {
+        auto it = m_contentSurfaces.find(id);
+        if (it == m_contentSurfaces.end()) {
+            return;
+        }
+        it->second.pointer = shape;
+        if (id == m_pointerContent) {
+            setCursor(shape);
+        }
+    }
+
+    // A tooltip for something a content surface's host marks - a point it snaps to,
+    // say: `text` beside `anchor`, a rect in the surface's physical pixels, as the
+    // toolbar's stands beside its button; an empty text for none. Shown while the
+    // pointer is over that surface, once the event being dispatched or the frame
+    // being drawn is done (syncTooltip); a menu or dialog open shows none
+    void setContentTooltip(id_t id, const std::string & text, const Ui::Res::Type::bound_t & anchor)
+    {
+        auto it = m_contentSurfaces.find(id);
+        if (it != m_contentSurfaces.end()) {
+            it->second.tooltipText   = text;
+            it->second.tooltipAnchor = anchor;
         }
     }
 
@@ -484,8 +874,8 @@ public:
     [[nodiscard]] Ui::IRenderer * activeContentPairing() const { return contentPairing(m_activeContent); }
 
     // Hit-test the active content surface, returning child-local coords on hit
-    // (see ContentHit). Single lookup so the window pointer and its bound match.
-    [[nodiscard]] ContentHit hitTestActiveContent(int x, int y) const
+    // (see content_hit_t). Single lookup so the window pointer and its bound match.
+    [[nodiscard]] content_hit_t hitTestActiveContent(int x, int y) const
     {
         if (m_activeContent == Ui::INVALID_ID) {
             return {};
@@ -568,7 +958,7 @@ public:
      * Handles:
      * 1. Composite mode popup coordinate rerouting
      * 2. Mechanical routing of events to popup / main / child windows
-     * 3. Notifying subscribers via Ui::PubSub::eventSourceId(EventType)
+     * 3. Notifying subscribers via Ui::idOf(Ui::IdKind::Event, EventType)
      *
      * The shell subscribes to event notifications for policy decisions (menu
      * management, shortcuts, popup close logic).
@@ -577,6 +967,7 @@ public:
     {
         m_lastClickResult    = {};
         m_popupEventConsumed = false;
+        trackPointer(incoming);
 
         // Local mutable copy: classify/route rebase coords + set isPopupEvent.
         // Event is over-aligned (alignas(128)); MSVC (C2719) forbids that as a
@@ -592,7 +983,8 @@ public:
             if (event.isPopupEvent) {
                 routePopupEvent(event, *m_dialogWindow);
             }
-            m_subscribe.notify(Ui::PubSub::eventSourceId(event.type));
+            m_subscribe.notify(Ui::idOf(Ui::IdKind::Event, event.type));
+            syncTooltip();
             return;
         }
 
@@ -660,7 +1052,10 @@ public:
         }
 
         // Notify subscribers
-        m_subscribe.notify(Ui::PubSub::eventSourceId(event.type));
+        m_subscribe.notify(Ui::idOf(Ui::IdKind::Event, event.type));
+
+        // Last, after the shell has had its say: a menu it opened closes the tooltip
+        syncTooltip();
     }
 
     /**
@@ -756,13 +1151,13 @@ public:
         m_main->window().refreshHardwareGl();
 
         // Instantiate one Ui::Render::DockColumn per parsed dock config. Keys are stable
-        // (DockBase + index in the parsed array) so any Subscribe wiring that
+        // (IdKind::Dock + index in the parsed array) so any Subscribe wiring that
         // happens later can address a dock by id. Initial state is pulled
         // from the session via ResManager::dockState(name) inside the ctor.
         m_docks.clear();
         const auto & dockConfigs = m_resManager.layout().docks;
         for (size_t i = 0; i < dockConfigs.size(); ++i) {
-            const id_t id = Ui::PubSub::dockSourceId(i);
+            const id_t id = Ui::idOf(Ui::IdKind::Dock, i);
             m_docks.try_emplace(id, id, dockConfigs[i], m_resManager);
         }
 
@@ -841,6 +1236,10 @@ public:
         layoutDocks();
 
         const bool scaleChanged = (prevScale != g_config.scale);
+        // The tooltip's font and corners are physical px, made at the old scale
+        if (scaleChanged) {
+            destroyTooltip();
+        }
         std::cout << "[WindowManager] Scale factor: " << g_config.scale << "x  UI margins: L=" << m_uiLeft
                   << " T=" << m_uiTop << " R=" << m_uiRight << " B=" << m_uiBottom << " docks=" << m_docks.size()
                   << (scaleChanged ? " (changed)" : "") << std::endl;
@@ -1062,6 +1461,15 @@ public:
      */
     void apply(Ui::Res::Type::Changed changed)
     {
+        // Only what it is made of - its text, button, colours and size - closes it;
+        // the next event reopens it
+        const auto tooltipParts = Common::Bit::Or(
+        Common::Bit::Or(Ui::Res::Type::Changed::Locale, Ui::Res::Type::Changed::Button),
+        Common::Bit::Or(Ui::Res::Type::Changed::Theme, Ui::Res::Type::Changed::Layout));
+        if (Common::Bit::And(changed, tooltipParts) != 0) {
+            destroyTooltip();
+        }
+
         // Layout reload may have added, removed, or renamed dock configs.
         // Wipe-and-rebuild matches initialize() exactly; persisted widths
         // survive because Ui::Render::DockColumn's ctor pulls them from ResManager's
@@ -1087,7 +1495,7 @@ public:
             m_docks.clear();
             const auto & dockConfigs = m_resManager.layout().docks;
             for (size_t i = 0; i < dockConfigs.size(); ++i) {
-                const id_t id = Ui::PubSub::dockSourceId(i);
+                const id_t id = Ui::idOf(Ui::IdKind::Dock, i);
                 m_docks.try_emplace(id, id, dockConfigs[i], m_resManager);
             }
             // A dock the reload removed simply has no taker; one it added comes
@@ -1201,8 +1609,6 @@ public:
             destroyPopup(true);
         }
 
-        m_popupWindow = std::make_unique<PopupConnector>(m_subscribe, ++m_nextPopupId);
-
         // Convert absolute screen coords to coordinates relative to main window
         int parentScreenX {};
         int parentScreenY {};
@@ -1210,43 +1616,16 @@ public:
         const fpx_t relX = bound.x - parentScreenX;
         const fpx_t relY = bound.y - parentScreenY;
 
-        // Set position and background before create
-        m_popupWindow->window().setPosition(relX, relY);
-        m_popupWindow->window().setBackground(bgColor);
-
-        // Set per-corner radii (values < 0.5 treated as zero)
-        if (radii.anyNonZero()) {
-            m_popupWindow->window().setCornerRadii(radii);
-        }
-
-        if (!m_popupWindow->window().create(m_main->window(), bound.w, bound.h)) {
+        if (!makePopupWindow(
+            { relX, relY, bound.w, bound.h },
+            radii,
+            bgColor,
+            false,
+            [this]() { recapturePopupCorners(); },
+            m_popupWindow)) {
             std::cerr << "[WindowManager] Failed to create popup window (screen=" << bound.x << "," << bound.y
                       << ", rel=" << relX << "," << relY << ")" << std::endl;
-            m_popupWindow.reset();
             return false;
-        }
-
-        // Register popup with event handler
-        if (m_eventHandler) {
-            m_eventHandler->addPopupWindow(m_popupWindow->window().nativeHandle());
-        }
-
-        // On Wayland, move popup offscreen to prevent XWayland surface flicker.
-        // Keep it mapped for valid EGL rendering.
-        if (g_config.isCompositing) {
-            m_popupWindow->window().move(-bound.w, -bound.h);
-            m_popupWindow->window().setPosition(relX, relY);
-        }
-
-        // Wire popup render request to Subscribe render queue
-        m_popupWindow->window().setRenderRequest(
-        [this]() { m_renderQueue.request(m_popupWindow->window().subscribeId()); });
-
-        // Subscribe popup to content changes from main window + content surfaces
-        const id_t popupSubId = m_popupWindow->window().subscribeId();
-        m_subscribe.add(MAIN_WINDOW_ID, popupSubId, [this]() { recapturePopupCorners(); });
-        for (const auto & [id, entry] : m_contentSurfaces) {
-            m_subscribe.add(WS_GROUP_ID + id, popupSubId, [this]() { recapturePopupCorners(); });
         }
 
         if constexpr (WM_ROUTE_DEBUG) {
@@ -1281,9 +1660,10 @@ public:
                                         bool                           isFirst,
                                         bool isLast) { onSubmenuHover(itemBound, item, isFirst, isLast); });
 
-        // Initial corner capture
+        // Initial corner capture, then drawn in before the swap (composited), as the
+        // submenu and the dialog are - no frame of its own follows to do it
         recapturePopupCorners();
-
+        drawPopupComposite();
         swapMainWindow();
     }
 
@@ -1311,8 +1691,7 @@ public:
         updateSubmenuParentHighlight(Ui::INVALID_ID);
 
         if (m_submenuWindow) {
-            m_submenuWindow.reset();
-            m_submenuComposite.clear();
+            closePopupWindow(m_submenuWindow, m_submenuComposite);
             // m_submenuItemId is the *caller's* state. Resetting it here would
             // overwrite the value the caller set when switching to a new
             // submenu (createSubmenu calls us mid-transition with the new id
@@ -1371,10 +1750,7 @@ public:
         if (item.items.empty()) {
             return;
         }
-        const Ui::Res::Type::bound_t physBound = { toPhysRound(el->bound.x),
-                                                   toPhysRound(el->bound.y),
-                                                   toPhysRound(el->bound.w),
-                                                   toPhysRound(el->bound.h) };
+        const Ui::Res::Type::bound_t physBound = toPhysRound(el->bound);
         const bool                   isFirst   = renderer->isFirstElement(parentItemId);
         const bool                   isLast    = renderer->isLastElement(parentItemId);
         onSubmenuHover(physBound, item, isFirst, isLast);
@@ -1431,42 +1807,19 @@ public:
     {
         destroySubmenu();
 
-        const id_t submenuId = ++m_nextPopupId;
-        m_submenuWindow      = std::make_unique<PopupConnector>(m_subscribe, submenuId);
-
         int parentScreenX {};
         int parentScreenY {};
         mainWindowScreenPosition(parentScreenX, parentScreenY);
-        const fpx_t relX = bound.x - parentScreenX;
-        const fpx_t relY = bound.y - parentScreenY;
 
-        m_submenuWindow->window().setPosition(relX, relY);
-        m_submenuWindow->window().setBackground(bgColor);
-
-        if (radii.anyNonZero()) {
-            m_submenuWindow->window().setCornerRadii(radii);
-        }
-
-        if (!m_submenuWindow->window().create(m_main->window(), bound.w, bound.h)) {
+        if (!makePopupWindow(
+            { bound.x - parentScreenX, bound.y - parentScreenY, bound.w, bound.h },
+            radii,
+            bgColor,
+            false,
+            [this]() { recaptureSubmenuCorners(); },
+            m_submenuWindow)) {
             std::cerr << "[WindowManager] Failed to create submenu window" << std::endl;
-            m_submenuWindow.reset();
             return false;
-        }
-
-        if (g_config.isCompositing) {
-            m_submenuWindow->window().move(-bound.w, -bound.h);
-            m_submenuWindow->window().setPosition(relX, relY);
-        }
-
-        m_submenuWindow->window().setRenderRequest(
-        [this]() { m_renderQueue.request(m_submenuWindow->window().subscribeId()); });
-
-        // Subscribe submenu to content changes from main window + content surfaces
-        // (same pattern as popup - keeps corner capture fresh when a content
-        // surface redraws while the submenu is open).
-        m_subscribe.add(MAIN_WINDOW_ID, submenuId, [this]() { recaptureSubmenuCorners(); });
-        for (const auto & [id, entry] : m_contentSurfaces) {
-            m_subscribe.add(WS_GROUP_ID + id, submenuId, [this]() { recaptureSubmenuCorners(); });
         }
 
         if constexpr (WM_ROUTE_DEBUG) {
@@ -1524,7 +1877,7 @@ public:
                                                                 : Common::Unicode::fromUtf8(content);
         }
 
-        const id_t dialogId = ++m_nextPopupId;
+        const id_t dialogId = nextPopupId();
         m_dialogWindow      = std::make_unique<DialogConnector>(m_subscribe, dialogId);
 
         m_dialogWindow->window().setRenderRequest(
@@ -1551,6 +1904,7 @@ public:
                     m_onDialogClose();
                 }
                 closeDialog();
+                rehover();
             });
         });
         // Wire smooth scroll animation to render queue
@@ -1583,8 +1937,7 @@ public:
     void closeDialog()
     {
         if (m_dialogWindow) {
-            m_dialogWindow.reset();
-            m_dialogComposite.clear();
+            closePopupWindow(m_dialogWindow, m_dialogComposite);
 
             if (m_main) {
                 m_main->window().makeCurrent();
@@ -1712,9 +2065,10 @@ public:
             return;
         }
 
-        renderPopupWindow(*m_submenuWindow, m_submenuComposite);
-
+        // Composited, initSubmenuRenderer's recapture already drew it in; otherwise
+        // its first frame is presented, then it is shown
         if (!g_config.isCompositing) {
+            renderPopupWindow(*m_submenuWindow, m_submenuComposite);
             m_submenuWindow->window().show();
         }
 
@@ -1733,15 +2087,10 @@ public:
         destroySubmenu();
 
         if (m_popupWindow) {
-            // Unregister from event handler
-            if (m_eventHandler) {
-                m_eventHandler->removePopupWindow(m_popupWindow->window().nativeHandle());
-            }
             // reset() triggers destructor which calls cleanupWayland() (xdg_popup,
             // xdg_surface) then Platform::WaylandWindow::destroy() (wl_surface, EGL).
             // Both must happen before the sync to avoid "invalid object" errors.
-            m_popupWindow.reset();
-            m_popupComposite.clear();
+            closePopupWindow(m_popupWindow, m_popupComposite);
 
             // Sync to ensure the popup is removed from screen before we capture corners
             // for a new popup (otherwise we capture the old popup content)
@@ -1769,21 +2118,39 @@ public:
         }
     }
 
+    // The toolbar tooltip syncTooltip held back, once its delay has run out. Asked
+    // every loop iteration (Shell::run): a pointer resting on a button sends nothing.
+    // A menu or dialog opened since drops it, as syncTooltip would
+    void showDueTooltip()
+    {
+        if (isChromeOpen()) {
+            m_pendingTooltip = {};
+        }
+        if (m_pendingTooltip.text.empty() || std::chrono::steady_clock::now() < m_tooltipDue) {
+            return;
+        }
+        showTooltip(m_pendingTooltip);
+        m_pendingTooltip = {};
+    }
+
+    // A menu or dialog closed, having taken the pointer while open (Shell::openDialog
+    // even clears the main window's memory of it): its last place goes back through the
+    // main route, so hover, cursor and tooltip catch up without a move
+    void rehover()
+    {
+        if (m_pointerX == Ui::NO_POINTER || m_main == nullptr || isChromeOpen()) {
+            return;
+        }
+        if (onMouseMove(m_pointerX, m_pointerY)) {
+            requestMainRender();
+        }
+        syncTooltip();
+    }
+
     /**
      * @brief Check if popup window exists
      */
     [[nodiscard]] bool hasPopup() const { return m_popupWindow && m_popupWindow->window().isValid(); }
-
-    /**
-     * @brief Capture popup pixels for composite mode (Wayland)
-     * Call from app after popup renders (back buffer has content, no swap needed).
-     */
-    void capturePopupPixels()
-    {
-        if (m_popupWindow) {
-            captureComposite(m_popupWindow->window(), m_popupComposite);
-        }
-    }
 
     static void captureComposite(const Ui::Window::Popup::PopupWindow & window, CompositeTexture & texture)
     {
@@ -1949,6 +2316,9 @@ public:
         if (m_dialogWindow && !m_dialogComposite.pixels.empty()) {
             drawCompositeTexture(m_dialogComposite, m_dialogWindow->window().bound());
         }
+        if (m_tooltipWindow && !m_tooltipComposite.pixels.empty()) {
+            drawCompositeTexture(m_tooltipComposite, m_tooltipWindow->window().bound());
+        }
     }
 
     /**
@@ -1993,6 +2363,10 @@ public:
 
         // 3. Drain render queue (main + popup)
         renderFrame();
+
+        // 4. A content surface can change its tooltip while it draws - a camera move
+        //    leaves one behind - so it is settled per frame as well as per event
+        syncTooltip();
     }
 
     /**
@@ -2013,11 +2387,23 @@ public:
 
         // Clear before rendering so requests added during rendering survive
         m_renderQueue.clear();
+        const auto started = std::chrono::steady_clock::now();
 
-        const bool renderMain    = pending.contains(MAIN_WINDOW_ID);
-        const bool renderPopup   = m_popupWindow && pending.contains(m_popupWindow->window().subscribeId());
-        const bool renderSubmenu = m_submenuWindow && pending.contains(m_submenuWindow->window().subscribeId());
-        const bool renderDialog  = m_dialogWindow && pending.contains(m_dialogWindow->window().subscribeId());
+        const bool renderMain = pending.contains(MAIN_WINDOW_ID);
+        // Composited, this frame's main pass recaptures the popup, submenu and tooltip
+        // standing on it (notifyMainWindowChanged), rendering and reading each, and
+        // draws them in; a frame of their own would present the same picture again,
+        // with a main render and swap each (refreshComposite). Not the dialog, which
+        // no main frame recaptures
+        const bool isRecaptured = renderMain && g_config.isCompositing;
+        const bool renderPopup  = !isRecaptured && m_popupWindow
+                              && pending.contains(m_popupWindow->window().subscribeId());
+        const bool renderSubmenu = !isRecaptured && m_submenuWindow
+                                && pending.contains(m_submenuWindow->window().subscribeId());
+        const bool renderDialog = m_dialogWindow && pending.contains(m_dialogWindow->window().subscribeId());
+        // A kept, hidden tooltip is not drawn, or composited it would be drawn in again
+        const bool renderTooltip = !isRecaptured && m_tooltipWindow && hasTooltip()
+                                && pending.contains(m_tooltipWindow->window().subscribeId());
 
         // 1. Render main window
         if (renderMain) {
@@ -2036,6 +2422,22 @@ public:
         }
         if (renderDialog && m_dialogWindow) {
             renderPopupWindow(*m_dialogWindow, m_dialogComposite);
+        }
+        if (renderTooltip && m_tooltipWindow) {
+            renderPopupWindow(*m_tooltipWindow, m_tooltipComposite);
+            // Once its first frame is presented, corners and all - never flat.
+            // Composited it is drawn into the main window and never shown
+            if (!m_isTooltipShown && !g_config.isCompositing) {
+                m_tooltipWindow->window().show();
+            }
+            m_isTooltipShown = true;
+        }
+        if constexpr (TOOLTIP_DEBUG) {
+            if (m_tooltipWindow && hasTooltip()) {
+                std::cout << "[WindowManager] frame with a tooltip in "
+                          << millisecondsBetween(started, std::chrono::steady_clock::now()) << " ms (main "
+                          << renderMain << ", tooltip " << renderTooltip << ")" << std::endl;
+            }
         }
     }
 
@@ -2123,11 +2525,14 @@ public:
 
         connector.window().makeCurrent();
         connector.renderer().setCornerPixels(std::move(cornerPixels), capturedRadii);
-        connector.window().requestRender();
         connector.render();
 
+        // Composited, it is read now and the main frame that recaptured it draws it
+        // in; otherwise its own frame presents it
         if (g_config.isCompositing) {
             captureComposite(connector.window(), texture);
+        } else {
+            connector.window().requestRender();
         }
 
         m_main->window().makeCurrent();
@@ -2219,6 +2624,7 @@ public:
 
         // Non-composite mode: classify remaining source handles.
         const auto src = event.sourceWindow;
+
         if (src == 0 || (m_main && src == m_main->window().nativeHandle())) {
             if constexpr (WM_ROUTE_DEBUG) {
                 if (isMouseEvent(event)) {
@@ -2272,6 +2678,8 @@ public:
                 if (m_main && m_main->onMouseLeave()) {
                     requestMainRender();
                 }
+                // Composited, the surface gets no leave of its own
+                leaveContent();
             } else if (target.onMouseLeave()) {
                 target.window().requestRender();
             }
@@ -2337,8 +2745,10 @@ public:
         bool anyCapture = false;
         m_main->window().makeCurrent();
 
-        // Corner capture rects and buffers (indexed TL=0, TR=1, BR=2, BL=3)
+        // Corner capture rects and buffers (indexed TL=0, TR=1, BR=2, BL=3), and each
+        // corner's own square, which its buffer covers
         std::array<Ui::Res::Type::bound_t, 4> caps {};
+        std::array<Ui::Res::Type::bound_t, 4> corners {};
 
         for (id_t i = 0; i < 4; ++i) {
             const auto radius = static_cast<int>(Ui::Gl::Rounded::borderRadius(outRadii, i));
@@ -2389,10 +2799,14 @@ public:
             capW = std::max(0, capW);
             capH = std::max(0, capH);
 
-            caps.at(i) = { static_cast<fpx_t>(capX),
-                           static_cast<fpx_t>(capY),
-                           static_cast<fpx_t>(capW),
-                           static_cast<fpx_t>(capH) };
+            caps.at(i)    = { static_cast<fpx_t>(capX),
+                              static_cast<fpx_t>(capY),
+                              static_cast<fpx_t>(capW),
+                              static_cast<fpx_t>(capH) };
+            corners.at(i) = { static_cast<fpx_t>(cx),
+                              static_cast<fpx_t>(cy),
+                              static_cast<fpx_t>(radius),
+                              static_cast<fpx_t>(radius) };
 
             // Init buffer with bg color
             auto & buf = outPixels.at(i);
@@ -2444,91 +2858,57 @@ public:
             anyCapture = true;
         }
 
-        // Composite content surface pixels over corners that overlap a viewport
+        // A content surface under a corner (only the active, ready one is visible).
+        // Composited, the main frame drew it into the buffer read above
+        // (renderMainWindow); otherwise it is a window of its own, so each corner
+        // reads its overlap from the renderer - a few pixels, never the frame
+        const auto content = m_contentSurfaces.find(m_activeContent);
+        if (g_config.isCompositing || content == m_contentSurfaces.end() || content->second.window == nullptr
+            || content->second.pairing == nullptr || !content->second.isReady) {
+            m_main->window().makeCurrent();
+            return anyCapture;
+        }
+        const Ui::Res::Type::bound_t & contentBound = content->second.window->bound();
         for (id_t i = 0; i < 4; ++i) {
-            const int radius = static_cast<int>(Ui::Gl::Rounded::borderRadius(outRadii, i));
-            const int capX   = static_cast<int>(caps.at(i).x);
-            const int capY   = static_cast<int>(caps.at(i).y);
-            const int capW   = static_cast<int>(caps.at(i).w);
-            const int capH   = static_cast<int>(caps.at(i).h);
-            if (radius <= 0 || capW <= 0 || capH <= 0) {
+            const Ui::Res::Type::bound_t & cap    = caps.at(i);
+            const Ui::Res::Type::bound_t & corner = corners.at(i);
+            const int                      radius = static_cast<int>(corner.w);
+            // The corner's overlap with the surface, in main-window pixels
+            const int left   = static_cast<int>(std::max(cap.x, contentBound.x));
+            const int top    = static_cast<int>(std::max(cap.y, contentBound.y));
+            const int right  = static_cast<int>(std::min(cap.x + cap.w, contentBound.x + contentBound.w));
+            const int bottom = static_cast<int>(std::min(cap.y + cap.h, contentBound.y + contentBound.h));
+            if (radius <= 0 || right <= left || bottom <= top) {
+                continue;
+            }
+            const int                  overlapW = right - left;
+            const int                  overlapH = bottom - top;
+            const std::vector<uint8_t> overlap  = content->second.pairing->readPixels(
+            { static_cast<fpx_t>(left) - contentBound.x,
+               static_cast<fpx_t>(top) - contentBound.y,
+               static_cast<fpx_t>(overlapW),
+               static_cast<fpx_t>(overlapH) });
+            if (overlap.size() != static_cast<size_t>(overlapW) * overlapH * 4) {
                 continue;
             }
 
-            const int popX = static_cast<int>(popupBound.x);
-            const int popY = static_cast<int>(popupBound.y);
-            const int popW = static_cast<int>(popupBound.w);
-            const int popH = static_cast<int>(popupBound.h);
-
-            int cx = 0;
-            int cy = 0;
-            switch (i) {
-            case 0:
-                cx = popX;
-                cy = popY;
-                break;
-            case 1:
-                cx = popX + popW - radius;
-                cy = popY;
-                break;
-            case 2:
-                cx = popX + popW - radius;
-                cy = popY + popH - radius;
-                break;
-            case 3:
-                cx = popX;
-                cy = popY + popH - radius;
-                break;
-            default: continue;
-            }
-            const int offX = capX - cx;
-            const int offY = capY - cy;
-
-            // Composite the active content surface's pixels into this corner
-            // where it overlaps (only the active, ready surface is visible).
-            auto compositeContent = [&](const Ui::Res::Type::bound_t & contentBound, Ui::IRenderer & renderer) {
-                const int oX = static_cast<int>(contentBound.x);
-                const int oY = static_cast<int>(contentBound.y);
-                const int oW = static_cast<int>(contentBound.w);
-                const int oH = static_cast<int>(contentBound.h);
-
-                if (capX + capW <= oX || capX >= oX + oW || capY + capH <= oY || capY >= oY + oH) {
-                    return;
-                }
-
-                int                  contentW      = 0;
-                int                  contentH      = 0;
-                std::vector<uint8_t> contentPixels = renderer.readPixels(contentW, contentH);
-                if (contentPixels.empty() || contentW <= 0 || contentH <= 0) {
-                    return;
-                }
-
-                auto & buf = outPixels.at(i);
-                for (int py = 0; py < capH; ++py) {
-                    for (int px = 0; px < capW; ++px) {
-                        const int sx = capX - oX + px;
-                        const int sy = capY - oY + py;
-                        if (sx < 0 || sx >= contentW || sy < 0 || sy >= contentH) {
-                            continue;
-                        }
-                        const int dX = px + offX;
-                        const int dY = py + offY;
-                        if (dX < 0 || dX >= radius || dY < 0 || dY >= radius) {
-                            continue;
-                        }
-                        const int srcIdx                     = (sy * contentW + sx) * 4;
-                        const int dstIdx                     = (dY * radius + dX) * 4;
-                        buf[static_cast<size_t>(dstIdx) + 0] = contentPixels[static_cast<size_t>(srcIdx) + 0];
-                        buf[static_cast<size_t>(dstIdx) + 1] = contentPixels[static_cast<size_t>(srcIdx) + 1];
-                        buf[static_cast<size_t>(dstIdx) + 2] = contentPixels[static_cast<size_t>(srcIdx) + 2];
-                        buf[static_cast<size_t>(dstIdx) + 3] = 255;
+            auto &    buf     = outPixels.at(i);
+            const int cornerX = static_cast<int>(corner.x);
+            const int cornerY = static_cast<int>(corner.y);
+            for (int py = 0; py < overlapH; ++py) {
+                for (int px = 0; px < overlapW; ++px) {
+                    const int dX = left - cornerX + px;
+                    const int dY = top - cornerY + py;
+                    if (dX < 0 || dX >= radius || dY < 0 || dY >= radius) {
+                        continue;
                     }
+                    const size_t srcIdx = ((static_cast<size_t>(py) * overlapW) + px) * 4;
+                    const size_t dstIdx = ((static_cast<size_t>(dY) * radius) + dX) * 4;
+                    buf[dstIdx + 0]     = overlap[srcIdx + 0];
+                    buf[dstIdx + 1]     = overlap[srcIdx + 1];
+                    buf[dstIdx + 2]     = overlap[srcIdx + 2];
+                    buf[dstIdx + 3]     = 255;
                 }
-            };
-            if (auto cit = m_contentSurfaces.find(m_activeContent);
-                cit != m_contentSurfaces.end() && cit->second.window != nullptr && cit->second.pairing != nullptr
-                && cit->second.isReady) {
-                compositeContent(cit->second.window->bound(), *cit->second.pairing);
             }
         }
 
@@ -2676,6 +3056,8 @@ public:
 
     bool onMouseMove(int x, int y) override
     {
+        m_spentButton = spentButtonOf(m_spentButton, m_spentBound, toCss(x), toCss(y));
+
         // Mid-drag: route exclusively to whoever holds the pointer until
         // mouse-up, so the cursor can wander into the content surface without
         // breaking the gesture.
@@ -2694,10 +3076,18 @@ public:
             m_renderQueue.request(MAIN_WINDOW_ID);
         }
 
-        // The grip is a resize handle; say so before the drag rather than after
-        setCursor(overGrip ? Ui::Window::PointerShape::ResizeH : Ui::Window::PointerShape::Default);
+        // The grip is a resize handle - say so before the drag rather than after; over
+        // a content surface, whatever its host asked for (setContentPointer)
+        const content_hit_t hit = hitTestActiveContent(x, y);
+        m_pointerContent        = hit.pairing != nullptr ? m_activeContent : Ui::INVALID_ID;
+        if (overGrip) {
+            setCursor(Ui::Window::PointerShape::ResizeH);
+        } else {
+            setCursor(hit.pairing != nullptr ? m_contentSurfaces.at(m_activeContent).pointer
+                                             : Ui::Window::PointerShape::Default);
+        }
 
-        if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
+        if (hit.pairing != nullptr) {
             if (m_main) {
                 m_main->onMouseLeave();
             }
@@ -2737,14 +3127,13 @@ public:
         m_dragType = element.type;
 
         if (element.type == Ui::Render::UiElementType::DockSlider) {
-            const id_t rowId = Ui::toDockRowId(element.id);
             for (auto & [id, dock] : m_docks) {
-                if (!dock.hasSliderRow(rowId)) {
+                if (!dock.hasSliderRow(element.id)) {
                     continue;
                 }
                 m_dragElement = element.id;
                 m_dragDock    = id;
-                if (const std::optional<fpx_t> jumped = dock.beginSliderGesture(rowId, cssX)) {
+                if (const std::optional<fpx_t> jumped = dock.beginSliderGesture(element.id, cssX)) {
                     reportRowValue(*jumped);
                 }
                 return true;
@@ -2755,7 +3144,7 @@ public:
         // Pressing the track pages instead of grabbing, so the gesture can be over
         // before it starts - isDraggingScroll() is what decides whether to capture
         if (element.type == Ui::Render::UiElementType::DockScrollbar) {
-            auto scrolled = m_docks.find(toDockIdFromScroll(element.id));
+            auto scrolled = m_docks.find(toDockId(element.id));
             if (scrolled == m_docks.end()) {
                 return false;
             }
@@ -2770,7 +3159,7 @@ public:
         if (element.type != Ui::Render::UiElementType::DockGrip) {
             return false;
         }
-        auto it = m_docks.find(toDockIdFromGrip(element.id));
+        auto it = m_docks.find(toDockId(element.id));
         if (it == m_docks.end()) {
             return false;
         }
@@ -2792,7 +3181,7 @@ public:
     void reportRowValue(fpx_t ratio)
     {
         if (m_onRowValue) {
-            m_onRowValue(Ui::toDockRowId(m_dragElement), ratio);
+            m_onRowValue(m_dragElement, ratio);
         }
     }
 
@@ -2811,7 +3200,7 @@ public:
         }
 
         if (m_dragType == Ui::Render::UiElementType::DockScrollbar) {
-            auto scrolled = m_docks.find(toDockIdFromScroll(m_dragElement));
+            auto scrolled = m_docks.find(toDockId(m_dragElement));
             if (scrolled == m_docks.end()) {
                 m_dragElement = Ui::INVALID_ID; // dock vanished; release capture
                 return false;
@@ -2822,7 +3211,7 @@ public:
             return true;
         }
 
-        auto it = m_docks.find(toDockIdFromGrip(m_dragElement));
+        auto it = m_docks.find(toDockId(m_dragElement));
         if (it == m_docks.end()) {
             m_dragElement = Ui::INVALID_ID; // dock vanished; release capture
             return false;
@@ -2851,14 +3240,14 @@ public:
         }
 
         if (m_dragType == Ui::Render::UiElementType::DockScrollbar) {
-            if (auto scrolled = m_docks.find(toDockIdFromScroll(m_dragElement)); scrolled != m_docks.end()) {
+            if (auto scrolled = m_docks.find(toDockId(m_dragElement)); scrolled != m_docks.end()) {
                 scrolled->second.endScrollDrag();
             }
             m_dragElement = Ui::INVALID_ID;
             return;
         }
 
-        auto it = m_docks.find(toDockIdFromGrip(m_dragElement));
+        auto it = m_docks.find(toDockId(m_dragElement));
         if (it != m_docks.end()) {
             it->second.onMouseUp(cssX);
         }
@@ -2909,7 +3298,8 @@ public:
 
     bool onMouseLeave() override
     {
-        bool changed = false;
+        bool changed     = false;
+        m_pointerContent = Ui::INVALID_ID;
 
         // Active content surface can be mid-drag; clear its drag state too
         if (Ui::IRenderer * active = activeContentPairing()) {
@@ -2977,10 +3367,18 @@ public:
     // Child-routed overloads (child-local coordinates, bypass hit-testing).
     // childId is a content-surface id; coords are already in its frame.
 
+    // A surface's own events never pass the main window's hit test, so its pointer is
+    // set here - a child window with none of its own shows its parent's
     bool onMouseMove(int x, int y, id_t childId)
     {
-        Ui::IRenderer * pairing = (childId != Ui::INVALID_ID) ? contentPairing(childId) : nullptr;
-        return pairing != nullptr ? pairing->onMouseMove(x, y) : onMouseMove(x, y);
+        const auto it = m_contentSurfaces.find(childId);
+        if (it == m_contentSurfaces.end() || it->second.pairing == nullptr) {
+            return onMouseMove(x, y);
+        }
+        m_spentButton    = Ui::INVALID_ID; // on a content surface, so off every button
+        m_pointerContent = childId;
+        setCursor(it->second.pointer);
+        return it->second.pairing->onMouseMove(x, y);
     }
 
     Ui::Render::element_event_t onMousePress(int                     x,
@@ -3020,6 +3418,7 @@ public:
 
         m_isRunning = false;
 
+        destroyTooltip();
         destroyPopup(true);
         m_dialogWindow.reset();
 
@@ -3029,6 +3428,7 @@ public:
         m_popupComposite.destroy();
         m_submenuComposite.destroy();
         m_dialogComposite.destroy();
+        m_tooltipComposite.destroy();
         // Content surfaces are owned by the host; we only drop our
         // composite textures + non-owning registry entries (windows already gone
         // or about to be torn down by the host).
@@ -3055,12 +3455,13 @@ public:
     /**
      * @brief Render the active content surface if queued.
      *
-     * Call from the main loop. Returns true if a composite capture happened and
-     * the main window must re-render (Wayland composite path).
+     * Call from the main loop. Returns true when the main window must re-render:
+     * composited, it draws the surface; otherwise its frame is what recaptures
+     * the corners of a popup, dialog or tooltip standing on the surface.
      */
     bool renderContentSurfaces()
     {
-        bool anyRendered = false;
+        bool isMainFrameNeeded = false;
         for (auto & [id, entry] : m_contentSurfaces) {
             if (entry.window == nullptr) {
                 continue;
@@ -3073,7 +3474,7 @@ public:
             }
 
             // Only render if in the render queue.
-            if (!m_renderQueue.pending().contains(WS_GROUP_ID + id)) {
+            if (!m_renderQueue.pending().contains(id)) {
                 continue;
             }
 
@@ -3091,10 +3492,12 @@ public:
             // Composite mode: capture rendered pixels for main-window compositing.
             if (rendered && g_config.isCompositing) {
                 captureContentComposite(entry);
-                anyRendered = true;
+            }
+            if (rendered && (g_config.isCompositing || isChromeOpen() || hasTooltip())) {
+                isMainFrameNeeded = true;
             }
         }
-        return anyRendered;
+        return isMainFrameNeeded;
     }
 
     void initCompositeShader()

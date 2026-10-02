@@ -55,6 +55,7 @@ Read accessors (all return `const &` unless noted):
 - `themePreviewColors(key)` -> `pair<color_pair_t, color_pair_t>` ({dark, light}).
 - `dialogTypeConfig(Type::DialogType)` -> `Type::dialog_type_config_t`.
 - `buttons()` -> `vector<Type::button_t>`, `menus()` -> `vector<Type::menu_t>`.
+- `findButton(id)` -> `const Type::button_t *` (nullptr for none): a toolbar button by its id, with no search - its id's serial (`Ui::serialOf`) is its place in `buttons()`, since `loadButtons` numbers them in that order. The one lookup the renderer, the tooltip and `isActiveButton` share.
 - `isThemeDark()`, `themeIcon()`, `themeName()`.
 
 Menu queries and mutation:
@@ -140,6 +141,8 @@ so log output, SVG cache keys, and font registration stay platform-neutral.
   `submenuRoot()`, `submenuDir(name)`.
 - Parameterised: `icon(name)`, `fontFile(name)`, `locale(lang)`,
   `theme(name, mode)` (-> `submenu/theme/<name>-<mode>.json`).
+- `iconPathOf(iconField)`: a res `"icon"` field resolved - a bare name is a bundled
+  icon (`icon(name)`), anything with a `/` a path the res data supplied outright.
 
 ## Util
 
@@ -256,7 +259,7 @@ Both are parameters of `IRender::drawText`, replacing the old `bool centered`.
 Aggregate value blocks:
 
 - `layout_t` (`layout.h`) - the full layout block: region_t members (topMenu,
-  toolbars, statusBar, workspace, workspaceTab, dialog, ...), dock defaults,
+  toolbars, toolbarButton, tooltip, statusBar, workspace, workspaceTab, dialog, ...), dock defaults,
   theme-preview geometry, hover/active border radii, dialog/tab metrics, the
   `docks` config vector, icon filenames, and scalar `:root` vars
   (`menuMaxDepth`, `windowWidth`/`windowHeight`, icon shadow/scale, etc.).
@@ -273,25 +276,37 @@ Aggregate value blocks:
 - `popup_t` (`popup.h`) - cached dropdown metrics: itemHeight, item padding,
   separator height/margins.
 - `theme_t` (`theme.h`) - the full resolved theme: per-element `font_t`s,
-  `color_pair_t`s for every region and interactive state (menu, buttons, tabs,
-  dialog, scrollbar, status bar), standalone colors (shadow, model, error, info,
+  `color_pair_t`s for every region and interactive state (menu, toolbar buttons
+  (`toolbarButton`/`Hover`/`Active`, hover also while pressed, active while the
+  tool is on), the tooltip, tabs, dialog, scrollbar, status bar), standalone colors (shadow, model, error, info,
   warn, disabled/separator/shortcut), and the embedded `Dock::dock_theme_t`.
   Note `colorError` is also the FALLBACK any unresolved block colour takes: an
   absent block, an absent property and a mistyped value all resolve to it alike,
   so a misspelled key paints the element in the theme's error colour rather than
   leaving it unset. A test asking "is this block defined?" must compare against
   `colorError`, not against alpha.
-- `input_t` (`input.h`) - scroll + key-animation tunables from `res/input.json`
-  (scrollNatural/Speed/Smooth/SnapThreshold, keyAnimationDelay).
+- `input_t` (`input.h`) - scroll, key-animation and tooltip tunables from `res/input.json`
+  (scrollNatural/Speed/Smooth/SnapThreshold, keyAnimationDelayMs - `keyAnimation.delayMs`, each
+  phase of a dialog's keyboard press, tooltipDelayMs - `tooltip.delayMs`, how long the pointer
+  rests on a toolbar button before its first tooltip shows). Every duration is whole milliseconds.
 
 Menu / button / dialog / icon:
 
 - `menu_t` (`menu.h`) - one node in the recursive menu tree (same type at every
   depth): id, order, actionKey, label, visible/enabled/separator flags,
   popupHeight, submenu auto-key + submenuActionKey, shortcut, icon + IconPlace,
-  embedded `dialog_t`, child `items`, and the hierarchical `key`.
-- `button_t` (`button.h`) - a toolbar button: id, width/height, order, colors,
-  actionKey, label, tooltip, enabled/visible, icon, key.
+  `tooltip` (a locale key, read for a top-level menu: drawn as a menu-bar button,
+  it shows the tooltip a toolbar button's `tooltip` does - the icon-only theme
+  switch names one), embedded `dialog_t`, child `items`, and the hierarchical `key`.
+- `button_t` (`button.h`) - a toolbar button: id, order, actionKey, label,
+  tooltip, enabled/visible, icon, anchor, key. No size or colour of its own:
+  every button is `layout_t::toolbarButton` (width/height, margin between
+  buttons, padding insetting the icon, border-radius) and is painted by the
+  theme's `toolbar-button` / `:hover` / `:active` backgrounds, its icon tinted by
+  `toolbar-button:disabled`'s `color` when no action is behind it. Its `tooltip` locale
+  key shows in a popup beside it, shaped by `layout_t::tooltip` (height, padding
+  round the text, margin off the button, border-radius) and styled by the
+  theme's `tooltip` block (font, color, background).
 - `dialog_t` + `dialog_button_config_t` + `dialog_type_config_t` +
   `DialogType`/`DialogAction` enums with `*FromName` mappers (`dialog.h`) -
   dialog definition (type, locale keys for title/content/link, icon, file,

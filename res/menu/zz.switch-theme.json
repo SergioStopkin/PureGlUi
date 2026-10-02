@@ -2,5 +2,6 @@
   "label": "BtnSome",
   "icon": "theme-sun.svg",
   "action": "SwitchThemeMode",
+  "tooltip": "TipThemeMode",
   "order": 999
 }

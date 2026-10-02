@@ -28,6 +28,7 @@
 #include "ui/res/key/section.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/changed.h"
+#include "ui/res/type/input.h"
 #include "ui/res/type/menu.h"
 #include "ui/type.h"
 
@@ -79,6 +80,16 @@ TEST(ResManager, LoadAllPopulatesEverything)
     EXPECT_FALSE(rm.shortcuts().empty());
     EXPECT_GT(rm.popup().itemHeight, 0.0F);
     EXPECT_GT(rm.layout().topMenu.height, 0.0F);
+}
+
+// input.json's tooltip delay is read rather than input_t's fallback: a misspelt key
+// leaves the fallback
+TEST(ResManager, TooltipDelayReadFromInput)
+{
+    ResManager rm { TEST_RES_DIR };
+    rm.loadAll();
+    EXPECT_GT(rm.input().tooltipDelayMs, 0);
+    EXPECT_NE(rm.input().tooltipDelayMs, Ui::Res::Type::input_t {}.tooltipDelayMs);
 }
 
 TEST(ResManager, FindMenuItemByIdAndKey)

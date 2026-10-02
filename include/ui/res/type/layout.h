@@ -36,6 +36,8 @@ struct alignas(128) layout_t final {
     Ui::Res::Type::region_t topMenuDropdown; // popup dropdown styling (border-radius etc)
     Ui::Res::Type::region_t leftToolbar;
     Ui::Res::Type::region_t rightToolbar;
+    Ui::Res::Type::region_t toolbarButton; // one size for every button; padding insets its icon
+    Ui::Res::Type::region_t tooltip;       // height, padding round its text, margin off its button, radius
     Ui::Res::Type::region_t statusBar;
     Ui::Res::Type::region_t workspace;
     Ui::Res::Type::region_t workspaceTab;

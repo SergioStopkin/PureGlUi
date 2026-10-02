@@ -25,7 +25,7 @@ Input flows one direction through three seams:
 
 1. An OS event (click/key) reaches Shell via `WindowManager` pub/sub subscriptions (`wireEvents`).
 2. Shell asks `Ui::Render::Context` (intents-out; see [render.md](render.md)) to map it: `m_context.mapClick(...)` / `m_context.mapKey(...)` return a `Ui::result_t` carrying `Ui::intent_t`s.
-3. Each intent goes to `execute(intent)`, which calls the pure `Ui::routeIntent(intent, *this)` switch (see [interfaces.md](interfaces.md)); that dispatches to Shell's private `IChromeCommands` overrides (`emitAction`/`openPopup`/`closePopup`/`openDialog`/`switchTab`/`closeTab`/`copyText`/`activateRow`/`toggleRow`/`openRowMenu` + `isPopupOpen`).
+3. Each intent goes to `execute(intent)`, which calls the pure `Ui::routeIntent(intent, *this)` switch (see [interfaces.md](interfaces.md)); that dispatches to Shell's `IChromeCommands` overrides (`emitAction`/`openPopup`/`closePopup`/`openDialog`/`setActiveTab`/`closeTab`/`copyText`/`activateRow`/`toggleRow`/`openRowMenu` + `isPopupOpen`), all private but `setActiveTab`, which `CycleTab` calls.
 4. `emitAction(actionKey, arg)` forwards to `m_actions.dispatch(actionKey, arg)` - the action subsystem below.
 
 `run()` is the event loop driving all of the above.
@@ -225,7 +225,7 @@ key with its implementation. It is a plain iterate-once `std::to_array` of
 `{key, function-pointer}` pairs (not a second map - the live map is the Registry it
 seeds), templated on `Host` so `Ui::Action` never depends on the concrete shell
 type. Bound keys: `"ExitApp"`, `"Reload"`, `"SwitchThemeMode"`, `"SwitchTheme"`,
-`"OpenFile"`. Called for you from `Shell::wireEvents()`.
+`"OpenFile"`, `"CycleTab"`. Called for you from `Shell::wireEvents()`.
 
 ## Built-in actions
 
@@ -241,6 +241,7 @@ is type-checked when bound.
 | `SwitchThemeMode` | `action/switchthememode.h` | `switchThemeMode` | toggle dark/light (`resManager().switchThemeMode()`), re-apply diff, refresh | ignored |
 | `SwitchTheme` | `action/switchtheme.h` | `switchTheme` | select theme by name; no-op if `arg` empty or already active | theme name |
 | `OpenFile` | `action/openfile.h` | `openFile` | native open dialog, then route each picked file to its per-extension handler | ignored |
+| `CycleTab` | `action/cycletab.h` | `cycleTab` | the tab after the active one in `tabBar().order()`, the first after the last, through `host.setActiveTab` - as a click on it, the strip scrolled to bring it into view (`TabBar::reveal`); nothing with one tab or none active | ignored |
 
 Notes:
 

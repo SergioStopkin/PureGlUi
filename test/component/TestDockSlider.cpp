@@ -29,6 +29,8 @@
  * A real ResManager over the shipped res/ supplies the three dock-slider blocks.
  */
 
+#include "testidkind.h"
+#include "ui/idkind.h"
 #include "ui/render/dockcolumn.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uilayout.h"
@@ -63,7 +65,7 @@ constexpr fpx_t    DOCK_TOP    = 100.0F;
 constexpr fpx_t    DOCK_HEIGHT = 400.0F;
 constexpr fpx_t    DOCK_EDGE   = 300.0F; // viewport-facing edge of a left dock
 constexpr fpx_t    DOCK_WIDTH  = 180.0F;
-constexpr Ui::id_t SLIDER_ROW  = 7;
+constexpr Ui::id_t SLIDER_ROW  = Ui::idOf(PureGlUi::TestIdKind::Row, 7);
 
 class DockSliderTest : public ::testing::Test {
 protected:
@@ -87,7 +89,7 @@ protected:
     {
         std::vector<row_t> rows;
         row_t              text;
-        text.id    = 1;
+        text.id    = Ui::idOf(PureGlUi::TestIdKind::Row, 1);
         text.label = "above";
         rows.emplace_back(std::move(text));
 
@@ -118,7 +120,7 @@ protected:
         std::vector<row_t> rows = rowsWithSlider(ratio);
         for (Ui::id_t i = 0; i < 40; ++i) {
             row_t filler;
-            filler.id    = 100 + i;
+            filler.id    = Ui::idOf(PureGlUi::TestIdKind::Row, 100 + i);
             filler.label = "below";
             rows.emplace_back(std::move(filler));
         }

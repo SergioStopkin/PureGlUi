@@ -61,22 +61,28 @@
     "color": "var(--cl-main) darker(24.0)"
   },
   "left-toolbar": {
-    "font-family": "var(--font-sans)",
-    "font-size": "24px",
-    "font-weight": "bold",
     "color": "var(--cl-main)",
     "background": "var(--bg-second)"
   },
-  "button": {
-    "font-family": "var(--font-sans)",
-    "font-size": "24px",
-    "font-weight": "bold",
-    "color": "var(--cl-main)",
+  "toolbar-button": {
     "background": "var(--bg-second)"
+  },
+  "toolbar-button:hover": {
+    "background": "var(--bg-second)"
+  },
+  "toolbar-button:active": {
+    "background": "var(--bg-second) darker(12.0)"
+  },
+  "toolbar-button:disabled": {
+    "color": "var(--cl-shadow)"
+  },
+  "tooltip": {
+    "font-family": "var(--font-sans)",
+    "font-size": "16px",
+    "color": "var(--cl-second)",
+    "background": "var(--bg-second) darker(8.0)"
   },
   "right-toolbar": {
-    "font-family": "var(--font-sans)",
-    "font-size": "24px",
     "color": "var(--cl-main)",
     "background": "var(--bg-second)"
   },

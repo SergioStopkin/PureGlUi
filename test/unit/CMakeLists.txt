@@ -41,6 +41,11 @@ add_executable(
     TestSliderRes.cpp
     TestSlider.cpp
     TestTruncateText.cpp
+    TestTooltipBoundOf.cpp
+    TestTooltipWantedOf.cpp
+    TestTabsShownOf.cpp
+    TestCycleTab.cpp
+    TestIdKind.cpp
     TestSig.cpp
 )
 

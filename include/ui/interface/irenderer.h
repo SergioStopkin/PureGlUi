@@ -20,6 +20,7 @@
 #include "ui/color.h"
 #include "ui/interface/ieventapp.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/bound.h"
 #include "ui/res/type/changed.h"
 
 #include <cstdint>
@@ -81,19 +82,17 @@ public:
     }
 
     /**
-     * @brief Read the rendered surface as RGBA pixels (top-left origin).
+     * @brief Read a region of the rendered surface as RGBA pixels, top row first.
      *
-     * Lets the window layer snapshot any content surface for compositing,
-     * without knowing the renderer type. Default is empty (renderers that are
-     * never composited - the UI chrome, popups - need not implement it); a
-     * content-surface renderer overrides it with a framebuffer read.
+     * `region` is in the surface's own physical pixels, top-left origin; the result
+     * is region.w * region.h * 4 bytes, or empty when the region does not lie inside
+     * the surface or nothing has rendered. Lets the window layer read what stands
+     * under a popup's corner without knowing the renderer type - only the pixels it
+     * needs, since a read stalls the GPU for as much as it copies. Default is empty
+     * (renderers that never stand under a popup - the UI chrome, popups - need not
+     * implement it); a content-surface renderer overrides it with a framebuffer read.
      */
-    virtual std::vector<uint8_t> readPixels(int & outWidth, int & outHeight)
-    {
-        outWidth  = 0;
-        outHeight = 0;
-        return {};
-    }
+    virtual std::vector<uint8_t> readPixels(const Ui::Res::Type::bound_t & /*region*/) { return {}; }
 };
 
 } // namespace Ui

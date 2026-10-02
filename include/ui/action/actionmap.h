@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "ui/action/cycletab.h"
 #include "ui/action/exitapp.h"
 #include "ui/action/openfile.h"
 #include "ui/action/reload.h"
@@ -49,6 +50,7 @@ void registerActions(Host & host)
     { "SwitchThemeMode", &switchThemeMode<Host> },
     { "SwitchTheme", &switchTheme<Host> },
     { "OpenFile", &openFile<Host> },
+    { "CycleTab", &cycleTab<Host> },
     });
     for (const auto & [key, fn] : actions) {
         host.actions().on(key, [&host, fn](const std::string & arg) { fn(host, arg); });

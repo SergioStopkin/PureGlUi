@@ -29,7 +29,8 @@ struct alignas(32) input_t final {
     fpx_t scrollSpeed { 40.0F };
     fpx_t scrollSmooth { 15.0F };
     fpx_t scrollSnapThreshold { 0.5F };
-    fpx_t keyAnimationDelay { 0.12F };
+    int   keyAnimationDelayMs { 120 };
+    int   tooltipDelayMs { 300 }; // a toolbar button's first tooltip waits for the pointer to rest
 
     bool operator==(const input_t &) const = default;
 };

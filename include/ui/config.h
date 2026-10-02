@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "ui/res/type/bound.h"
 #include "ui/type.h"
 
 #include <cmath>
@@ -39,6 +40,10 @@ struct alignas(16) config_t final {
     [[nodiscard]] int   toPhysFloor(fpx_t css) const { return static_cast<int>(css * scale); }
     [[nodiscard]] fpx_t toPhysRound(int css) const { return css * scale; }
     [[nodiscard]] fpx_t toPhysRound(fpx_t css) const { return static_cast<fpx_t>(std::lround(css)) * scale; }
+    [[nodiscard]] Ui::Res::Type::bound_t toPhysRound(const Ui::Res::Type::bound_t & css) const
+    {
+        return { toPhysRound(css.x), toPhysRound(css.y), toPhysRound(css.w), toPhysRound(css.h) };
+    }
 
     // physical px -> CSS px.
     [[nodiscard]] fpx_t toCss(int phys) const { return phys / scale; }
@@ -55,15 +60,16 @@ inline config_t g_config;
 inline int roundToInt(fpx_t v) { return static_cast<int>(std::lround(v)); }
 inline int roundToInt(double v) { return static_cast<int>(std::lround(v)); }
 
-inline fpx_t toPhys(int css) { return g_config.toPhys(css); }
-inline fpx_t toPhys(fpx_t css) { return g_config.toPhys(css); }
-inline int   toPhysFloor(int css) { return g_config.toPhysFloor(css); }
-inline int   toPhysFloor(fpx_t css) { return g_config.toPhysFloor(css); }
-inline fpx_t toPhysRound(int css) { return g_config.toPhysRound(css); }
-inline fpx_t toPhysRound(fpx_t css) { return g_config.toPhysRound(css); }
-inline fpx_t toCss(int phys) { return g_config.toCss(phys); }
-inline fpx_t toCss(fpx_t phys) { return g_config.toCss(phys); }
-inline int   toCssFloor(int phys) { return g_config.toCssFloor(phys); }
-inline int   toCssFloor(fpx_t phys) { return g_config.toCssFloor(phys); }
+inline fpx_t                  toPhys(int css) { return g_config.toPhys(css); }
+inline fpx_t                  toPhys(fpx_t css) { return g_config.toPhys(css); }
+inline int                    toPhysFloor(int css) { return g_config.toPhysFloor(css); }
+inline int                    toPhysFloor(fpx_t css) { return g_config.toPhysFloor(css); }
+inline fpx_t                  toPhysRound(int css) { return g_config.toPhysRound(css); }
+inline fpx_t                  toPhysRound(fpx_t css) { return g_config.toPhysRound(css); }
+inline Ui::Res::Type::bound_t toPhysRound(const Ui::Res::Type::bound_t & css) { return g_config.toPhysRound(css); }
+inline fpx_t                  toCss(int phys) { return g_config.toCss(phys); }
+inline fpx_t                  toCss(fpx_t phys) { return g_config.toCss(phys); }
+inline int                    toCssFloor(int phys) { return g_config.toCssFloor(phys); }
+inline int                    toCssFloor(fpx_t phys) { return g_config.toCssFloor(phys); }
 
 } // namespace Ui

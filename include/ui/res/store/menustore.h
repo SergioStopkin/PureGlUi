@@ -23,7 +23,7 @@
 #include "common/sanitize.h"
 #include "nlohmann/json.hpp"
 #include "ui/convert.h"
-#include "ui/elementid.h"
+#include "ui/idkind.h"
 #include "ui/res/key/menu.h"
 #include "ui/res/localemanager.h"
 #include "ui/res/respath.h"
@@ -125,6 +125,15 @@ public:
     [[nodiscard]] const std::vector<Ui::Res::Type::button_t> & buttons() const { return m_buttons; }
     [[nodiscard]] const std::vector<Ui::Res::Type::menu_t> &   menus() const { return m_menus; }
 
+    // A toolbar button by its id, nullptr for none. Its serial is its place in
+    // m_buttons (loadButtons numbers them in that order), so no search
+    [[nodiscard]] const Ui::Res::Type::button_t * findButton(id_t id) const
+    {
+        const id_t serial = Ui::serialOf(id);
+        return (Ui::kindOf(id) == Ui::IdKind::ToolbarButton && serial < m_buttons.size()) ? &m_buttons[serial]
+                                                                                          : nullptr;
+    }
+
     // Size (w/h, CSS) of the largest dialog the menus declare; x/y unused
     [[nodiscard]] const Ui::Res::Type::bound_t & maxDialog() const { return m_maxDialog; }
 
@@ -152,12 +161,8 @@ public:
     // copying a button_t per frame to answer a bool is not worth it
     [[nodiscard]] bool isActiveButton(id_t elementId) const
     {
-        for (const auto & button : m_buttons) {
-            if (button.id == elementId) {
-                return isActiveValue(button.actionKey, button.label);
-            }
-        }
-        return false;
+        const Ui::Res::Type::button_t * button = findButton(elementId);
+        return button != nullptr && isActiveValue(button->actionKey, button->label);
     }
 
     // Register a host-provided value getter for a stateful (radio) action's menu
@@ -356,6 +361,8 @@ public:
                 menu.visible   = Common::Json::boolean(j, menuKeyName(MenuKey::Visible), true);
                 menu.icon      = Common::Sanitize::filePath(Common::Json::string(j, menuKeyName(MenuKey::Icon)),
                                                        "menu.icon");
+                menu.tooltip   = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Tooltip)),
+                                                        "menu.tooltip");
                 menu.actionKey = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Action)),
                                                           "menu.action");
 
@@ -420,20 +427,23 @@ public:
         // (parent:child). Forward-looking identity for addressing; not yet a
         // runtime consumer - the numeric id drives hit-test/dispatch today.
         {
-            id_t menuCounter = static_cast<id_t>(Ui::ElementId::MenuBase);
-            id_t itemCounter = static_cast<id_t>(Ui::ElementId::ItemBase);
+            id_t menuSerial = 0;
+            id_t itemSerial = 0;
             for (auto & menu : m_menus) {
-                menu.id  = menuCounter++;
+                menu.id  = Ui::idOf(Ui::IdKind::MenuButton, menuSerial);
                 menu.key = menu.label;
+                ++menuSerial;
                 for (auto & item : menu.items) {
                     if (!item.separator) {
-                        item.id  = itemCounter++;
+                        item.id  = Ui::idOf(Ui::IdKind::MenuItem, itemSerial);
                         item.key = menu.key + ":" + item.label;
+                        ++itemSerial;
                     }
                     for (auto & sub : item.items) {
                         if (!sub.separator) {
-                            sub.id  = itemCounter++;
+                            sub.id  = Ui::idOf(Ui::IdKind::MenuItem, itemSerial);
                             sub.key = item.key + ":" + sub.label;
+                            ++itemSerial;
                         }
                     }
                 }
@@ -477,8 +487,6 @@ public:
                                                        "button.tooltip");
                 btn.anchor    = Ui::Res::Dock::dockAnchorFromName(
                 Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Anchor)), "button.anchor"));
-                btn.width   = Common::Json::number(j, menuKeyName(MenuKey::Width), fpx_t {});
-                btn.height  = Common::Json::number(j, menuKeyName(MenuKey::Height), fpx_t {});
                 btn.order   = Common::Json::number(j, menuKeyName(MenuKey::Order), int16_t {});
                 btn.enabled = Common::Json::boolean(j, menuKeyName(MenuKey::Enabled), true);
                 btn.visible = Common::Json::boolean(j, menuKeyName(MenuKey::Visible), true);
@@ -493,10 +501,11 @@ public:
 
         // Auto-generate unique IDs (after sort so IDs are deterministic)
         {
-            id_t btnCounter = static_cast<id_t>(Ui::ElementId::ButtonBase);
+            id_t buttonSerial = 0;
             for (auto & btn : m_buttons) {
-                btn.id  = btnCounter++;
+                btn.id  = Ui::idOf(Ui::IdKind::ToolbarButton, buttonSerial);
                 btn.key = btn.label;
+                ++buttonSerial;
             }
         }
 

@@ -90,7 +90,11 @@ TEST(ResKeys, ElementKeyAllMappedUniqueNonEmpty)
         ElementKey::WorkspaceTabClose,
         ElementKey::WorkspaceTabCloseHover,
         ElementKey::WorkspaceTabArrow,
-        ElementKey::Button,
+        ElementKey::ToolbarButton,
+        ElementKey::ToolbarButtonHover,
+        ElementKey::ToolbarButtonActive,
+        ElementKey::ToolbarButtonDisabled,
+        ElementKey::Tooltip,
         ElementKey::ThemePreview,
         ElementKey::Dialog,
         ElementKey::DialogTitle,
@@ -142,17 +146,16 @@ TEST(ResKeys, ElementKeySpotSpellings)
 TEST(ResKeys, CssPropKeyAllMappedUniqueNonEmpty)
 {
     const std::vector<CssPropKey> all {
-        CssPropKey::Color,          CssPropKey::Background,   CssPropKey::Width,
-        CssPropKey::Height,         CssPropKey::Margin,       CssPropKey::MarginBottom,
-        CssPropKey::Padding,        CssPropKey::BorderRadius, CssPropKey::Top,
-        CssPropKey::Left,           CssPropKey::Right,        CssPropKey::Bottom,
-        CssPropKey::MinWidth,       CssPropKey::MinHeight,    CssPropKey::LineHeight,
-        CssPropKey::ActiveContrast, CssPropKey::FontFamily,   CssPropKey::FontSize,
-        CssPropKey::FontWeight,     CssPropKey::Icon,         CssPropKey::IconLeft,
-        CssPropKey::IconRight,      CssPropKey::Shift,        CssPropKey::SplitAngle,
-        CssPropKey::MinThumbHeight, CssPropKey::GripWidth,    CssPropKey::GripIcon,
-        CssPropKey::ClickThreshold, CssPropKey::RowIndent,    CssPropKey::RowExpanderSize,
-        CssPropKey::RowKeyRatio,
+        CssPropKey::Color,      CssPropKey::Background,      CssPropKey::Width,
+        CssPropKey::Height,     CssPropKey::Margin,          CssPropKey::MarginBottom,
+        CssPropKey::Padding,    CssPropKey::BorderRadius,    CssPropKey::Top,
+        CssPropKey::Left,       CssPropKey::Right,           CssPropKey::Bottom,
+        CssPropKey::MinWidth,   CssPropKey::MinHeight,       CssPropKey::LineHeight,
+        CssPropKey::FontFamily, CssPropKey::FontSize,        CssPropKey::FontWeight,
+        CssPropKey::Icon,       CssPropKey::IconLeft,        CssPropKey::IconRight,
+        CssPropKey::Shift,      CssPropKey::SplitAngle,      CssPropKey::MinThumbHeight,
+        CssPropKey::GripWidth,  CssPropKey::GripIcon,        CssPropKey::ClickThreshold,
+        CssPropKey::RowIndent,  CssPropKey::RowExpanderSize, CssPropKey::RowKeyRatio,
     };
     expectNonEmptyAndUnique(all, cssPropKeyName);
     EXPECT_EQ(all.size(), static_cast<std::size_t>(CssPropKey::Count));

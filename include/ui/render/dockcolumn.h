@@ -18,8 +18,8 @@
 #pragma once
 
 #include "common/noncopyable.h"
-#include "ui/elementid.h"
 #include "ui/gl/svgrenderer.h"
+#include "ui/idkind.h"
 #include "ui/render/dragtrack.h"
 #include "ui/render/scrollbar.h"
 #include "ui/render/slider.h"
@@ -512,34 +512,31 @@ private:
 
         const std::size_t last = lastVisibleRow();
         for (std::size_t i = m_firstRow; i < last; ++i) {
-            // Renders but never reports - offset, INVALID_ID would wrap into an
-            // id that looks real
+            // Renders but never reports
             if (m_rows[i].id == INVALID_ID) {
                 continue;
             }
-            // Offset into the reserved dock-row range so a host row id cannot
-            // land on a menu button's. Context subtracts it again, so the host
-            // only ever sees its own id.
-            const id_t elementId = toDockRowElementId(m_rows[i].id);
             if constexpr (DOCK_DEBUG) {
                 const Ui::Res::Type::bound_t sb = sliderBound(contentRect, i);
                 std::cout << "[DockColumn::elements] row=" << i << " id=" << m_rows[i].id
                           << " kind=" << static_cast<int>(m_rows[i].kind) << " ratio=" << m_rows[i].ratio
                           << " sliderBound=(" << sb.x << "," << sb.y << " " << sb.w << "x" << sb.h << ")" << std::endl;
             }
-            layout.addElement(UiElementType::DockRow, rowBound(contentRect, i), elementId);
+            // The host's row id is the element id: it carries a host kind, so it
+            // cannot land on a framework element's (Ui::isHostId)
+            layout.addElement(UiElementType::DockRow, rowBound(contentRect, i), m_rows[i].id);
             if (hasExpander(contentRect, i)) {
-                layout.addElement(UiElementType::DockExpander, expanderBound(contentRect, i), elementId);
+                layout.addElement(UiElementType::DockExpander, expanderBound(contentRect, i), m_rows[i].id);
             }
             // Over its row, so the slider takes the press instead of selecting.
             // The HIT bound, not the track's: what is drawn is taller than the bar
             if (hasSlider(contentRect, i)) {
-                layout.addElement(UiElementType::DockSlider, sliderHitBound(contentRect, i), elementId);
+                layout.addElement(UiElementType::DockSlider, sliderHitBound(contentRect, i), m_rows[i].id);
             }
             // Over its row too, but only the value column: a click on the choice
             // opens the row's menu, a click on the label still selects the row
             if (m_rows[i].kind == Ui::Res::Dock::RowKind::Menu) {
-                layout.addElement(UiElementType::DockMenu, menuBound(contentRect, i), elementId);
+                layout.addElement(UiElementType::DockMenu, menuBound(contentRect, i), m_rows[i].id);
             }
         }
     }

@@ -51,6 +51,7 @@
   "TipSubmitForm": "Submit the form",
   "TipCancel": "Cancel",
   "TipSomeAction": "Some action",
+  "TipThemeMode": "Dark / light theme",
   "StatusReady": "Ready",
   "StatusCopiedToClipboard": "Copied to clipboard"
 }

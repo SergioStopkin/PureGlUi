@@ -19,7 +19,11 @@
 
 #include "ui/interface/irenderer.h"
 #include "ui/interface/iwindow.h"
+#include "ui/res/type/bound.h"
 #include "ui/window/compositetexture.h"
+#include "ui/window/pointershape.h"
+
+#include <string>
 
 namespace Ui::Window {
 
@@ -29,10 +33,13 @@ namespace Ui::Window {
 // events, resize, apply, and readPixels. composite holds the Wayland
 // offscreen->texture cache. Both pointers are non-owning - the host owns them.
 struct alignas(128) content_surface_t final {
-    CompositeTexture composite;
-    Ui::IWindow *    window  = nullptr;
-    Ui::IRenderer *  pairing = nullptr;
-    bool             isReady = true; // false while the host is mid async-load (skip rendering)
+    CompositeTexture       composite;
+    Ui::IWindow *          window  = nullptr;
+    Ui::IRenderer *        pairing = nullptr;
+    bool                   isReady = true;                  // false while the host is mid async-load (skip rendering)
+    PointerShape           pointer = PointerShape::Default; // what the pointer shows over it (setContentPointer)
+    std::string            tooltipText;   // what its host names under the pointer (setContentTooltip), empty for none
+    Ui::Res::Type::bound_t tooltipAnchor; // beside what, in the surface's own physical px
 };
 
 } // namespace Ui::Window

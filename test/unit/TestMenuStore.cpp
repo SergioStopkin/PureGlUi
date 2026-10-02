@@ -30,6 +30,7 @@
 #include "ui/res/type/menu.h"
 #include "ui/type.h"
 
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
@@ -96,6 +97,22 @@ TEST(MenuStore, LoadButtons)
     // Reload identical files: equal-size vectors force element-wise
     // button_t::operator== and must report no change.
     EXPECT_EQ(fixture.store.loadButtons(resPath().buttonDir()), Changed::None);
+}
+
+// A top-level menu carries a tooltip key as a toolbar button does: the menu-bar
+// theme switch, an icon with no label to read, names one
+TEST(MenuStore, MenuBarButtonTooltipParsed)
+{
+    TestSupport::menu_store_fixture_t fixture;
+    fixture.layout.load(resPath().layoutFile());
+    fixture.store.loadMenus(resPath().menuDir());
+
+    const std::vector<Ui::Res::Type::menu_t> & menus = fixture.store.menus();
+    const auto themeSwitch = std::ranges::find_if(menus, [](const Ui::Res::Type::menu_t & menu) {
+        return menu.actionKey == "SwitchThemeMode";
+    });
+    ASSERT_NE(themeSwitch, menus.end());
+    EXPECT_FALSE(themeSwitch->tooltip.empty());
 }
 
 TEST(MenuStore, ActionMapAndFindRoundTrip)

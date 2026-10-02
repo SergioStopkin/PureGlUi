@@ -37,10 +37,10 @@ enum class MenuKey : unsigned char {
     Visible,   // item is shown
     Order,     // sort order among siblings
     Items,     // child item array
-    Tooltip,   // button tooltip
+    Tooltip,   // a toolbar or menu-bar button's tooltip
     Anchor,    // toolbar edge a button sits on ("left" / "right")
-    Width,     // button / dialog width
-    Height,    // button / dialog height
+    Width,     // dialog width
+    Height,    // dialog height
     Name,      // auto-submenu entry identity (res/submenu/<key>/*.json)
     // "submenus" block: array of children, or {auto,action} auto-generation.
     Submenus, // submenu spec (array or object)
