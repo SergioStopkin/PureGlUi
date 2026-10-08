@@ -26,6 +26,7 @@
  */
 
 #include "common/bytes.h"
+#include "common/hash.h"
 #include "common/noncopyable.h"
 #include "ui/color.h"
 #include "ui/config.h"
@@ -91,10 +92,9 @@ struct alignas(64) cache_key_t final {
 
 template <>
 struct std::hash<Ui::Gl::cache_key_t> { // NOLINT(altera-struct-pack-align)
-    std::size_t operator()(const Ui::Gl::cache_key_t & k) const
+    std::size_t operator()(const Ui::Gl::cache_key_t & key) const
     {
-        return std::hash<std::string>()(k.svgId) ^ (std::hash<int>()(k.width) << 1U)
-             ^ (std::hash<int>()(k.height) << 2U);
+        return Common::hashOf(key.svgId, key.width, key.height);
     }
 };
 

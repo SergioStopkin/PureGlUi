@@ -28,6 +28,30 @@ const auto merged = Common::Bit::Or(flagsA, flagsB);
 const auto masked = Common::Bit::And(state, mask);
 ```
 
+## Common::hashOf
+
+Header: `include/common/hash.h`
+
+Boost's `hash_combine`, the one way a key of several fields hashes. A `std::hash` specialisation returns `Common::hashOf(field, ...)` and never folds by hand.
+
+```cpp
+template <typename First, typename... Rest> std::size_t hashOf(const First & first, const Rest &... rest);
+```
+
+`std::hash` of each value, folded left to right. Order matters: `(a, b)` and `(b, a)` hash apart. Every value needs a `std::hash` (enums have one).
+
+`std::size_t` throughout, what `std::hash` returns: a bucket number two keys may share, never an id (`Ui::id_t` is the id).
+
+```cpp
+template <>
+struct std::hash<Ui::Res::Type::font_t> {
+    std::size_t operator()(const Ui::Res::Type::font_t & font) const
+    {
+        return Common::hashOf(font.family, font.size, font.weight);
+    }
+};
+```
+
 ## Common::loadJson
 
 Header: `include/common/json.h`

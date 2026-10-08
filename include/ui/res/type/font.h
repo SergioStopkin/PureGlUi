@@ -17,6 +17,9 @@
 
 #pragma once
 
+#include "common/hash.h"
+
+#include <cstddef>
 #include <functional>
 #include <string>
 
@@ -41,7 +44,6 @@ template <>
 struct std::hash<Ui::Res::Type::font_t> { // NOLINT(altera-struct-pack-align)
     std::size_t operator()(const Ui::Res::Type::font_t & font) const
     {
-        return std::hash<std::string>()(font.family) ^ (std::hash<int>()(font.size) << 1U)
-             ^ (std::hash<int>()(static_cast<int>(font.weight)) << 2U);
+        return Common::hashOf(font.family, font.size, font.weight);
     }
 };

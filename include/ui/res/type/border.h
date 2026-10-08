@@ -17,9 +17,10 @@
 
 #pragma once
 
-#include "common/bit.h"
+#include "common/hash.h"
 #include "ui/type.h"
 
+#include <cstddef>
 #include <functional>
 
 namespace Ui::Res::Type {
@@ -47,19 +48,8 @@ struct alignas(16) border_t final {
 
 template <>
 struct std::hash<Ui::Res::Type::border_t> { // NOLINT(altera-struct-pack-align)
-    size_t operator()(const Ui::Res::Type::border_t & b) const
+    std::size_t operator()(const Ui::Res::Type::border_t & border) const
     {
-        using Common::Bit;
-        size_t h = std::hash<float> {}(b.topLeft);
-        h        = Common::Bit::Xor(
-        h,
-        std::hash<float> {}(b.topRight) + 0x9e3779b9 + Common::Bit::Shl(h, 6U) + Common::Bit::Shr(h, 2U));
-        h = Common::Bit::Xor(
-        h,
-        std::hash<float> {}(b.bottomRight) + 0x9e3779b9 + Common::Bit::Shl(h, 6U) + Common::Bit::Shr(h, 2U));
-        h = Common::Bit::Xor(
-        h,
-        std::hash<float> {}(b.bottomLeft) + 0x9e3779b9 + Common::Bit::Shl(h, 6U) + Common::Bit::Shr(h, 2U));
-        return h;
+        return Common::hashOf(border.topLeft, border.topRight, border.bottomRight, border.bottomLeft);
     }
 };

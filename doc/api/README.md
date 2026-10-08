@@ -14,7 +14,7 @@ public types, their real signatures, and how they fit together.
 The code lives in two include roots with a strict one-way dependency law (`ui -> common`):
 
 - `include/common/` (`Common::`) - cross-cutting primitives that belong to no layer
-  (`Bit`, `Sanitize`, `loadJson`, `Unicode`, `System`, `fs`, `BackgroundWorker`).
+  (`Bit`, `hashOf`, `Sanitize`, `loadJson`, `Unicode`, `System`, `fs`, `BackgroundWorker`).
   Depends on nothing.
 - `include/ui/` (`Ui::`) - the domain-blind UI framework and its runnable core
   `Ui::Shell`. Depends on `common/` only.
@@ -122,7 +122,7 @@ See [shell-actions.md](shell-actions.md) for the full host walkthrough.
 
 | Page | Covers |
 |------|--------|
-| [common.md](common.md) | `Common::` primitives (bit, json, sanitize, unicode, fs, system, backgroundworker) |
+| [common.md](common.md) | `Common::` primitives (bit, hash, json, sanitize, unicode, fs, system, backgroundworker) |
 | [vocabulary.md](vocabulary.md) | `Ui::` value types (type, color, config, convert, registry, index, tabbar, intent/result, ...) |
 | [interfaces.md](interfaces.md) | Seams: IRender, IEventApp, IRenderer, IChromeCommands, IWindow, IEventOS, IContext |
 | [render.md](render.md) | Render chrome (UiLayout/UiRenderer/Context/DockColumn/popups), the input model, thumb widgets, text fitting + GL backend (GlRender/Rounded/Svg/Font) |

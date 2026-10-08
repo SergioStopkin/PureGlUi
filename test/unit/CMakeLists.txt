@@ -24,6 +24,7 @@ add_executable(
     TestLayoutStore.cpp
     TestThemeStore.cpp
     TestBit.cpp
+    TestHash.cpp
     TestUnicode.cpp
     TestResPath.cpp
     TestLocaleManager.cpp
