@@ -41,7 +41,7 @@ namespace Ui::Window::Platform {
 // Flip to true to time each phase of Win32Window::destroy() - useful when
 // close feels laggy and we need to know whether wglDeleteContext or the
 // DestroyWindow message dispatch is the culprit.
-constexpr bool WIN32_PERF_DEBUG = true;
+constexpr bool WIN32_PERF_DEBUG = false;
 
 /**
  * @brief Win32/WGL window implementation

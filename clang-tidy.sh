@@ -11,12 +11,29 @@ elif [[ "$(uname)" == "Darwin" ]]; then
     TIDY_FILES=$(echo "$TIDY_FILES" | grep -v 'win32\|x11\|wayland')
 fi
 
-OUTPUT=$(xargs -n 1 -P $JOBS clang-tidy$CLANG_VERSION --quiet -p $BUILD_DIR_DEV \
-    --header-filter="./include/${PROJECT_NAME}" <<< "$TIDY_FILES" 2>&1)
-# xargs exit status (captured before the grep below clobbers $?): 123 = a child
-# exited 1-125 (a clang-tidy finding), 125 = a child was killed by a signal
-# (clang-tidy crash). Either must fail the run - a text grep alone cannot see a
-# crash, whose output is a stack dump with no ': error:' line.
+# File `$2`, number `$1` in the list: its findings on stdout, collected below, and how
+# long it took on fd 3, the terminal - a file a check sticks on stands out by its minutes.
+# A crash prints a stack dump and no ': error:' line, so it is given one; the exit status
+# is clang-tidy's
+TidyOne()
+{
+    local start=$SECONDS
+    clang-tidy$CLANG_VERSION --quiet -p $BUILD_DIR_DEV --header-filter="./include/${PROJECT_NAME}" "$2" 2>&1
+    local status=$?
+    if [[ $status -gt 128 ]]; then
+        echo "$2: error: clang-tidy crashed (exit $status)"
+    fi
+    echo "[$1/$TIDY_TOTAL] $((SECONDS - start))s $2" >&3
+    return $status
+}
+export -f TidyOne
+TIDY_TOTAL=$(($(wc -l <<< "$TIDY_FILES")))
+export CLANG_VERSION BUILD_DIR_DEV PROJECT_NAME TIDY_TOTAL
+
+OUTPUT=$(nl -w1 -s' ' <<< "$TIDY_FILES" | xargs -n 2 -P $JOBS bash -c 'TidyOne "$@"' _ 3>&2 2>&1)
+# xargs exit status (captured before the grep below clobbers $?): 123 = a clang-tidy
+# run exited non-zero, with a finding or a crash (TidyOne hands on its status, 128 +
+# the signal for a crash). Either must fail the run
 TIDY_EXIT=$?
 
 # Filter out false positives from vendored 3rd-party headers (nlohmann)

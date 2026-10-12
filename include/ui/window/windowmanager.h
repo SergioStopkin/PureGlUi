@@ -98,7 +98,7 @@ constexpr bool WM_ROUTE_DEBUG = false;
 // Flip to true to time every tooltip change - one line per close and per show,
 // the kept window moved or a new one made - and every frame drawn while one is
 // open, which should hold one vsync (16.7 ms at 60 Hz, 11.1 at 90), not two
-constexpr bool TOOLTIP_DEBUG = true;
+constexpr bool TOOLTIP_DEBUG = false;
 
 /**
  * @brief Manages the main window and all child window contexts
@@ -379,7 +379,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
         if (wanted == m_tooltip) {
             return;
         }
-        const auto closing = std::chrono::steady_clock::now();
+        [[maybe_unused]] const auto closing = std::chrono::steady_clock::now();
         hideTooltip();
         if constexpr (TOOLTIP_DEBUG) {
             std::cout << "[WindowManager] tooltip closed in "
@@ -466,7 +466,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     // per snap was most of what a tooltip cost
     void showTooltip(const tooltip_t & tooltip)
     {
-        const auto started = std::chrono::steady_clock::now();
+        [[maybe_unused]] const auto started = std::chrono::steady_clock::now();
         // Main context current: a glyph measured for the first time is uploaded
         // into the main renderer's atlas
         m_main->window().makeCurrent();
@@ -2387,7 +2387,7 @@ public:
 
         // Clear before rendering so requests added during rendering survive
         m_renderQueue.clear();
-        const auto started = std::chrono::steady_clock::now();
+        [[maybe_unused]] const auto started = std::chrono::steady_clock::now();
 
         const bool renderMain = pending.contains(MAIN_WINDOW_ID);
         // Composited, this frame's main pass recaptures the popup, submenu and tooltip

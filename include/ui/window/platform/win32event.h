@@ -34,7 +34,7 @@ namespace Ui::Window::Platform {
 
 // Flip to true to trace Win32 mouse/key messages and capture state.
 // Useful when behavior diverges from X11/Wayland (e.g. drags releasing early).
-constexpr bool WIN32_EVENT_DEBUG = true;
+constexpr bool WIN32_EVENT_DEBUG = false;
 
 /**
  * @brief Win32 event handling implementation
