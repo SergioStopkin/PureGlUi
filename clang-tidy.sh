@@ -5,51 +5,38 @@ sed -i 's/-static-libasan/ /g' $BUILD_DIR_DEV/compile_commands.json
 
 # Filter out platform files that cannot compile on the current OS
 TIDY_FILES="$SOURCE_FILES"
-if [[ "$(uname)" == "Linux" ]]; then
-    TIDY_FILES=$(echo "$TIDY_FILES" | grep -v 'win32\|macos')
-elif [[ "$(uname)" == "Darwin" ]]; then
-    TIDY_FILES=$(echo "$TIDY_FILES" | grep -v 'win32\|x11\|wayland')
+if [[ "`uname`" == "Linux" ]]; then
+    TIDY_FILES=`echo "$TIDY_FILES" | grep -v 'win32\|macos'`
+elif [[ "`uname`" == "Darwin" ]]; then
+    TIDY_FILES=`echo "$TIDY_FILES" | grep -v 'win32\|x11\|wayland'`
 fi
 
-# File `$2`, number `$1` in the list: its findings on stdout, collected below, and how
-# long it took on fd 3, the terminal - a file a check sticks on stands out by its minutes.
-# A crash prints a stack dump and no ': error:' line, so it is given one; the exit status
-# is clang-tidy's
+# File `$2`, number `$1` in the list: how long it took on fd 3, the terminal - a file a
+# check sticks on stands out by its minutes - and, where clang-tidy exits non-zero, its
+# code and all it said but the count of warnings it suppressed. Returns that code
 TidyOne()
 {
     local start=$SECONDS
-    clang-tidy$CLANG_VERSION --quiet -p $BUILD_DIR_DEV --header-filter="./include/${PROJECT_NAME}" "$2" 2>&1
+    local said
+    said=`clang-tidy$CLANG_VERSION --quiet -p $BUILD_DIR_DEV --header-filter="./include/${PROJECT_NAME}" "$2" 2>&1`
     local status=$?
-    if [[ $status -gt 128 ]]; then
-        echo "$2: error: clang-tidy crashed (exit $status)"
-    fi
     echo "[$1/$TIDY_TOTAL] $((SECONDS - start))s $2" >&3
+    if [[ $status -ne 0 ]]; then
+        echo "=== $2: exit $status"
+        grep -Ev '^[0-9]+ warnings? generated\.$' <<< "$said"
+    fi
     return $status
 }
 export -f TidyOne
-TIDY_TOTAL=$(($(wc -l <<< "$TIDY_FILES")))
+TIDY_TOTAL=$((`wc -l <<< "$TIDY_FILES"`))
 export CLANG_VERSION BUILD_DIR_DEV PROJECT_NAME TIDY_TOTAL
 
-OUTPUT=$(nl -w1 -s' ' <<< "$TIDY_FILES" | xargs -n 2 -P $JOBS bash -c 'TidyOne "$@"' _ 3>&2 2>&1)
-# xargs exit status (captured before the grep below clobbers $?): 123 = a clang-tidy
-# run exited non-zero, with a finding or a crash (TidyOne hands on its status, 128 +
-# the signal for a crash). Either must fail the run
-TIDY_EXIT=$?
-
-# Filter out false positives from vendored 3rd-party headers (nlohmann)
-OUTPUT=$(echo "$OUTPUT" | grep -v '3rd/include/')
-
-# Check for actual errors (ignore notes and warnings-generated lines)
-ERRORS=$(echo "$OUTPUT" | grep ': error:' || true)
-
-if [[ -n "$ERRORS" || $TIDY_EXIT -ne 0 ]]; then
+# The failing files' output once all are done, and xargs's own status: 123 when any
+# clang-tidy exited non-zero, 125-127 when xargs could not run one
+OUTPUT=`nl -w1 -s' ' <<< "$TIDY_FILES" | xargs -n 2 -P $JOBS bash -c 'TidyOne "$@"' _ 3>&2 2>&1`
+RESULT=$?
+if [[ -n "$OUTPUT" ]]; then
     echo "$OUTPUT"
-    if [[ $TIDY_EXIT -ne 0 ]]; then
-        echo "[clang-tidy.sh] non-zero clang-tidy exit ($TIDY_EXIT): findings or a crash - see output above"
-    fi
-    RESULT=1
-else
-    RESULT=0
 fi
 
 # echo $TEST_FILES | xargs clang-tidy --quiet -p $BUILD_DIR_DEV \
