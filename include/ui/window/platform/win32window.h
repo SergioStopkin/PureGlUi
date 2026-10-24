@@ -17,8 +17,10 @@
 
 #pragma once
 
+#include "common/time.h"
 #include "common/unicode.h"
 #include "ui/config.h"
+#include "ui/window/display.h"
 #include "ui/window/windowbase.h"
 
 // Include cairo/librsvg BEFORE <windows.h> - glib symbols conflict with
@@ -35,6 +37,8 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <string>
+#include <vector>
 
 namespace Ui::Window::Platform {
 
@@ -222,19 +226,15 @@ public:
 
     void destroy() override
     {
-        using clock_t       = std::chrono::steady_clock;
-        const auto t_start  = clock_t::now();
-        auto       ms_since = [&](clock_t::time_point from) {
-            return std::chrono::duration_cast<std::chrono::milliseconds>(clock_t::now() - from).count();
-        };
+        const auto t_start = Common::Time::now();
 
         if (m_hglrc) {
-            const auto t = clock_t::now();
+            const auto t = Common::Time::now();
             wglMakeCurrent(nullptr, nullptr);
             wglDeleteContext(m_hglrc);
             m_hglrc = nullptr;
             if constexpr (WIN32_PERF_DEBUG) {
-                std::cout << "[Win32Window] wglDeleteContext (" << ms_since(t) << "ms)" << std::endl;
+                std::cout << "[Win32Window] wglDeleteContext (" << Common::Time::msSince(t) << "ms)" << std::endl;
             }
         }
         if (m_hdc && m_hwnd) {
@@ -242,11 +242,11 @@ public:
             m_hdc = nullptr;
         }
         if (m_hwnd) {
-            const auto t = clock_t::now();
+            const auto t = Common::Time::now();
             DestroyWindow(m_hwnd);
             m_hwnd = nullptr;
             if constexpr (WIN32_PERF_DEBUG) {
-                std::cout << "[Win32Window] DestroyWindow (" << ms_since(t) << "ms)" << std::endl;
+                std::cout << "[Win32Window] DestroyWindow (" << Common::Time::msSince(t) << "ms)" << std::endl;
             }
         }
         if (m_hIconBig) {
@@ -258,7 +258,7 @@ public:
             m_hIconSmall = nullptr;
         }
         if constexpr (WIN32_PERF_DEBUG) {
-            std::cout << "[Win32Window] destroy total (" << ms_since(t_start) << "ms)" << std::endl;
+            std::cout << "[Win32Window] destroy total (" << Common::Time::msSince(t_start) << "ms)" << std::endl;
         }
     }
 
@@ -269,6 +269,35 @@ public:
         ReleaseDC(NULL, hdc);
         std::cout << "[Win32Window] DPI: " << dpiVal << std::endl;
         return dpiVal;
+    }
+
+    // Every display on the desktop, at its current mode, named by its monitor where the
+    // driver names one; a rate 0 where it reports its hardware default (0 or 1)
+    static std::vector<display_t> queryDisplays(NativeDisplayHandle /*nativeDisplay*/)
+    {
+        std::vector<display_t> displays;
+        DISPLAY_DEVICEW        device {};
+        device.cb = static_cast<DWORD>(sizeof(device));
+        for (DWORD index = 0; EnumDisplayDevicesW(nullptr, index, &device, 0) != 0; ++index) {
+            DEVMODEW mode {};
+            mode.dmSize = static_cast<WORD>(sizeof(mode));
+            if ((device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) != 0
+                && EnumDisplaySettingsW(device.DeviceName, ENUM_CURRENT_SETTINGS, &mode) != 0) {
+                DISPLAY_DEVICEW monitor {};
+                monitor.cb              = static_cast<DWORD>(sizeof(monitor));
+                const std::wstring name = (EnumDisplayDevicesW(device.DeviceName, 0, &monitor, 0) != 0)
+                                        ? std::wstring(monitor.DeviceString)
+                                        : std::wstring(device.DeviceName);
+                displays.emplace_back(display_t {
+                .name        = Common::Unicode::toUtf8(name),
+                .width       = static_cast<int>(mode.dmPelsWidth),
+                .height      = static_cast<int>(mode.dmPelsHeight),
+                .refreshRate = (mode.dmDisplayFrequency > 1) ? static_cast<fpx_t>(mode.dmDisplayFrequency) : 0.0F,
+                .isPrimary   = (device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) != 0 });
+            }
+            device.cb = static_cast<DWORD>(sizeof(device));
+        }
+        return displays;
     }
 
     void resize(fpx_t width, fpx_t height) override
@@ -451,9 +480,11 @@ public:
         wc.lpszClassName        = className;
         RegisterClassW(&wc);
 
-        // WS_POPUP: no decorations. WS_EX_TOPMOST: always on top. WS_EX_TOOLWINDOW: no taskbar entry.
+        // WS_POPUP: no decorations. WS_EX_TOOLWINDOW: no taskbar entry. Owned by parentHwnd,
+        // which keeps it above that window and below a native dialog the window owns; topmost,
+        // it stood over that dialog and over every other app's window.
         // Created hidden - caller renders first frame then calls show() to avoid flash.
-        m_hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        m_hwnd = CreateWindowExW(WS_EX_TOOLWINDOW,
                                  className,
                                  L"",
                                  WS_POPUP,

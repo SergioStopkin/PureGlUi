@@ -21,6 +21,7 @@
 #include "common/noncopyable.h"
 #include "common/sanitize.h"
 #include "common/system.h"
+#include "common/time.h"
 #include "common/unicode.h"
 #include "ui/config.h"
 #include "ui/const.h"
@@ -47,12 +48,15 @@
 #include "ui/window/connector.h"
 #include "ui/window/contenthit.h"
 #include "ui/window/contentsurface.h"
+#include "ui/window/display.h"
+#include "ui/window/displaystextof.h"
 #include "ui/window/event.h"
 #include "ui/window/eventfactory.h"
 #include "ui/window/istooltipdelayed.h"
 #include "ui/window/nativewindow.h"
 #include "ui/window/popup/dialogwindow.h"
 #include "ui/window/popup/popupwindow.h"
+#include "ui/window/refreshrateof.h"
 #include "ui/window/renderqueue.h"
 #include "ui/window/spentbuttonof.h"
 #include "ui/window/tooltip.h"
@@ -177,8 +181,8 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     Ui::Res::Type::bound_t m_spentBound;                   // its rect, main-window CSS px (spentButtonOf)
     bool                   m_isTooltipShown = false;       // its first frame presented (renderFrame)
     tooltip_t              m_pendingTooltip;               // a toolbar button's, waiting out its delay (showDueTooltip)
-    std::chrono::steady_clock::time_point m_tooltipDue;    // when m_pendingTooltip shows
-    tooltip_t                             m_tooltip;       // what the window shows, anchored in main-window CSS px
+    Common::Time::point_t  m_tooltipDue;                   // when m_pendingTooltip shows
+    tooltip_t              m_tooltip;                      // what the window shows, anchored in main-window CSS px
 
     CompositeTexture m_popupComposite;
     CompositeTexture m_submenuComposite;
@@ -258,13 +262,6 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     {
         ++m_popupSerial;
         return Ui::idOf(Ui::IdKind::Popup, m_popupSerial);
-    }
-
-    // Milliseconds between two steady_clock marks, fractional (TOOLTIP_DEBUG)
-    [[nodiscard]] static double millisecondsBetween(std::chrono::steady_clock::time_point from,
-                                                    std::chrono::steady_clock::time_point to)
-    {
-        return std::chrono::duration<double, std::milli>(to - from).count();
     }
 
     // A popup-type window at `closed` (main-window physical px) closed or hid. Not
@@ -370,8 +367,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
         if (isTooltipDelayed(wanted, hoveredButton, m_tooltip)) {
             if (wanted != m_pendingTooltip) {
                 m_pendingTooltip = wanted;
-                m_tooltipDue     = std::chrono::steady_clock::now()
-                             + std::chrono::milliseconds(m_resManager.input().tooltipDelayMs);
+                m_tooltipDue     = Common::Time::now() + std::chrono::milliseconds(m_resManager.input().tooltipDelayMs);
             }
             return;
         }
@@ -379,11 +375,10 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
         if (wanted == m_tooltip) {
             return;
         }
-        [[maybe_unused]] const auto closing = std::chrono::steady_clock::now();
+        [[maybe_unused]] const auto closing = Common::Time::now();
         hideTooltip();
         if constexpr (TOOLTIP_DEBUG) {
-            std::cout << "[WindowManager] tooltip closed in "
-                      << millisecondsBetween(closing, std::chrono::steady_clock::now()) << " ms" << std::endl;
+            std::cout << "[WindowManager] tooltip closed in " << Common::Time::msSince(closing) << " ms" << std::endl;
         }
         if (!wanted.text.empty()) {
             showTooltip(wanted);
@@ -466,7 +461,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     // per snap was most of what a tooltip cost
     void showTooltip(const tooltip_t & tooltip)
     {
-        [[maybe_unused]] const auto started = std::chrono::steady_clock::now();
+        [[maybe_unused]] const auto started = Common::Time::now();
         // Main context current: a glyph measured for the first time is uploaded
         // into the main renderer's atlas
         m_main->window().makeCurrent();
@@ -506,7 +501,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
         requestMainRender();
         if constexpr (TOOLTIP_DEBUG) {
             std::cout << "[WindowManager] tooltip " << (isKept ? "moved" : "made") << " in "
-                      << millisecondsBetween(started, std::chrono::steady_clock::now()) << " ms" << std::endl;
+                      << Common::Time::msSince(started) << " ms" << std::endl;
         }
     }
 
@@ -1223,6 +1218,13 @@ public:
         const float prevScale = g_config.scale;
         g_config.dpi          = NativeWindow::queryDpi(m_main->window().nativeDisplay());
         g_config.scale        = static_cast<float>(g_config.dpi) / 96.0F;
+        // 0 is no answer, which keeps the rate there was
+        const std::vector<display_t> displays    = NativeWindow::queryDisplays(m_main->window().nativeDisplay());
+        const fpx_t                  refreshRate = refreshRateOf(displays);
+        if (refreshRate > 0.0F) {
+            g_config.refreshRate = refreshRate;
+        }
+        std::cout << "[WindowManager] Displays:\n" << displaysTextOf(displays) << std::endl;
 
         const auto & layout = m_resManager.layout();
         m_uiLeft            = toPhys(layout.leftToolbar.width);
@@ -1240,9 +1242,9 @@ public:
         if (scaleChanged) {
             destroyTooltip();
         }
-        std::cout << "[WindowManager] Scale factor: " << g_config.scale << "x  UI margins: L=" << m_uiLeft
-                  << " T=" << m_uiTop << " R=" << m_uiRight << " B=" << m_uiBottom << " docks=" << m_docks.size()
-                  << (scaleChanged ? " (changed)" : "") << std::endl;
+        std::cout << "[WindowManager] Scale factor: " << g_config.scale << "x  refresh " << g_config.refreshRate
+                  << " Hz  UI margins: L=" << m_uiLeft << " T=" << m_uiTop << " R=" << m_uiRight << " B=" << m_uiBottom
+                  << " docks=" << m_docks.size() << (scaleChanged ? " (changed)" : "") << std::endl;
 
         // Here, not at window creation: the floor is physical, so it can only be
         // computed once the scale this pass just resolved is known
@@ -2126,7 +2128,7 @@ public:
         if (isChromeOpen()) {
             m_pendingTooltip = {};
         }
-        if (m_pendingTooltip.text.empty() || std::chrono::steady_clock::now() < m_tooltipDue) {
+        if (m_pendingTooltip.text.empty() || Common::Time::now() < m_tooltipDue) {
             return;
         }
         showTooltip(m_pendingTooltip);
@@ -2387,7 +2389,7 @@ public:
 
         // Clear before rendering so requests added during rendering survive
         m_renderQueue.clear();
-        [[maybe_unused]] const auto started = std::chrono::steady_clock::now();
+        [[maybe_unused]] const auto started = Common::Time::now();
 
         const bool renderMain = pending.contains(MAIN_WINDOW_ID);
         // Composited, this frame's main pass recaptures the popup, submenu and tooltip
@@ -2434,9 +2436,8 @@ public:
         }
         if constexpr (TOOLTIP_DEBUG) {
             if (m_tooltipWindow && hasTooltip()) {
-                std::cout << "[WindowManager] frame with a tooltip in "
-                          << millisecondsBetween(started, std::chrono::steady_clock::now()) << " ms (main "
-                          << renderMain << ", tooltip " << renderTooltip << ")" << std::endl;
+                std::cout << "[WindowManager] frame with a tooltip in " << Common::Time::msSince(started)
+                          << " ms (main " << renderMain << ", tooltip " << renderTooltip << ")" << std::endl;
             }
         }
     }

@@ -87,7 +87,11 @@ purpose rather than spine position because the first two run on both paths:
 - `run()` loops while `windowManager().isRunning()`: drains `frameTasks`, polls +
   dispatches all pending OS events, then on any events runs popup-move tracking,
   temp-status expiry, the `onTick` hook, and deferred actions; renders the dirty
-  set; and sleeps ~16 ms when idle.
+  set; and, idle, sleeps until one refresh of the display (`g_config.refreshPeriod()`)
+  after the pass began - so a frame a host asks for from `frameTasks` (an animation)
+  comes at the display's pace and no faster, and an idle loop polls once a refresh.
+  The sleep is `Common::Time::sleepUntil`'s, since a plain one on Windows wakes on the
+  15.6 ms timer tick and at 64 Hz paced frames at one or two ticks.
 - `requestStop()` / `shutdown()` stop the loop and tear down the window manager.
 
 ### The load cycle
@@ -172,7 +176,9 @@ std::wstring resolveDialogPlaceholders(const std::string & tpl);
 - `closePopupMenu()` is called before opening a native modal (e.g. the file dialog).
 - `resolveDialogPlaceholders(tpl)` expands `%VERSION%` (from `APP_VERSION`),
   `%CPU%` and `%RAM%` (from `Common::System`), and `%GPU%` / `%GL%` (from the main
-  window's live GL context, tagged `(hardware)`/`(software)`) in dialog content.
+  window's live GL context, tagged `(hardware)`/`(software)`) and `%DISPLAYS%` (every
+  display, one line each: `displaysTextOf(NativeWindow::queryDisplays(...))`, asked again
+  each time so one plugged in since is listed) in dialog content.
   Installed as the dialog content resolver during `wireEvents()`.
 
 `createMenuPopup(id_t menuId)` is the internal popup builder (private; reached via
@@ -248,7 +254,7 @@ Notes:
 - A host overrides any key by re-registering it (`shell.actions().on("Reload", ...)`)
   to also reload domain resources.
 - `openFile` calls `host.closePopupMenu()`, invokes `Ui::Io::FileDialog::openFiles`
-  with `resManager().lastOpenDir()` / `openFileTitle()` / `openFileFilters()`,
+  with the main window as owner and `resManager().lastOpenDir()` / `openFileTitle()` / `openFileFilters()`,
   updates `lastOpenDir` from the last pick, then for each file computes
   `fileExtension(file)` and calls `host.runFileHandler(extension, file)`. If no
   handler is registered it calls `openNoHandlerDialog(host, extension)` - a
@@ -291,13 +297,18 @@ Header: `include/ui/io/filedialog.h`. `class FileDialog final` (all-static; not
 constructible).
 
 ```cpp
-static std::vector<std::string> openFiles(const std::string & startDir,
+static std::vector<std::string> openFiles(Ui::Window::NativeWindowHandle owner,
+                                          const std::string & startDir,
                                           const std::string & title,
                                           const std::vector<file_filter_t> & filters);
 ```
 
 Native multi-select open dialog. Domain-blind: title and filters come from the
 caller; empty filters => any file (a trailing "All files" is always appended).
+`owner` is the window the dialog is modal to and stands above (`OpenFile` passes the
+main window). Only Win32 reads it: it stacks a dialog by its owner, and one with none
+went behind the main window's popups. A popup there is owned by its parent window and
+never topmost, so a dialog that window owns stands above it.
 Backends: Win32 `IFileOpenDialog`, macOS `NSOpenPanel`, Linux `zenity` then
 `kdialog` fallback. Returns the selected absolute paths (empty on cancel or when
 no dialog tool is available on Linux).

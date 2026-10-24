@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <iostream>
 #include <utility>
 #include <vector>
 
@@ -36,6 +37,10 @@
 #endif
 
 namespace Ui::Window::Platform {
+
+// Flip to true to trace every scroll event: what the device sent, the phase of the
+// gesture it belongs to (fingers on or the momentum after them) and the notches it became
+constexpr bool SCROLL_DEBUG = false;
 
 // Shared close-request flag. Set by NSWindowWillCloseNotification / NSApplicationWillTerminateNotification
 // observers registered in MacOsWindow::create(); consumed by MacOsEvent::pollEvent() to emit CloseRequested.
@@ -267,6 +272,15 @@ private:
             const CGFloat     rawDeltaY        = [nsEvent scrollingDeltaY];
             const CGFloat     deltaY = [nsEvent hasPreciseScrollingDeltas] ? (rawDeltaY / PRECISE_TO_NOTCH) : rawDeltaY;
             event.scroll.deltaY      = static_cast<fpx_t>(-deltaY);
+            if constexpr (SCROLL_DEBUG) {
+                // phase and momentum are NSEventPhase bits: 1 began, 2 stationary, 4 changed,
+                // 8 ended, 16 cancelled, 32 may begin
+                std::cout << "[Scroll] t=" << static_cast<long long>([nsEvent timestamp] * 1000.0)
+                          << "ms raw=" << rawDeltaY << " line=" << [nsEvent deltaY]
+                          << " precise=" << ([nsEvent hasPreciseScrollingDeltas] ? 1 : 0)
+                          << " phase=" << [nsEvent phase] << " momentum=" << [nsEvent momentumPhase]
+                          << " notches=" << event.scroll.deltaY << std::endl;
+            }
         } break;
 
         case NSEventTypeMouseMoved:

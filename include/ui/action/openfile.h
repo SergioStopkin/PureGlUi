@@ -53,7 +53,8 @@ template <typename Host>
 void openFile(Host & host, const std::string & /*arg*/)
 {
     host.closePopupMenu();
-    const auto files = Ui::Io::FileDialog::openFiles(host.resManager().lastOpenDir(),
+    const auto files = Ui::Io::FileDialog::openFiles(host.windowManager().mainWindow().nativeHandle(),
+                                                     host.resManager().lastOpenDir(),
                                                      host.resManager().openFileTitle(),
                                                      host.resManager().openFileFilters());
     if (files.empty()) {

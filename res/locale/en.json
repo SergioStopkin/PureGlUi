@@ -29,7 +29,7 @@
   "DialogWikiPageContent": "Visit the PureGlUi wiki for documentation and guides.",
   "DialogWikiPageLink": "https://github.com/SergioStopkin/PureGlUi/wiki",
   "DialogSystemInfoTitle": "System Info",
-  "DialogSystemInfoContent": "CPU: %CPU%\nGPU: %GPU%\nGL: %GL%\nRAM: %RAM%",
+  "DialogSystemInfoContent": "CPU: %CPU%\nGPU: %GPU%\nGL: %GL%\nRAM: %RAM%\nDisplays: %DISPLAYS%",
   "DialogNoHandlerTitle": "Unsupported File",
   "DialogNoHandlerContent": "No handler for",
   "DialogDonateTitle": "Donate",

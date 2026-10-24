@@ -19,6 +19,7 @@
 
 #include "common/noncopyable.h"
 #include "common/system.h"
+#include "common/time.h"
 #include "common/unicode.h"
 #include "sig.h"
 #include "ui/action/actionmap.h"
@@ -44,7 +45,9 @@
 #include "ui/result.h"
 #include "ui/tabbar.h"
 #include "ui/type.h"
+#include "ui/window/displaystextof.h"
 #include "ui/window/event.h"
+#include "ui/window/nativewindow.h"
 #include "ui/window/windowmanager.h"
 
 #include <algorithm>
@@ -56,7 +59,6 @@
 #include <functional>
 #include <iostream>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -372,7 +374,7 @@ public:
             m_lastStatusText = m_resManager.statusText();
         }
         m_tempStatusText   = text;
-        m_tempStatusExpiry = std::chrono::steady_clock::now() + TEMP_STATUS_DURATION;
+        m_tempStatusExpiry = Common::Time::now() + TEMP_STATUS_DURATION;
         m_resManager.setStatusText(text);
         m_windowManager.requestContentRefresh();
     }
@@ -720,8 +722,8 @@ public:
             handleMenuHover(id);
         });
 
-        // Dialog content placeholders (%VERSION%/%CPU%/%RAM%/%GPU%/%GL%) resolved
-        // from APP_VERSION + Common::System + the main window's GL context.
+        // Dialog content placeholders (%VERSION%/%CPU%/%RAM%/%GPU%/%GL%/%DISPLAYS%) resolved
+        // from APP_VERSION + Common::System + the main window's GL context and displays.
         m_windowManager.setDialogContentResolver(
         [this](const std::string & tpl) { return resolveDialogPlaceholders(tpl); });
 
@@ -753,7 +755,7 @@ public:
 
     // Expand %KEY% placeholders in dialog content (the System Info / Version
     // dialogs): %VERSION% from APP_VERSION, %CPU%/%RAM% from Common::System,
-    // %GPU%/%GL% from the main window's live GL context.
+    // %GPU%/%GL% from the main window's live GL context, %DISPLAYS% one line per display.
     std::wstring resolveDialogPlaceholders(const std::string & tpl)
     {
         std::wstring result = Common::Unicode::fromUtf8(tpl);
@@ -788,6 +790,11 @@ public:
 
         replace(L"%RAM%", Common::Unicode::fromUtf8(Common::System::systemRam()));
 
+        // Asked again here, not kept from startup: a display plugged in since is listed
+        replace(L"%DISPLAYS%",
+                Common::Unicode::fromUtf8(
+                Ui::Window::displaysTextOf(Ui::Window::NativeWindow::queryDisplays(mainWindow.nativeDisplay()))));
+
         return result;
     }
 
@@ -797,6 +804,7 @@ public:
     void run()
     {
         while (m_windowManager.isRunning()) {
+            const auto passStart = Common::Time::now();
             if (m_frameTasks) {
                 m_frameTasks();
             }
@@ -831,10 +839,12 @@ public:
                 m_windowManager.drainDeferred();
             }
 
-            // Block until next event or timeout (periodic tasks like load progress)
+            // Idle until one refresh of the display after this pass began: a frame the host
+            // asks for between passes (an animation) comes at the display's pace, never
+            // faster than it can show one, and an idle loop polls no more often
             if (!m_windowManager.hasPendingEvents() && !m_windowManager.renderQueue().hasPending()) {
                 m_windowManager.flush();
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                Common::Time::sleepUntil(passStart + g_config.refreshPeriod());
             }
         }
     }
@@ -863,9 +873,9 @@ private:
     std::unordered_map<std::string, Ui::action_fn_t> m_fileHandlers;
 
     // Temporary status bar message (auto-expires).
-    std::chrono::steady_clock::time_point m_tempStatusExpiry;
-    std::string                           m_tempStatusText;
-    std::string                           m_lastStatusText; // real text to restore after a temp expires
+    Common::Time::point_t m_tempStatusExpiry;
+    std::string           m_tempStatusText;
+    std::string           m_lastStatusText; // real text to restore after a temp expires
 
     // Window dimensions (cached from resize events).
     fpx_t m_windowWidth  = 0;
@@ -974,7 +984,7 @@ private:
     // duration elapses. hasTempStatus() reports whether one is still showing.
     void checkTempStatusExpiry()
     {
-        if (!m_tempStatusText.empty() && std::chrono::steady_clock::now() >= m_tempStatusExpiry) {
+        if (!m_tempStatusText.empty() && Common::Time::now() >= m_tempStatusExpiry) {
             m_tempStatusText.clear();
             // Restore real status text
             m_resManager.setStatusText(m_lastStatusText);

@@ -19,6 +19,7 @@
 
 #include "common/unicode.h"
 #include "ui/io/filefilter.h"
+#include "ui/window/nativewindowhandle.h"
 
 #include <algorithm>
 #include <array>
@@ -61,12 +62,16 @@ public:
     FileDialog & operator=(const FileDialog &) = delete;
     FileDialog & operator=(FileDialog &&)      = delete;
 
-    static std::vector<std::string> openFiles(const std::string &                startDir,
-                                              const std::string &                title,
-                                              const std::vector<file_filter_t> & filters)
+    // `owner` is the window the dialog is modal to and stands above: Win32 stacks a dialog
+    // by its owner, and one of none went behind that window's popups. macOS and Linux
+    // stack theirs above the app themselves
+    static std::vector<std::string> openFiles([[maybe_unused]] Ui::Window::NativeWindowHandle owner,
+                                              const std::string &                             startDir,
+                                              const std::string &                             title,
+                                              const std::vector<file_filter_t> &              filters)
     {
 #if defined(_WIN32)
-        return openFilesWin32(startDir, title, filters);
+        return openFilesWin32(owner, startDir, title, filters);
 #elif defined(__APPLE__)
         return openFilesMacOs(startDir, title, filters);
 #else
@@ -96,7 +101,8 @@ private:
     }
 
 #if defined(_WIN32)
-    static std::vector<std::string> openFilesWin32(const std::string &                startDir,
+    static std::vector<std::string> openFilesWin32(HWND                               owner,
+                                                   const std::string &                startDir,
                                                    const std::string &                title,
                                                    const std::vector<file_filter_t> & filters)
     {
@@ -148,7 +154,7 @@ private:
             }
         }
 
-        hr = dialog->Show(nullptr);
+        hr = dialog->Show(owner);
         if (SUCCEEDED(hr)) {
             IShellItemArray * results = nullptr;
             hr                        = dialog->GetResults(&results);

@@ -23,6 +23,7 @@
 #include "common/system.h"
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
+#include "ui/window/display.h"
 #include "ui/window/eglcontext.h"
 #include "ui/window/platform/x11include.h"
 #include "ui/window/windowbase.h"
@@ -36,6 +37,7 @@
 #include <iostream>
 #include <librsvg/rsvg.h>
 #include <memory>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -244,6 +246,54 @@ public:
 
         std::cout << "[X11Window] DPI fallback: 96" << std::endl;
         return 96;
+    }
+
+    // Every output lit, through XRandR: its mode's size, and its rate - the dot clock over
+    // the pixels a frame takes, 0 where a virtual server's modes carry no clock
+    static std::vector<display_t> queryDisplays(NativeDisplayHandle display)
+    {
+        std::vector<display_t> displays;
+        if (display == nullptr) {
+            return displays;
+        }
+        const ::Window       root      = DefaultRootWindow(display);
+        XRRScreenResources * resources = XRRGetScreenResourcesCurrent(display, root);
+        if (resources == nullptr) {
+            return displays;
+        }
+        const RROutput primary = XRRGetOutputPrimary(display, root);
+        for (const RROutput outputId : std::span(resources->outputs, static_cast<std::size_t>(resources->noutput))) {
+            XRROutputInfo * output = XRRGetOutputInfo(display, resources, outputId);
+            XRRCrtcInfo *   crtc   = (output != nullptr && output->crtc != 0)
+                                   ? XRRGetCrtcInfo(display, resources, output->crtc)
+                                   : nullptr;
+            if (crtc != nullptr) {
+                displays.emplace_back(
+                display_t { .name        = std::string(output->name, static_cast<std::size_t>(output->nameLen)),
+                            .width       = static_cast<int>(crtc->width),
+                            .height      = static_cast<int>(crtc->height),
+                            .refreshRate = modeRateOf(resources, crtc->mode),
+                            .isPrimary   = outputId == primary });
+                XRRFreeCrtcInfo(crtc);
+            }
+            if (output != nullptr) {
+                XRRFreeOutputInfo(output);
+            }
+        }
+        XRRFreeScreenResources(resources);
+        return displays;
+    }
+
+    // A mode's refresh rate in Hz, 0 for one with no clock - or none, a CRTC left dark
+    static fpx_t modeRateOf(const XRRScreenResources * resources, RRMode modeId)
+    {
+        for (const XRRModeInfo & mode : std::span(resources->modes, static_cast<std::size_t>(resources->nmode))) {
+            const double pixels = static_cast<double>(mode.hTotal) * static_cast<double>(mode.vTotal);
+            if (mode.id == modeId && pixels > 0.0) {
+                return static_cast<fpx_t>(static_cast<double>(mode.dotClock) / pixels);
+            }
+        }
+        return 0.0F;
     }
 
     void resize(fpx_t width, fpx_t height) override

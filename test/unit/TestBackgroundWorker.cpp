@@ -26,11 +26,11 @@
 
 #include "common/backgroundworker.h"
 #include "common/system.h"
+#include "common/time.h"
 
 #include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>
-#include <thread>
 
 TEST(BackgroundWorker, AllPostedTasksRunBeforeShutdown)
 {
@@ -109,7 +109,7 @@ TEST(BackgroundWorker, NeverExceedsBudget)
                 int       prev = maxInFlight.load();
                 while (now > prev && !maxInFlight.compare_exchange_weak(prev, now)) { }
                 // Hold the slot briefly so tasks actually overlap.
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                Common::Time::sleepFor(std::chrono::milliseconds(2));
                 inFlight.fetch_sub(1);
             });
         }

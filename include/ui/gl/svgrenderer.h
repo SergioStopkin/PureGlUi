@@ -28,6 +28,7 @@
 #include "common/bytes.h"
 #include "common/hash.h"
 #include "common/noncopyable.h"
+#include "common/time.h"
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/glutil.h"
@@ -691,12 +692,12 @@ public:
             s_loadsByPath[path]++;
         }
 
-        auto         t0    = std::chrono::steady_clock::now();
+        auto         t0    = Common::Time::now();
         GError *     gerr  = nullptr;
         GFile *      gfile = g_file_new_for_path(path.c_str());
         RsvgHandle * raw   = rsvg_handle_new_from_gfile_sync(gfile, RSVG_HANDLE_FLAGS_NONE, nullptr, &gerr);
         g_object_unref(gfile);
-        auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+        auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(Common::Time::now() - t0).count();
         s_loadFromFileNs.fetch_add(dur);
 
         if (raw == nullptr) {
@@ -844,12 +845,12 @@ public:
             s_loadFutures_[id] = fut;
         }
 
-        auto         t0   = std::chrono::steady_clock::now();
+        auto         t0   = Common::Time::now();
         GError *     gerr = nullptr;
         RsvgHandle * raw  = rsvg_handle_new_from_data(Common::asBytes(svgData.data()),
                                                      static_cast<gsize>(svgData.size()),
                                                      &gerr);
-        auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+        auto         dur  = std::chrono::duration_cast<std::chrono::nanoseconds>(Common::Time::now() - t0).count();
         s_loadFromStringNs.fetch_add(dur);
 
         if (raw == nullptr) {
@@ -975,9 +976,9 @@ public:
         // When content bounds are available, offset the viewport so the ink rect
         // is centered within the target using uniform scaling.
         s_textureCalled.fetch_add(1);
-        auto t0   = std::chrono::steady_clock::now();
+        auto t0   = Common::Time::now();
         auto rgba = renderToRGBA(doc.get(), renderWidth, renderHeight, hasCrop ? &cb : nullptr, svgW, svgH);
-        auto dur  = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+        auto dur  = std::chrono::duration_cast<std::chrono::nanoseconds>(Common::Time::now() - t0).count();
         s_textureNs.fetch_add(dur);
 
         if (rgba.empty()) {

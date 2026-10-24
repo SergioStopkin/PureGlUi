@@ -14,6 +14,7 @@ lcov
 librsvg2-devel
 libX11-devel
 libXcomposite-devel
+libXrandr-devel
 libXrender-devel
 llvm
 mesa-libEGL-devel

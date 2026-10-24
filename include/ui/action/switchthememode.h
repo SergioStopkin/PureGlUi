@@ -17,7 +17,8 @@
 
 #pragma once
 
-#include <chrono>
+#include "common/time.h"
+
 #include <iostream>
 #include <string>
 
@@ -27,16 +28,15 @@ namespace Ui::Action {
 template <typename Host>
 void switchThemeMode(Host & host, const std::string & /*arg*/)
 {
-    auto t0 = std::chrono::steady_clock::now();
+    const auto t0 = Common::Time::now();
     host.resManager().switchThemeMode();
-    auto t1 = std::chrono::steady_clock::now();
+    const auto t1 = Common::Time::now();
     host.windowManager().apply(host.resManager().changed());
-    auto t2 = std::chrono::steady_clock::now();
+    const auto t2 = Common::Time::now();
     host.windowManager().requestContentRefresh();
-    auto t3 = std::chrono::steady_clock::now();
-    auto ms = [&](auto a, auto b) { return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count(); };
-    std::cout << "[Action] Theme switched: load=" << ms(t0, t1) << "ms apply=" << ms(t1, t2)
-              << "ms total=" << ms(t0, t3) << "ms" << std::endl;
+    std::cout << "[Action] Theme switched: load=" << Common::Time::msBetween(t0, t1)
+              << "ms apply=" << Common::Time::msBetween(t1, t2) << "ms total=" << Common::Time::msSince(t0) << "ms"
+              << std::endl;
 }
 
 } // namespace Ui::Action

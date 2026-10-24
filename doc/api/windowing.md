@@ -99,7 +99,7 @@ void flush();
 bool copyToClipboard(const std::string & text);
 void renderAll();                             // once per frame: content surfaces + refresh + drain queue
 void onMainWindowResize(fpx_t width, fpx_t height);
-bool refreshDisplayMetrics();                 // re-query DPI, recompute margins; true if scale changed
+bool refreshDisplayMetrics();                 // re-query DPI and refresh rate, recompute margins; true if scale changed
 void apply(Ui::Res::Type::Changed changed);   // push resource changes to all windows/renderers
 ```
 
@@ -394,7 +394,7 @@ Composited, a main frame's corner recapture (`notifyMainWindowChanged` -> `recap
 
 Header: `include/ui/window/popup/popupwindow.h`
 
-`class PopupWindow : public NativeWindow`. A borderless, always-on-top popup surface (dropdowns, context menus): no decorations, above parent and children, absolutely positioned, per-corner shape. On Wayland it uses `xdg_popup` semantics; on X11 an override-redirect / transient child window with an ARGB visual where a compositor is present. It is a pure surface - the renderer pairing lives in the coordinator's `Connector`.
+`class PopupWindow : public NativeWindow`. A borderless, always-on-top popup surface (dropdowns, context menus): no decorations, above parent and children, absolutely positioned, per-corner shape. On Wayland it uses `xdg_popup` semantics; on X11 an override-redirect / transient child window with an ARGB visual where a compositor is present; on Win32 a window its parent owns, never topmost, so a native dialog the parent owns stands above it. It is a pure surface - the renderer pairing lives in the coordinator's `Connector`.
 
 ```cpp
 explicit PopupWindow(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID);
@@ -445,7 +445,7 @@ Headers: `include/ui/window/platform/{x11,wayland,macos,win32}window.h` and the 
 
 Each OS provides one window impl and one event impl, selected at compile time through the `NativeWindow` / `NativeEvent` aliases - the coordinator and popups only ever name the aliases, never a concrete platform class.
 
-- Window peers (`Platform::X11Window` / `WaylandWindow` / `MacOsWindow` / `Win32Window`) derive `WindowBase<Derived>` (CRTP) and implement the platform half of `Ui::IWindow`: native handle/display accessors, `create` / `destroy`, `resize` / `move` / `moveResize` / `show` / `hide`, `makeCurrent` / `swapBuffers` / `clear`, `screenPosition` / `screenFramePosition`, `setTitle` / `setWindowIcon`, and rounded-corner application. The X11 window owns its `EglContext` and the `m_ownsDisplay` flag that gates `eglTerminate` (see the EGLDisplay lifetime rule above); `NativeWindow::queryDpi(display)` feeds `g_config.scale`.
+- Window peers (`Platform::X11Window` / `WaylandWindow` / `MacOsWindow` / `Win32Window`) derive `WindowBase<Derived>` (CRTP) and implement the platform half of `Ui::IWindow`: native handle/display accessors, `create` / `destroy`, `resize` / `move` / `moveResize` / `show` / `hide`, `makeCurrent` / `swapBuffers` / `clear`, `screenPosition` / `screenFramePosition`, `setTitle` / `setWindowIcon`, and rounded-corner application. The X11 window owns its `EglContext` and the `m_ownsDisplay` flag that gates `eglTerminate` (see the EGLDisplay lifetime rule above); `NativeWindow::queryDpi(display)` feeds `g_config.scale`, and `NativeWindow::queryDisplays(display)` lists every display as a `display_t` (`ui/window/display.h`: name, physical size, refresh rate, primary) - X11 every lit output through XRandR (libXrandr), its mode's dot clock over its frame's pixels; Wayland the bound `wl_output`'s current mode; macOS every `NSScreen`, the menu-bar one primary, `maximumFramesPerSecond` from macOS 12; Win32 `EnumDisplayDevicesW` + `EnumDisplaySettingsW`. `refreshRateOf(displays)` (`ui/window/refreshrateof.h`) feeds `g_config.refreshRate` - the primary's rate, else the first known; 0, no answer, keeps the 60 Hz default - and `displaysTextOf(displays)` (`ui/window/displaystextof.h`) is the System info dialog's `%DISPLAYS%`, one line each.
 - Event peers (`Platform::X11Event` / `WaylandEvent` / `MacOsEvent` / `Win32Event`) implement `Ui::IEventOS`: `init(window)`, `pollEvent(event, window)` / `hasPendingEvents(window)` / `flush(window)`, `setChildWindowLookup(child_id_fn_t)` (wired to `WindowManager::childIdForHandle`), `addPopupWindow` / `removePopupWindow`, `setDoubleClickConfig(intervalMs, distancePx)`, and `copyToClipboard(window, text)`. Peers on platforms without native click counts use `ClickCounter` to stamp `event.mouse.clickCount`.
 
 ## Pub/sub

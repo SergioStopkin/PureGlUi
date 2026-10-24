@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/time.h"
 #include "common/unicode.h"
 #include "ui/gl/textalign.h"
 #include "ui/render/popup/popuprendererbase.h"
@@ -308,7 +309,7 @@ private:
 
     void startKeyAnimation()
     {
-        m_keyAnimationStart = std::chrono::steady_clock::now();
+        m_keyAnimationStart = Common::Time::now();
         m_keyAnimationPhase = 0;
         if (m_renderRequest) {
             m_renderRequest();
@@ -321,7 +322,7 @@ private:
             return;
         }
 
-        const auto elapsed = std::chrono::steady_clock::now() - m_keyAnimationStart;
+        const auto elapsed = Common::Time::now() - m_keyAnimationStart;
         const auto delay   = std::chrono::milliseconds(m_resManager.input().keyAnimationDelayMs);
         if (m_keyAnimationPhase == 0 && elapsed >= delay) {
             // Phase 1: hover -> active
@@ -395,7 +396,7 @@ private:
 
     void updateSmoothScroll()
     {
-        const auto now = std::chrono::steady_clock::now();
+        const auto now = Common::Time::now();
         if (m_lastFrameTime.time_since_epoch().count() == 0) {
             m_lastFrameTime = now;
             m_scrollOffset  = m_scrollTarget;
@@ -777,16 +778,16 @@ private:
     fpx_t                        m_lineHeight {};
     // Geometry is only known at render (it depends on the dialog width), so the
     // bar keeps it for the event handlers - a popup has no UiLayout to derive from
-    Ui::Render::ScrollBar                 m_scrollBar { m_resManager };
-    std::chrono::steady_clock::time_point m_lastFrameTime {};
-    Ui::task_fn_t                         m_renderRequest;
+    Ui::Render::ScrollBar m_scrollBar { m_resManager };
+    Common::Time::point_t m_lastFrameTime {};
+    Ui::task_fn_t         m_renderRequest;
 
     // Keyboard animation state
-    size_t                                m_keyboardFocus = Ui::INVALID_ID;
-    int                                   m_keyAnimationPhase {};
-    size_t                                m_keyAnimationIndex {};
-    KeyAnimationTarget                    m_keyAnimationTarget = KeyAnimationTarget::None;
-    std::chrono::steady_clock::time_point m_keyAnimationStart {};
+    size_t                m_keyboardFocus = Ui::INVALID_ID;
+    int                   m_keyAnimationPhase {};
+    size_t                m_keyAnimationIndex {};
+    KeyAnimationTarget    m_keyAnimationTarget = KeyAnimationTarget::None;
+    Common::Time::point_t m_keyAnimationStart {};
 };
 
 } // namespace Ui::Render::Popup

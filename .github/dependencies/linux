@@ -17,6 +17,7 @@ libjemalloc-dev
 librsvg2-dev
 libx11-dev
 libxcomposite-dev
+libxrandr-dev
 libxrender-dev
 llvm-16
 xvfb

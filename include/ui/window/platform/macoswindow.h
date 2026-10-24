@@ -21,11 +21,14 @@
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
 #include "ui/res/type/border.h"
+#include "ui/window/display.h"
 #include "ui/window/platform/macosevent.h"
 #include "ui/window/windowbase.h"
 
 #include <iostream>
+#include <string>
 #include <utility>
+#include <vector>
 
 // NOLINTBEGIN(clang-diagnostic-import-preprocessor-directive-pedantic)
 // Workaround for Xcode 16.4 SDK regression: Icons.h in HIServices uses CALLBACK_API
@@ -416,6 +419,29 @@ public:
         const int dpiVal = static_cast<int>(96.0 * bsf);
         std::cout << "[MacOsWindow] DPI: " << dpiVal << " (backingScaleFactor=" << bsf << ")" << std::endl;
         return dpiVal;
+    }
+
+    // Every screen, in physical px; the first is the one with the menu bar, macOS's
+    // primary. A rate 0 before macOS 12, which says it only through CoreGraphics
+    static std::vector<display_t> queryDisplays(NativeDisplayHandle /*nativeDisplay*/)
+    {
+        std::vector<display_t> displays;
+        NSArray<NSScreen*>* screens = [NSScreen screens];
+        for (NSUInteger index = 0; index < [screens count]; ++index) {
+            NSScreen* screen = [screens objectAtIndex:index];
+            const CGFloat scale = [screen backingScaleFactor];
+            const NSRect frame = [screen frame];
+            fpx_t rate = 0.0F;
+            if (@available(macOS 12.0, *)) {
+                rate = static_cast<fpx_t>([screen maximumFramesPerSecond]);
+            }
+            displays.emplace_back(display_t { .name = std::string([[screen localizedName] UTF8String]),
+                .width = static_cast<int>(frame.size.width * scale),
+                .height = static_cast<int>(frame.size.height * scale),
+                .refreshRate = rate,
+                .isPrimary = index == 0 });
+        }
+        return displays;
     }
 
     void resize(fpx_t width, fpx_t height) override

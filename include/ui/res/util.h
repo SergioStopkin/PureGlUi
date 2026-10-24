@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include "common/time.h"
+
 #include <cctype>
 #include <chrono>
 #include <cstddef>
@@ -70,8 +72,7 @@ public:
     static std::size_t timeKey()
     {
         return static_cast<std::size_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
-        .count());
+        std::chrono::duration_cast<std::chrono::nanoseconds>(Common::Time::now().time_since_epoch()).count());
     }
 };
 

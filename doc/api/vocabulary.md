@@ -134,7 +134,11 @@ Header: `include/ui/config.h`
 struct alignas(16) Ui::config_t final {
     int   dpi           = 96;    // physical dots per inch
     fpx_t scale         = 1.0F;  // physical px per CSS px (dpi / 96)
+    fpx_t refreshRate   = 60.0F; // the display's, Hz; 60 where it says nothing
     bool  isCompositing = false; // UI composited into one surface (XWayland workaround)
+
+    // One refresh of the display: no frame is shown sooner after the one before
+    [[nodiscard]] std::chrono::microseconds refreshPeriod() const;
 
     // CSS px -> physical px
     [[nodiscard]] fpx_t toPhys(int css) const;        // raw scale

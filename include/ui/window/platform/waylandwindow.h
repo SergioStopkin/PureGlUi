@@ -21,6 +21,7 @@
 
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
+#include "ui/window/display.h"
 #include "ui/window/eglcontext.h"
 #include "ui/window/windowbase.h"
 
@@ -153,6 +154,12 @@ public:
         const int dpi = m_outputScale * 96;
         std::cout << "[WaylandWindow] DPI from wl_output scale: " << dpi << " (" << m_outputScale << "x)" << std::endl;
         return dpi;
+    }
+
+    // The output the window was given, at its current mode; none before it reported one
+    static std::vector<display_t> queryDisplays(NativeDisplayHandle /*nativeDisplay*/)
+    {
+        return (m_outputDisplay.width > 0) ? std::vector<display_t> { m_outputDisplay } : std::vector<display_t> {};
     }
 
     void resize(fpx_t width, fpx_t height) override
@@ -346,6 +353,8 @@ private:
 
     // Output scale shared across instances for queryDpi() (static method needs static state)
     static inline int m_outputScale = 1;
+    // The output's name and current mode, for queryDisplays() likewise
+    static inline display_t m_outputDisplay { .isPrimary = true };
 
     // -------- Static listeners --------
 
@@ -422,13 +431,16 @@ private:
     {
     }
 
-    static void outputMode(void * /*data*/,
-                           wl_output * /*output*/,
-                           uint32_t /*flags*/,
-                           int32_t /*width*/,
-                           int32_t /*height*/,
-                           int32_t /*refresh*/)
+    static void
+    outputMode(void * /*data*/, wl_output * /*output*/, uint32_t flags, int32_t width, int32_t height, int32_t refresh)
     {
+        // Every mode the output has is listed; only the one it runs in is its size and
+        // rate, the rate in mHz
+        if ((flags & WL_OUTPUT_MODE_CURRENT) != 0U) {
+            m_outputDisplay.width       = width;
+            m_outputDisplay.height      = height;
+            m_outputDisplay.refreshRate = static_cast<fpx_t>(refresh) / 1000.0F;
+        }
     }
 
     static void outputDone(void * /*data*/, wl_output * /*output*/) { }
@@ -439,7 +451,10 @@ private:
         self->handleOutputScale(factor);
     }
 
-    static void outputName(void * /*data*/, wl_output * /*output*/, const char * /*name*/) { }
+    static void outputName(void * /*data*/, wl_output * /*output*/, const char * name)
+    {
+        m_outputDisplay.name = (name != nullptr) ? name : "";
+    }
 
     static void outputDescription(void * /*data*/, wl_output * /*output*/, const char * /*description*/) { }
 

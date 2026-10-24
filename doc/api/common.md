@@ -270,6 +270,35 @@ class MyResource final : private Common::NonCopyable {
 };
 ```
 
+## Common::Time
+
+Header: `include/common/time.h`
+
+The one clock both repos read and sleep on. Every moment comes from `now()`, every span is measured between two of them, and every wait ends at one, so the clock (`std::chrono::steady_clock` today) changes in one place. Code never names a `std::chrono` clock itself, nor calls `std::this_thread::sleep_*`; the session's wall-clock `lastUpdate` (`system_clock`) is the one exception, being a date rather than a span.
+
+A sleep lasts its span to a fraction of a millisecond on every platform. On Linux and macOS that is `std::this_thread::sleep_for`, which wakes on the kernel's high-resolution timers. On Windows a plain sleep wakes on the system timer's tick, 15.6 ms unless some process asked for a finer one, so `sleepFor` waits on a high-resolution waitable timer there (`CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`, no process-wide timer change), falling back to the plain sleep where none can be made.
+
+```cpp
+class Time final {
+public:
+    using point_t = /* the clock's */ time_point;
+    using span_t  = /* the clock's */ duration;
+
+    [[nodiscard]] static point_t now();
+    [[nodiscard]] static double  msBetween(point_t from, point_t to); // fractional ms
+    [[nodiscard]] static double  msSince(point_t start);              // msBetween(start, now())
+
+    static void sleepFor(span_t span);     // returns at once for a span of 0 or less
+    static void sleepUntil(point_t point); // sleepFor(point - now())
+};
+```
+
+```cpp
+const Common::Time::point_t started = Common::Time::now();
+work();
+std::cout << "took " << Common::Time::msSince(started) << " ms" << std::endl;
+```
+
 ## See also
 
 [vocabulary.md](vocabulary.md), [README.md](README.md)
