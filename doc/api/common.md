@@ -21,11 +21,45 @@ template <typename T> static constexpr auto Shr(T val, unsigned int shift);
 - `Or` / `And` / `Xor` - bitwise OR / AND / XOR of `a` and `b`. Operands are cast to `std::make_unsigned_t` of their type, then to their `std::common_type_t`; the return type is that common unsigned type.
 - `Shl` / `Shr` - left / right shift of `val` by `shift`. `val` is cast to `std::make_unsigned_t<T>`; the return type is that unsigned type.
 
-Notes: used to combine `Changed`-style bitflags without signed-shift warnings. Return type is deduced (`auto`); assign to `auto` or cast at the call site if you need a specific enum type back.
+Notes: for integer masks a platform API hands over or takes (GL clear bits, X11 event and modifier masks, EGL attributes) and the hash. Return type is deduced (`auto`). Never cast a result back to an enum: a combination names no enumerator, so an enum's flags combine through `Common::flags_t` instead.
 
 ```cpp
-const auto merged = Common::Bit::Or(flagsA, flagsB);
-const auto masked = Common::Bit::And(state, mask);
+glClear(Common::Bit::Or(GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT));
+const bool isShift = Common::Bit::And(state, ShiftMask) != 0U;
+```
+
+## Common::flags_t
+
+Header: `include/common/flags.h`
+
+A set of an enum's single-bit flags. The enum names each bit; the set holds their bits in the enum's underlying type and never casts a combination back to the enum, where it would name no enumerator (what `clang-analyzer-optin.core.EnumCastOutOfRange` reports). The same size as its enum.
+
+```cpp
+template <typename E>
+    requires std::is_enum_v<E>
+struct alignas(sizeof(E)) flags_t final {
+    constexpr flags_t() = default;                                       // the empty set
+    constexpr explicit flags_t(E flag, std::same_as<E> auto... more);    // one flag or several
+    constexpr flags_t & operator|=(E flag);
+    constexpr flags_t & operator|=(flags_t other);
+    [[nodiscard]] constexpr bool has(E flag) const;                      // any bit of flag set
+    [[nodiscard]] constexpr bool hasAny(flags_t other) const;            // a bit in common
+    bool operator==(const flags_t &) const = default;
+    constexpr bool operator==(E flag) const;                             // exactly that flag, None the empty set
+};
+```
+
+- The constructor is `explicit`: a single flag where a set is wanted is spelled `changes_t(Changed::Render)`, and `{}` is the empty set.
+- There is no binary `|`: a set of several is built at once (`changes_t(Changed::Layout, Changed::Popup)`), and an accumulator takes `|=`.
+- `None` among the flags adds nothing, so a store that changed nothing can be gathered like any other.
+
+Each flag enum names its set beside it: `Ui::Window::key_modifiers_t` (`keymodifier.h`), `Ui::Res::Type::changes_t` (`changed.h`), `Ui::Render::event_kinds_t` (`eventkind.h`).
+
+```cpp
+Ui::Res::Type::changes_t changed;
+changed |= m_themeStore.loadCurrent(m_resPath);                  // a Changed
+changed |= m_layoutStore.load(m_resPath.layoutFile());           // a changes_t
+if (changed.has(Ui::Res::Type::Changed::Theme)) { /* ... */ }
 ```
 
 ## Common::hashOf

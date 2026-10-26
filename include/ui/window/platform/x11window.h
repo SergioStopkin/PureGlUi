@@ -26,18 +26,23 @@
 #include "ui/window/display.h"
 #include "ui/window/eglcontext.h"
 #include "ui/window/platform/x11include.h"
+#include "ui/window/platform/x11visualparams.h"
 #include "ui/window/windowbase.h"
 
 #include <algorithm>
 #include <array>
 #include <cairo.h>
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <glib-object.h>
+#include <glib.h>
 #include <iostream>
 #include <librsvg/rsvg.h>
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -84,7 +89,7 @@ public:
         }
 
         // Get visual info and parent window
-        X11VisualParams visParams;
+        Ui::Window::Platform::x11_visual_params_t visParams;
         if (!visualInfo(parentWindow, isChildWindow, visParams)) {
             return false;
         }
@@ -217,12 +222,14 @@ public:
             == 0
             && data != nullptr) {
             // Xlib appends a NUL byte after property data, so the text is a C string.
-            const std::string_view res = Common::viewCString(data);
-            const auto             pos = res.find("Xft.dpi:");
+            const std::string      text = Common::fromCString(data);
+            const std::string_view res  = text;
+            const auto             pos  = res.find("Xft.dpi:");
             if (pos != std::string_view::npos) {
                 auto val = res.substr(pos + 8);
                 val.remove_prefix(std::min(val.find_first_not_of(" \t"), val.size()));
-                const int dpiVal = static_cast<int>(std::strtol(val.data(), nullptr, 10));
+                int dpiVal = 0;
+                std::from_chars(std::to_address(val.begin()), std::to_address(val.end()), dpiVal);
                 if (dpiVal > 0) {
                     std::cout << "[X11Window] DPI from Xft.dpi: " << dpiVal << std::endl;
                     XFree(data);
@@ -412,8 +419,8 @@ public:
             // pointer cast.
             std::array<Ui::Window::Platform::X11::Cardinal, 4> extents {};
             std::memcpy(extents.data(), data, sizeof(Ui::Window::Platform::X11::Cardinal) * extents.size());
-            screenX -= static_cast<int>(extents[0]); // left
-            screenY -= static_cast<int>(extents[2]); // top
+            screenX -= static_cast<int>(extents.at(0)); // left
+            screenY -= static_cast<int>(extents.at(2)); // top
         }
         if (data != nullptr) {
             XFree(data);
@@ -487,26 +494,21 @@ public:
         XSetForeground(m_display, gc, 1);
 
         // If radius is too large, just fill a rectangle (fallback)
-        if (radius * 2 >= w || radius * 2 >= h) {
+        const int diameter = radius * 2;
+        if (diameter >= w || diameter >= h) {
             XFillRectangle(m_display, mask, gc, 0, 0, w, h);
         } else {
             // Center areas
-            XFillRectangle(m_display, mask, gc, radius, 0, w - 2 * radius, h);
-            XFillRectangle(m_display, mask, gc, 0, radius, w, h - 2 * radius);
+            const int innerW = w - diameter;
+            const int innerH = h - diameter;
+            XFillRectangle(m_display, mask, gc, radius, 0, innerW, h);
+            XFillRectangle(m_display, mask, gc, 0, radius, w, innerH);
 
             // Corner arcs (filled quarter-circles)
-            XFillArc(m_display, mask, gc, 0, 0, radius * 2, radius * 2, 90 * 64, 90 * 64);               // top-left
-            XFillArc(m_display, mask, gc, w - 2 * radius, 0, radius * 2, radius * 2, 0 * 64, 90 * 64);   // top-right
-            XFillArc(m_display, mask, gc, 0, h - 2 * radius, radius * 2, radius * 2, 180 * 64, 90 * 64); // bottom-left
-            XFillArc(m_display,
-                     mask,
-                     gc,
-                     w - 2 * radius,
-                     h - 2 * radius,
-                     radius * 2,
-                     radius * 2,
-                     270 * 64,
-                     90 * 64); // bottom-right
+            XFillArc(m_display, mask, gc, 0, 0, diameter, diameter, 90 * 64, 90 * 64);            // top-left
+            XFillArc(m_display, mask, gc, innerW, 0, diameter, diameter, 0 * 64, 90 * 64);        // top-right
+            XFillArc(m_display, mask, gc, 0, innerH, diameter, diameter, 180 * 64, 90 * 64);      // bottom-left
+            XFillArc(m_display, mask, gc, innerW, innerH, diameter, diameter, 270 * 64, 90 * 64); // bottom-right
         }
 
         // Apply the mask as the bounding shape of the window
@@ -616,16 +618,6 @@ private:
     // One per PointerShape, created lazily, freed in destroy()
     std::array<::Cursor, 4> m_cursors {};
 
-    // -------- Helper structs --------
-
-    struct alignas(64) X11VisualParams final {
-        ::Window      parentWin = 0;
-        Colormap      colormap  = 0;
-        int           depth     = 0;
-        Visual *      visual    = nullptr;
-        XVisualInfo * vi        = nullptr; // Only set for main window, must be freed
-    };
-
     // -------- Helper methods --------
 
     bool initDisplay(NativeDisplayHandle xDisplay, bool isChildWindow)
@@ -646,7 +638,9 @@ private:
         return true;
     }
 
-    bool visualInfo(NativeWindowHandle parentWindow, bool isChildWindow, X11VisualParams & params)
+    bool visualInfo(NativeWindowHandle                          parentWindow,
+                    bool                                        isChildWindow,
+                    Ui::Window::Platform::x11_visual_params_t & params)
     {
         if (isChildWindow) {
             params.parentWin = parentWindow;
@@ -692,7 +686,7 @@ private:
         return true;
     }
 
-    bool createWindow(X11VisualParams & params, bool isChildWindow)
+    bool createWindow(Ui::Window::Platform::x11_visual_params_t & params, bool isChildWindow)
     {
         XSetWindowAttributes winAttrs;
         winAttrs.background_pixel = m_bgColor.toArgb32();
@@ -785,7 +779,10 @@ private:
         }
 
         cairo_t *           cr       = cairo_create(surface);
-        const RsvgRectangle viewport = { 0, 0, static_cast<double>(size), static_cast<double>(size) };
+        const RsvgRectangle viewport = { .x      = 0,
+                                         .y      = 0,
+                                         .width  = static_cast<double>(size),
+                                         .height = static_cast<double>(size) };
         GError *            err      = nullptr;
         if (rsvg_handle_render_document(handle, cr, &viewport, &err) == 0) {
             if (err != nullptr) {
@@ -806,7 +803,7 @@ private:
         iconData.emplace_back(static_cast<Ui::Window::Platform::X11::Cardinal>(size));
 
         for (int row = 0; row < size; ++row) {
-            const uint8_t * srcRow = data + row * stride; // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+            const uint8_t * srcRow = data + (row * stride); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             for (int col = 0; col < size; ++col) {
                 const int srcOff = col * 4;
                 // Cairo ARGB32 on little-endian: B, G, R, A in memory (premultiplied)

@@ -21,6 +21,7 @@
 #include "common/noncopyable.h"
 #include "ui/color.h"
 #include "ui/config.h"
+#include "ui/gl/fontrec.h"
 #include "ui/gl/fontrenderer.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/rounded.h"
@@ -28,8 +29,9 @@
 #include "ui/interface/irenderer.h"
 #include "ui/type.h"
 
+#include <array>
+#include <cstdint>
 #include <functional>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -86,10 +88,7 @@ public:
         }
     }
 
-    void apply(Ui::Res::Type::Changed changed) override
-    {
-        if (changed != Ui::Res::Type::Changed::None) { }
-    }
+    void apply(Ui::Res::Type::changes_t /*changed*/) override { }
 
     void cleanup() override
     {
@@ -134,9 +133,7 @@ protected:
     }
 
     // Draw text vertex buffer using font shader
-    void drawTextVerts(const std::vector<float> &         verts,
-                       const Ui::Color &                  color,
-                       Ui::Gl::FontRenderer::font_rec_t & fr) const
+    void drawTextVerts(const std::vector<float> & verts, const Ui::Color & color, Ui::Gl::font_rec_t & fr) const
     {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

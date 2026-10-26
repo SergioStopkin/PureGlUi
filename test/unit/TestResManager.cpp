@@ -179,7 +179,7 @@ TEST(ResManager, RegisterPersistedAppearsInSession)
     SectionKey::Paths,
     "probeKey",
     [] { return std::string("probeVal"); },
-    [](const std::string &) {});
+    [](const std::string &) { });
 
     const std::string session = rm.serializeSession();
     EXPECT_NE(session.find("probeKey"), std::string::npos);

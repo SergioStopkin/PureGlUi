@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include "common/flags.h"
+
 #include <cstdint>
 
 namespace Ui::Res::Type {
@@ -34,5 +36,8 @@ enum class Changed : uint16_t {
     Icon     = 0x0100,
     All      = 0xFFFF
 };
+
+// What a load or a reload changed, the parts each store reports gathered
+using changes_t = Common::flags_t<Changed>;
 
 } // namespace Ui::Res::Type

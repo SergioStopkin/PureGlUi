@@ -19,6 +19,7 @@
 
 #include "ui/registry.h"
 
+#include <cstddef>
 #include <utility>
 #include <vector>
 

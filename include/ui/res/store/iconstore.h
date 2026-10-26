@@ -67,7 +67,7 @@ public:
         const std::string iconKey  = Key::iconKeyName(Key::IconKey::Icon);
         const std::string placeKey = Key::iconKeyName(Key::IconKey::Place);
         for (auto it = j.begin(); it != j.end(); ++it) {
-            if (it.key().rfind('_', 0) == 0 || !it.value().is_object()) {
+            if (it.key().starts_with('_') || !it.value().is_object()) {
                 continue;
             }
             Type::icon_default_t entry;
@@ -88,10 +88,8 @@ public:
         // role->role chain resolves to empty deterministically, never leaking a
         // mid role's freshly resolved .svg (map iteration order must not matter).
         const std::string_view SVG_EXT     = ".svg";
-        auto                   endsWithSvg = [&SVG_EXT](const std::string & s) {
-            return s.size() >= SVG_EXT.size() && s.compare(s.size() - SVG_EXT.size(), SVG_EXT.size(), SVG_EXT) == 0;
-        };
-        const auto source = m_iconDefaults;
+        auto                   endsWithSvg = [&SVG_EXT](const std::string & s) { return s.ends_with(SVG_EXT); };
+        const auto             source      = m_iconDefaults;
         for (auto & entryPair : m_iconDefaults) {
             auto & entry = entryPair.second;
             if (entry.icon.empty() || endsWithSvg(entry.icon)) {

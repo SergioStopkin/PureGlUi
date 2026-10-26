@@ -20,7 +20,6 @@
 #include "ui/res/type/border.h"
 #include "ui/type.h"
 
-#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <sstream>
@@ -42,7 +41,7 @@ public:
     {
         std::string s = val;
         // Remove whitespace
-        s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
+        std::erase_if(s, ::isspace);
         if (s.empty()) {
             return 0;
         }
@@ -83,7 +82,7 @@ public:
     static std::uint32_t str2uint32(const std::string & val, int base = 0, std::uint32_t ref = 0)
     {
         std::string s = val;
-        s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
+        std::erase_if(s, ::isspace);
         if (s.empty()) {
             return 0;
         }
@@ -153,16 +152,17 @@ public:
         if (vals.empty()) {
             return {};
         }
-        if (vals.size() == 1) {
-            return { vals[0], vals[0], vals[0], vals[0] };
+        // CSS's shorthand: a missing top-right and bottom-right take the top-left, a missing bottom-left the top-right
+        if (vals.size() < 2) {
+            vals.emplace_back(vals.at(0));
         }
-        if (vals.size() == 2) {
-            return { vals[0], vals[1], vals[0], vals[1] };
+        if (vals.size() < 3) {
+            vals.emplace_back(vals.at(0));
         }
-        if (vals.size() == 3) {
-            return { vals[0], vals[1], vals[2], vals[1] };
+        if (vals.size() < 4) {
+            vals.emplace_back(vals.at(1));
         }
-        return { vals[0], vals[1], vals[2], vals[3] };
+        return { .topLeft = vals.at(0), .topRight = vals.at(1), .bottomRight = vals.at(2), .bottomLeft = vals.at(3) };
     }
 };
 

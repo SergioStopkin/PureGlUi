@@ -26,11 +26,12 @@
  */
 
 #include "common/bytes.h"
-#include "common/hash.h"
 #include "common/noncopyable.h"
 #include "common/time.h"
 #include "ui/color.h"
 #include "ui/config.h"
+#include "ui/gl/cachekey.h"
+#include "ui/gl/contentbounds.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/gl/svgtexture.h"
@@ -43,15 +44,19 @@
 #include <cairo.h>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <fstream>
 #include <future>
+#include <glib-object.h>
+#include <glib.h>
 #include <iostream>
+#include <iterator>
 #include <librsvg/rsvg.h>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -78,29 +83,6 @@ constexpr bool SVG_DEBUG = false;
  * - Cache rendered textures by (svg_id, size) pair
  * - Batch rendering support
  */
-struct alignas(64) cache_key_t final {
-    std::string svgId;
-    int         width;
-    int         height;
-
-    bool operator==(const cache_key_t & other) const
-    {
-        return svgId == other.svgId && width == other.width && height == other.height;
-    }
-};
-
-} // namespace Ui::Gl
-
-template <>
-struct std::hash<Ui::Gl::cache_key_t> { // NOLINT(altera-struct-pack-align)
-    std::size_t operator()(const Ui::Gl::cache_key_t & key) const
-    {
-        return Common::hashOf(key.svgId, key.width, key.height);
-    }
-};
-
-namespace Ui::Gl {
-
 class SvgRenderer : private Common::NonCopyable {
     using RsvgHandlePtr = std::shared_ptr<RsvgHandle>;
 
@@ -237,14 +219,14 @@ class SvgRenderer : private Common::NonCopyable {
         // whole physical pixels.
         const fpx_t scaledW = toCss(static_cast<fpx_t>(tex.width));
         const fpx_t scaledH = toCss(static_cast<fpx_t>(tex.height));
-        const fpx_t quadX   = toCss(std::round(toPhys(bound.x + (drawW - scaledW) / 2.0F)));
-        const fpx_t quadY   = toCss(std::round(toPhys(bound.y + (drawH - scaledH) / 2.0F)));
+        const fpx_t quadX   = toCss(std::round(toPhys(bound.x + ((drawW - scaledW) / 2.0F))));
+        const fpx_t quadY   = toCss(std::round(toPhys(bound.y + ((drawH - scaledH) / 2.0F))));
 
         glBindTexture(GL_TEXTURE_2D, tex.textureId);
         if (isTinted) {
             glUniform1i(m_uTint, 1);
             auto c = color.toGLRGBA();
-            glUniform4f(m_uColor, c[0], c[1], c[2], c[3]);
+            glUniform4f(m_uColor, c.at(0), c.at(1), c.at(2), c.at(3));
         } else {
             glUniform4f(m_uColor, 1.0F, 1.0F, 1.0F, 1.0F);
             glUniform1i(m_uTint, 0);
@@ -275,9 +257,9 @@ class SvgRenderer : private Common::NonCopyable {
         }
 
         auto        sc = shadowColor.toGLRGBA();
-        const float sr = sc[0];
-        const float sg = sc[1];
-        const float sb = sc[2];
+        const float sr = sc.at(0);
+        const float sg = sc.at(1);
+        const float sb = sc.at(2);
 
         Ui::Gl::Util::forEachShadowLayer(
         shadowOffsetX,
@@ -290,21 +272,13 @@ class SvgRenderer : private Common::NonCopyable {
             } else {
                 glUniform4f(m_uColor, sr, sg, sb, alpha);
             }
-            drawQuad(bound.x + ox - expand, bound.y + oy - expand, drawW + expand * 2, drawH + expand * 2);
+            drawQuad(bound.x + ox - expand, bound.y + oy - expand, drawW + (expand * 2), drawH + (expand * 2));
         });
 
         if (s_svg_upload_premultiplied) {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         }
     }
-
-    // Tight content bounding box as fractions of intrinsic size (excludes transparent padding)
-    struct alignas(16) content_bounds_t final {
-        fpx_t u0 = 0.0F; // left fraction (0-1)
-        fpx_t v0 = 0.0F; // top fraction (0-1)
-        fpx_t u1 = 1.0F; // right fraction (0-1)
-        fpx_t v1 = 1.0F; // bottom fraction (0-1)
-    };
 
     // Process-wide shared document and size cache to avoid reparsing the same SVG in multiple renderer instances
     inline static std::unordered_map<std::string, RsvgHandlePtr>           s_documentCacheShared_;
@@ -344,10 +318,10 @@ class SvgRenderer : private Common::NonCopyable {
     {
 #if LIBRSVG_CHECK_VERSION(2, 46, 0)
         // librsvg 2.46+: use intrinsic dimensions API (viewBox + explicit width/height)
-        gboolean      hasViewbox = FALSE;
+        gboolean      hasViewbox = {};
         RsvgRectangle viewbox    = {};
-        gboolean      hasW       = FALSE;
-        gboolean      hasH       = FALSE;
+        gboolean      hasW       = {};
+        gboolean      hasH       = {};
         RsvgLength    rsvgW      = {};
         RsvgLength    rsvgH      = {};
         rsvg_handle_get_intrinsic_dimensions(handle, &hasW, &rsvgW, &hasH, &rsvgH, &hasViewbox, &viewbox);
@@ -419,7 +393,10 @@ class SvgRenderer : private Common::NonCopyable {
 
         cairo_t * cr = cairo_create(surface);
 #if LIBRSVG_CHECK_VERSION(2, 46, 0)
-        const RsvgRectangle viewport = { 0, 0, static_cast<double>(refW), static_cast<double>(refH) };
+        const RsvgRectangle viewport = { .x      = 0,
+                                         .y      = 0,
+                                         .width  = static_cast<double>(refW),
+                                         .height = static_cast<double>(refH) };
         GError *            err      = nullptr;
         if (rsvg_handle_render_document(handle, cr, &viewport, &err) == 0) {
             if (err != nullptr) {
@@ -448,25 +425,17 @@ class SvgRenderer : private Common::NonCopyable {
         int       y     = 0;
         while (y < refHi) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            const uint8_t * row = data + y * stride;
+            const uint8_t * row = data + (y * stride);
             int             x   = 0;
             while (x < refWi) {
                 // Cairo ARGB32 little-endian: byte 3 is alpha
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                const uint8_t a = row[x * 4 + 3];
+                const uint8_t a = row[(x * 4) + 3];
                 if (a > 0) {
-                    if (x < minX) {
-                        minX = x;
-                    }
-                    if (x > maxX) {
-                        maxX = x;
-                    }
-                    if (y < minY) {
-                        minY = y;
-                    }
-                    if (y > maxY) {
-                        maxY = y;
-                    }
+                    minX = std::min(x, minX);
+                    maxX = std::max(x, maxX);
+                    minY = std::min(y, minY);
+                    maxY = std::max(y, maxY);
                 }
                 ++x;
             }
@@ -507,7 +476,10 @@ class SvgRenderer : private Common::NonCopyable {
 #if LIBRSVG_CHECK_VERSION(2, 46, 0)
         // When cropping, compute a viewport that maps the ink rect centered into the target.
         // Uses uniform scaling to preserve aspect ratio (like CSS "object-fit: contain").
-        RsvgRectangle viewport = { 0, 0, static_cast<double>(targetW), static_cast<double>(targetH) };
+        RsvgRectangle viewport = { .x      = 0,
+                                   .y      = 0,
+                                   .width  = static_cast<double>(targetW),
+                                   .height = static_cast<double>(targetH) };
         if (crop != nullptr && svgW > 0 && svgH > 0) {
             const double cbW = crop->u1 - crop->u0;
             const double cbH = crop->v1 - crop->v0;
@@ -530,9 +502,9 @@ class SvgRenderer : private Common::NonCopyable {
                 const double offsetY   = (targetH - renderedH) / 2.0;
 
                 // Offset viewport so content region lands at (offsetX, offsetY)
-                const double vpX = offsetX - crop->u0 * vpW;
-                const double vpY = offsetY - crop->v0 * vpH;
-                viewport         = { vpX, vpY, vpW, vpH };
+                const double vpX = offsetX - (crop->u0 * vpW);
+                const double vpY = offsetY - (crop->v0 * vpH);
+                viewport         = { .x = vpX, .y = vpY, .width = vpW, .height = vpH };
             }
         }
 
@@ -559,7 +531,7 @@ class SvgRenderer : private Common::NonCopyable {
                 const double renderedH   = contentSvgH * scale;
                 const double offsetX     = (targetW - renderedW) / 2.0;
                 const double offsetY     = (targetH - renderedH) / 2.0;
-                cairo_translate(cr, offsetX - crop->u0 * svgW * scale, offsetY - crop->v0 * svgH * scale);
+                cairo_translate(cr, offsetX - (crop->u0 * svgW * scale), offsetY - (crop->v0 * svgH * scale));
                 cairo_scale(cr, scale, scale);
             }
         } else if (svgW > 0 && svgH > 0) {
@@ -576,9 +548,9 @@ class SvgRenderer : private Common::NonCopyable {
         std::vector<uint8_t> rgba(targetW * targetH * 4);
 
         for (int row = 0; row < targetH; ++row) {
-            const uint8_t * srcRow = data + row * stride; // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+            const uint8_t * srcRow = data + (row * stride); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             for (int col = 0; col < targetW; ++col) {
-                const int dstIdx = (row * targetW + col) * 4;
+                const int dstIdx = ((row * targetW) + col) * 4;
                 const int srcOff = col * 4;
                 // Cairo ARGB32 on little-endian: bytes are B, G, R, A in memory (premultiplied)
                 uint8_t       b = srcRow[srcOff + 0]; // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -594,10 +566,10 @@ class SvgRenderer : private Common::NonCopyable {
                     }
                 }
 
-                rgba[dstIdx + 0] = r;
-                rgba[dstIdx + 1] = g;
-                rgba[dstIdx + 2] = b;
-                rgba[dstIdx + 3] = a;
+                rgba.at(dstIdx + 0) = r;
+                rgba.at(dstIdx + 1) = g;
+                rgba.at(dstIdx + 2) = b;
+                rgba.at(dstIdx + 3) = a;
             }
         }
 
@@ -660,16 +632,16 @@ public:
 
         // Fast check if already present
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
-            if (s_documentCacheShared_.find(path) != s_documentCacheShared_.end()) {
+            const std::scoped_lock lock(s_docMutex_);
+            if (s_documentCacheShared_.contains(path)) {
                 return path;
             }
         }
 
         // If another thread is loading this path, wait for its future
         {
-            const std::lock_guard<std::mutex> lock(s_futuresMutex_);
-            auto                              it = s_loadFutures_.find(path);
+            const std::scoped_lock lock(s_futuresMutex_);
+            auto                   it = s_loadFutures_.find(path);
             if (it != s_loadFutures_.end()) {
                 auto spdoc = it->second.get();
                 if (spdoc != nullptr) {
@@ -683,12 +655,12 @@ public:
         std::promise<RsvgHandlePtr> prom;
         auto                        fut = prom.get_future().share();
         {
-            const std::lock_guard<std::mutex> lock(s_futuresMutex_);
+            const std::scoped_lock lock(s_futuresMutex_);
             s_loadFutures_[path] = fut;
         }
 
         {
-            const std::lock_guard<std::mutex> lock(s_instrMutex);
+            const std::scoped_lock lock(s_instrMutex);
             s_loadsByPath[path]++;
         }
 
@@ -710,7 +682,7 @@ public:
             // Notify waiters of failure
             prom.set_value(nullptr);
             {
-                const std::lock_guard<std::mutex> lock(s_futuresMutex_);
+                const std::scoped_lock lock(s_futuresMutex_);
                 s_loadFutures_.erase(path);
             }
             return "";
@@ -729,7 +701,7 @@ public:
         const content_bounds_t cb = queryContentBounds(raw, w, h);
 
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
+            const std::scoped_lock lock(s_docMutex_);
             s_documentCacheShared_[path] = sdoc;
             s_sizeCacheShared_[path]     = { w, h };
             s_contentBoundsShared_[path] = cb;
@@ -747,7 +719,7 @@ public:
 
         // Clean up future entry
         {
-            const std::lock_guard<std::mutex> lock(s_futuresMutex_);
+            const std::scoped_lock lock(s_futuresMutex_);
             s_loadFutures_.erase(path);
         }
 
@@ -763,8 +735,8 @@ public:
     {
         // Fast path: already loaded in shared cache
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
-            if (s_documentCacheShared_.find(path) != s_documentCacheShared_.end()) {
+            const std::scoped_lock lock(s_docMutex_);
+            if (s_documentCacheShared_.contains(path)) {
                 return path;
             }
         }
@@ -783,8 +755,8 @@ public:
 
         // Check if already loaded
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
-            if (s_documentCacheShared_.find(filledId) != s_documentCacheShared_.end()) {
+            const std::scoped_lock lock(s_docMutex_);
+            if (s_documentCacheShared_.contains(filledId)) {
                 return filledId;
             }
         }
@@ -820,16 +792,16 @@ public:
 
         // Fast check
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
-            if (s_documentCacheShared_.find(id) != s_documentCacheShared_.end()) {
+            const std::scoped_lock lock(s_docMutex_);
+            if (s_documentCacheShared_.contains(id)) {
                 return id;
             }
         }
 
         // Wait for existing load if present
         {
-            const std::lock_guard<std::mutex> lock(s_futuresMutex_);
-            auto                              it = s_loadFutures_.find(id);
+            const std::scoped_lock lock(s_futuresMutex_);
+            auto                   it = s_loadFutures_.find(id);
             if (it != s_loadFutures_.end()) {
                 auto spdoc = it->second.get();
                 if (spdoc != nullptr) {
@@ -841,15 +813,13 @@ public:
         std::promise<RsvgHandlePtr> prom;
         auto                        fut = prom.get_future().share();
         {
-            const std::lock_guard<std::mutex> lock(s_futuresMutex_);
+            const std::scoped_lock lock(s_futuresMutex_);
             s_loadFutures_[id] = fut;
         }
 
         auto         t0   = Common::Time::now();
         GError *     gerr = nullptr;
-        RsvgHandle * raw  = rsvg_handle_new_from_data(Common::asBytes(svgData.data()),
-                                                     static_cast<gsize>(svgData.size()),
-                                                     &gerr);
+        RsvgHandle * raw  = rsvg_handle_new_from_data(Common::asBytes(svgData.data()), svgData.size(), &gerr);
         auto         dur  = std::chrono::duration_cast<std::chrono::nanoseconds>(Common::Time::now() - t0).count();
         s_loadFromStringNs.fetch_add(dur);
 
@@ -862,7 +832,7 @@ public:
             std::cerr << std::endl;
             prom.set_value(nullptr);
             {
-                const std::lock_guard<std::mutex> lock(s_futuresMutex_);
+                const std::scoped_lock lock(s_futuresMutex_);
                 s_loadFutures_.erase(id);
             }
             return "";
@@ -879,7 +849,7 @@ public:
         const content_bounds_t cb = queryContentBounds(raw, w, h);
 
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
+            const std::scoped_lock lock(s_docMutex_);
             s_documentCacheShared_[id] = sdoc;
             s_sizeCacheShared_[id]     = { w, h };
             s_contentBoundsShared_[id] = cb;
@@ -895,7 +865,7 @@ public:
         }
 
         {
-            const std::lock_guard<std::mutex> lock(s_futuresMutex_);
+            const std::scoped_lock lock(s_futuresMutex_);
             s_loadFutures_.erase(id);
         }
 
@@ -915,8 +885,8 @@ public:
         float         svgW = 0;
         float         svgH = 0;
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
-            auto                              it = s_documentCacheShared_.find(svgId);
+            const std::scoped_lock lock(s_docMutex_);
+            auto                   it = s_documentCacheShared_.find(svgId);
             if (it != s_documentCacheShared_.end()) {
                 doc = it->second;
             }
@@ -949,7 +919,7 @@ public:
         }
 
         // Check cache
-        const cache_key_t key { svgId, renderWidth, renderHeight };
+        const cache_key_t key { .svgId = svgId, .width = renderWidth, .height = renderHeight };
         auto              cacheIt = textureCache_.find(key);
         if (cacheIt != textureCache_.end()) {
             return cacheIt->second;
@@ -959,8 +929,8 @@ public:
         content_bounds_t cb;
         bool             hasCrop = false;
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
-            auto                              cbIt = s_contentBoundsShared_.find(svgId);
+            const std::scoped_lock lock(s_docMutex_);
+            auto                   cbIt = s_contentBoundsShared_.find(svgId);
             if (cbIt != s_contentBoundsShared_.end()) {
                 cb = cbIt->second;
                 // Consider cropping if content bounds differ meaningfully from full viewBox
@@ -1033,7 +1003,7 @@ public:
             return {};
         }
 
-        const cache_key_t key { svgId, baseTex.width, baseTex.height };
+        const cache_key_t key { .svgId = svgId, .width = baseTex.width, .height = baseTex.height };
         auto              cacheIt = shadowTextureCache_.find(key);
         if (cacheIt != shadowTextureCache_.end()) {
             return cacheIt->second;
@@ -1059,15 +1029,15 @@ public:
         int       i      = 0;
         while (i < pixels) {
             const int     idx = i * 4;
-            const uint8_t a   = rgba[idx + 3];
+            const uint8_t a   = rgba.at(idx + 3);
             if (s_svg_upload_premultiplied) {
-                rgba[idx]     = a; // R = A (premultiplied white)
-                rgba[idx + 1] = a; // G = A
-                rgba[idx + 2] = a; // B = A
+                rgba.at(idx)     = a; // R = A (premultiplied white)
+                rgba.at(idx + 1) = a; // G = A
+                rgba.at(idx + 2) = a; // B = A
             } else {
-                rgba[idx]     = 255; // R
-                rgba[idx + 1] = 255; // G
-                rgba[idx + 2] = 255; // B
+                rgba.at(idx)     = 255; // R
+                rgba.at(idx + 1) = 255; // G
+                rgba.at(idx + 2) = 255; // B
             }
             ++i;
         }
@@ -1134,7 +1104,7 @@ public:
         glBindTexture(GL_TEXTURE_2D, tex.textureId);
         glUniform1i(m_uTint, 1);
         auto c = color.toGLRGBA();
-        glUniform4f(m_uColor, c[0], c[1], c[2], c[3]);
+        glUniform4f(m_uColor, c.at(0), c.at(1), c.at(2), c.at(3));
         drawQuad(bound.x, bound.y, drawW, drawH);
     }
 
@@ -1175,7 +1145,7 @@ public:
         glBindTexture(GL_TEXTURE_2D, tex.textureId);
         glUniform1i(m_uTint, 1);
         auto c = color.toGLRGBA();
-        glUniform4f(m_uColor, c[0], c[1], c[2], c[3]);
+        glUniform4f(m_uColor, c.at(0), c.at(1), c.at(2), c.at(3));
         drawQuad(bound.x, bound.y, drawW, drawH);
     }
 
@@ -1245,8 +1215,8 @@ public:
     // Does NOT increment the instrumentation counters (used to avoid noisy reads for preloaded icons)
     static bool intrinsicSizeIfCached(const std::string & svgId, float & outW, float & outH)
     {
-        const std::lock_guard<std::mutex> lock(s_docMutex_);
-        auto                              cacheIt = s_sizeCacheShared_.find(svgId);
+        const std::scoped_lock lock(s_docMutex_);
+        auto                   cacheIt = s_sizeCacheShared_.find(svgId);
         if (cacheIt != s_sizeCacheShared_.end()) {
             outW = cacheIt->second.first;
             outH = cacheIt->second.second;
@@ -1259,7 +1229,7 @@ public:
     // Returns the tight content dimensions, excluding transparent alpha padding
     static bool contentSizeIfCached(const std::string & svgId, float & outW, float & outH)
     {
-        const std::lock_guard<std::mutex> lock(s_docMutex_);
+        const std::scoped_lock lock(s_docMutex_);
 
         auto sizeIt = s_sizeCacheShared_.find(svgId);
         if (sizeIt == s_sizeCacheShared_.end()) {
@@ -1283,13 +1253,13 @@ public:
     {
         s_intrinsicSizeCalled.fetch_add(1);
         {
-            const std::lock_guard<std::mutex> lock(s_instrMutex);
+            const std::scoped_lock lock(s_instrMutex);
             s_intrinsicByPath[svgId]++;
         }
 
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
-            auto                              cacheIt = s_sizeCacheShared_.find(svgId);
+            const std::scoped_lock lock(s_docMutex_);
+            auto                   cacheIt = s_sizeCacheShared_.find(svgId);
             if (cacheIt != s_sizeCacheShared_.end()) {
                 return cacheIt->second;
             }
@@ -1298,8 +1268,8 @@ public:
         // Fallback: query shared document and cache result
         RsvgHandlePtr doc;
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
-            auto                              it = s_documentCacheShared_.find(svgId);
+            const std::scoped_lock lock(s_docMutex_);
+            auto                   it = s_documentCacheShared_.find(svgId);
             if (it != s_documentCacheShared_.end()) {
                 doc = it->second;
             } else {
@@ -1311,7 +1281,7 @@ public:
         float h = 0;
         queryIntrinsicSize(doc.get(), w, h);
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
+            const std::scoped_lock lock(s_docMutex_);
             s_sizeCacheShared_[svgId] = { w, h };
         }
         return { w, h };
@@ -1322,8 +1292,8 @@ public:
      */
     static bool isLoaded(const std::string & svgId)
     {
-        const std::lock_guard<std::mutex> lock(s_docMutex_);
-        return s_documentCacheShared_.find(svgId) != s_documentCacheShared_.end();
+        const std::scoped_lock lock(s_docMutex_);
+        return s_documentCacheShared_.contains(svgId);
     }
 
     /**
@@ -1331,7 +1301,7 @@ public:
      */
     void removeTexture(const std::string & svgId, int width, int height)
     {
-        const cache_key_t key { svgId, width, height };
+        const cache_key_t key { .svgId = svgId, .width = width, .height = height };
         auto              it = textureCache_.find(key);
         if (it != textureCache_.end()) {
             if (it->second.textureId != 0U) {
@@ -1364,7 +1334,7 @@ public:
     void unload(const std::string & svgId)
     {
         removeAllTextures(svgId);
-        const std::lock_guard<std::mutex> lock(s_docMutex_);
+        const std::scoped_lock lock(s_docMutex_);
         s_documentCacheShared_.erase(svgId);
         s_sizeCacheShared_.erase(svgId);
         s_contentBoundsShared_.erase(svgId);
@@ -1391,7 +1361,7 @@ public:
     // Clear process-wide shared document/size cache (call explicitly when needed)
     static void clearGlobalCache()
     {
-        const std::lock_guard<std::mutex> lock(s_docMutex_);
+        const std::scoped_lock lock(s_docMutex_);
         s_documentCacheShared_.clear();
         s_sizeCacheShared_.clear();
         s_contentBoundsShared_.clear();
@@ -1403,7 +1373,7 @@ public:
     void cacheStats(size_t & documentCount, size_t & textureCount, size_t & estimatedGpuMemory) const
     {
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
+            const std::scoped_lock lock(s_docMutex_);
             documentCount = s_documentCacheShared_.size();
         }
         textureCount       = textureCache_.size();
@@ -1445,13 +1415,13 @@ public:
         s_intrinsicSizeCalled.store(0);
 
         {
-            const std::lock_guard<std::mutex> lock(s_instrMutex);
+            const std::scoped_lock lock(s_instrMutex);
             s_loadsByPath.clear();
             s_intrinsicByPath.clear();
         }
 
         {
-            const std::lock_guard<std::mutex> lock(s_docMutex_);
+            const std::scoped_lock lock(s_docMutex_);
             s_loggedLoadedSvgs_.clear();
         }
     }

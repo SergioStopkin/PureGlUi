@@ -10,7 +10,7 @@ project(
 
 if(APPLE)
     enable_language(OBJCXX)
-    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD 23)
     set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 endif()
 
@@ -39,7 +39,7 @@ elseif(NOT APPLE)
     include_directories(${GLEW_INCLUDE_DIR})
 endif()
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_SUPPRESS_REGENERATION ON)
@@ -328,7 +328,7 @@ endif()
 # ===========================================================================
 # ui - header-only INTERFACE target carrying the framework's usage
 # requirements: public include (ui/ + common/), vendored nlohmann + system GL
-# headers as SYSTEM, C++20, and the libs the fw headers compile/link against.
+# headers as SYSTEM, C++23, and the libs the fw headers compile/link against.
 # This repo's app + tests link it, and an external host gets the same contract
 # via add_subdirectory + target_link_libraries(<host> PureGlUi::ui). jemalloc
 # is excluded - it is an app allocator choice, not a framework requirement.
@@ -337,7 +337,7 @@ endif()
 add_library(ui INTERFACE)
 add_library(PureGlUi::ui ALIAS ui)
 
-target_compile_features(ui INTERFACE cxx_std_20)
+target_compile_features(ui INTERFACE cxx_std_23)
 
 # First-party headers - NOT system (we want our own warnings).
 target_include_directories(ui INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)

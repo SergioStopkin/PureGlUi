@@ -21,7 +21,10 @@
 #include "common/sanitize.h"
 #include "nlohmann/json.hpp"
 #include "ui/res/key/dialog.h"
-#include "ui/res/type/dialog.h"
+#include "ui/res/type/dialogaction.h"
+#include "ui/res/type/dialogbuttonconfig.h"
+#include "ui/res/type/dialogtype.h"
+#include "ui/res/type/dialogtypeconfig.h"
 
 #include <iostream>
 #include <string>
@@ -76,7 +79,7 @@ public:
             for (auto it = types.begin(); it != types.end(); ++it) {
                 const Type::DialogType type    = Type::dialogTypeFromName(it.key());
                 const auto &           typeDef = it.value();
-                if (!typeDef.is_object() || !typeDef.contains(buttonsKey) || !typeDef[buttonsKey].is_array()) {
+                if (!typeDef.is_object() || !typeDef.contains(buttonsKey) || !typeDef.at(buttonsKey).is_array()) {
                     continue;
                 }
 
@@ -85,7 +88,7 @@ public:
                 "dialog.primary");
                 Type::dialog_type_config_t config;
 
-                for (const auto & btnName : typeDef[buttonsKey]) {
+                for (const auto & btnName : typeDef.at(buttonsKey)) {
                     if (!btnName.is_string()) {
                         continue;
                     }

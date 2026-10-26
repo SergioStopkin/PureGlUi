@@ -18,9 +18,9 @@
 #pragma once
 
 #include "common/noncopyable.h"
+#include "ui/pubsub/subscription.h"
 #include "ui/type.h"
 
-#include <algorithm>
 #include <functional>
 #include <initializer_list>
 #include <utility>
@@ -29,14 +29,8 @@
 namespace Ui::PubSub {
 
 class Subscribe final : private Common::NonCopyable {
-    struct alignas(64) entry_t final {
-        id_t          source {};
-        id_t          subscriber {};
-        Ui::task_fn_t callback;
-    };
-
-    std::vector<entry_t>       m_entries;
-    std::vector<Ui::task_fn_t> m_deferred;
+    std::vector<Ui::PubSub::subscription_t> m_entries;
+    std::vector<Ui::task_fn_t>              m_deferred;
 
 public:
     Subscribe()  = default;
@@ -44,22 +38,23 @@ public:
 
     void add(id_t source, id_t subscriber, Ui::task_fn_t callback)
     {
-        m_entries.emplace_back(entry_t { source, subscriber, std::move(callback) });
+        m_entries.emplace_back(
+        Ui::PubSub::subscription_t { .source = source, .subscriber = subscriber, .callback = std::move(callback) });
     }
 
     void add(std::initializer_list<id_t> sources, id_t subscriber, const Ui::task_fn_t & callback)
     {
         for (const id_t source : sources) {
-            m_entries.emplace_back(entry_t { source, subscriber, callback });
+            m_entries.emplace_back(
+            Ui::PubSub::subscription_t { .source = source, .subscriber = subscriber, .callback = callback });
         }
     }
 
     void remove(id_t subscriber)
     {
-        m_entries.erase(std::remove_if(m_entries.begin(),
-                                       m_entries.end(),
-                                       [subscriber](const entry_t & entry) { return entry.subscriber == subscriber; }),
-                        m_entries.end());
+        std::erase_if(m_entries, [subscriber](const Ui::PubSub::subscription_t & entry) {
+            return entry.subscriber == subscriber;
+        });
     }
 
     void notify(id_t source)

@@ -27,7 +27,7 @@
  * window/GL - initialize() is never called, childIdForHandle() is invoked directly.
  */
 
-#if defined(HAVE_X11)
+#ifdef HAVE_X11
 
 #include "testidkind.h"
 #include "ui/idkind.h"
@@ -105,14 +105,14 @@ public:
 
     bool                        render() override { return true; }
     void                        resize(Ui::fpx_t /*width*/, Ui::fpx_t /*height*/) override { }
-    void                        apply(Ui::Res::Type::Changed /*changed*/) override { }
+    void                        apply(Ui::Res::Type::changes_t /*changed*/) override { }
     void                        cleanup() override { }
     bool                        onMouseMove(int /*x*/, int /*y*/) override { return false; }
     Ui::Render::element_event_t onMousePress(int /*x*/,
                                              int /*y*/,
                                              Ui::Window::MouseButton /*button*/,
                                              int /*clickCount*/,
-                                             Ui::Window::KeyModifier /*modifiers*/) override
+                                             Ui::Window::key_modifiers_t /*modifiers*/) override
     {
         return {};
     }

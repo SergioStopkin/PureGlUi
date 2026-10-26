@@ -29,7 +29,7 @@
 // it only builds on the X11 backend. On other platforms component-tests still
 // builds its remaining (windowless) suites; this translation unit compiles to
 // nothing.
-#if defined(HAVE_X11)
+#ifdef HAVE_X11
 
 #include <gtest/gtest.h>
 
@@ -562,9 +562,9 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
             return m.id == menuId;
         });
         auto &       popupRendererRef = popup->emplaceRenderer([&window = popup->window()] { window.makeCurrent(); },
-                                                         m_resManager,
-                                                         *menuIt,
-                                                         Ui::toCss(popupW));
+                                                               m_resManager,
+                                                               *menuIt,
+                                                               Ui::toCss(popupW));
         popupRendererRef.resize(popup->window().bound().w, popup->window().bound().h);
         popupRendererRef.setAlpha(popup->window().hasAlpha());
 

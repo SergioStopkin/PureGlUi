@@ -19,6 +19,7 @@
 
 #include "ui/gl/localglew.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 

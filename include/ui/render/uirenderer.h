@@ -31,7 +31,11 @@
 #include "ui/idkind.h"
 #include "ui/interface/irender.h"
 #include "ui/interface/irenderer.h"
+#include "ui/render/bgop.h"
 #include "ui/render/elementstyle.h"
+#include "ui/render/imageop.h"
+#include "ui/render/progressop.h"
+#include "ui/render/textop.h"
 #include "ui/render/truncate.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/dock/anchor.h"
@@ -43,11 +47,11 @@
 #include "ui/type.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -65,49 +69,6 @@ constexpr bool UI_DEBUG = false;
  */
 class UiRenderer final : public Ui::IRenderer, private Common::NonCopyable {
 public:
-    // Batched draw operation structs (same as HtmlRenderer, using native types)
-    struct alignas(128) BGOp final {
-        Ui::Res::Type::bound_t      bound;
-        Ui::Res::Type::border_t     radius;
-        int                         shadowOffsetX = 0;
-        int                         shadowOffsetY = 0;
-        int                         shadowBlur    = 0;
-        bool                        hasShadow     = false;
-        Ui::Res::Type::color_pair_t colors;
-        Ui::Color                   shadowColor;
-    };
-
-    struct alignas(128) TextOp final {
-        TextOp() = default;
-        std::string            text;
-        Ui::font_handle_t      hFont = 0;
-        Ui::Color              color;
-        Ui::Res::Type::bound_t pos;
-        Ui::Res::Type::AlignH  alignH  = Ui::Res::Type::AlignH::Left;
-        Ui::Res::Type::AlignV  alignV  = Ui::Res::Type::AlignV::Center;
-        fpx_t                  minPadH = 0; // minimum horizontal padding (CSS px)
-    };
-
-    struct alignas(128) ImageOp final {
-        std::string             src;
-        Ui::Res::Type::bound_t  pos;
-        Ui::Res::Type::border_t radius;
-        Ui::Color               tint;
-        bool                    isSvg    = false;
-        bool                    tinted   = false;
-        bool                    hovered  = false;
-        bool                    active   = false;
-        bool                    isFilled = false; // true draws outline art as a solid shape
-    };
-
-    struct alignas(64) progress_t final {
-        Ui::Res::Type::bound_t  tabRect;
-        Ui::Res::Type::border_t tabRadius;
-        fpx_t                   sectorW      = 0;
-        int                     totalSectors = 0;
-        int                     progress     = 0;
-    };
-
     // render: the draw sink, injected so the fw renderer is decoupled from the GL
     // backend - GlRender in the app, a fake sink in headless tests. width/height:
     // initial physical size; the host pushes later sizes via resize()/Render(w,h).
@@ -176,7 +137,7 @@ public:
 
     void cleanup() override { m_layout = UiLayout(); }
 
-    void apply(Ui::Res::Type::Changed /*changed*/) override
+    void apply(Ui::Res::Type::changes_t /*changed*/) override
     {
         // Content rebuild is handled by requestContentRefresh() -> setContent().
         // Not called here to avoid duplicate layout builds (SVG loading is expensive).
@@ -189,7 +150,7 @@ public:
     [[nodiscard]] const Ui::Res::Type::bound_t & bound(id_t id)
     {
         static const Ui::Res::Type::bound_t empty {};
-        UiElement *                         el = m_layout.elementById(id);
+        const UiElement *                   el = m_layout.elementById(id);
         return el != nullptr ? el->bound : empty;
     }
 
@@ -253,7 +214,7 @@ public:
                   const Ui::Color &                   parentBg,
                   const Ui::Res::Type::border_t &     radius = {})
     {
-        BGOp op;
+        bg_op_t op;
         op.bound     = rect;
         op.radius    = radius;
         op.colors.fg = elementColors.bg; // shape fill
@@ -276,7 +237,7 @@ public:
         if (text.empty() || font == 0) {
             return;
         }
-        TextOp op;
+        text_op_t op;
         op.text    = text;
         op.hFont   = font;
         op.color   = color;
@@ -336,7 +297,7 @@ public:
     void
     appendImage(const Ui::Res::Type::bound_t & rect, const std::string & svgPath, Ui::Color tint, bool isFilled = false)
     {
-        ImageOp op;
+        image_op_t op;
         op.src      = svgPath;
         op.pos      = rect;
         op.tint     = tint;
@@ -392,7 +353,7 @@ public:
                                  int                     y,
                                  Ui::Window::MouseButton button,
                                  int /*clickCount*/,
-                                 Ui::Window::KeyModifier /*modifiers*/) override
+                                 Ui::Window::key_modifiers_t /*modifiers*/) override
     {
         if (button != Ui::Window::MouseButton::Left) {
             return {};
@@ -497,7 +458,7 @@ private:
                 continue;
             }
             const bool wasHovered = (el.state == UiElementState::Hovered);
-            const bool isHovered  = el.bound.contains(cssX, cssY) && acceptsEvent(el.accepts, EventKind::Hover);
+            const bool isHovered  = el.bound.contains(cssX, cssY) && el.accepts.has(EventKind::Hover);
             el.state              = isHovered ? UiElementState::Hovered : UiElementState::None;
             if (isHovered != wasHovered) {
                 anyChanged = true;
@@ -513,7 +474,7 @@ private:
     /**
      * @brief Generate draw ops from UiLayout elements
      *
-     * Iterates the flat element list and produces BGOp/TextOp/ImageOp directly.
+     * Iterates the flat element list and produces bg_op_t/text_op_t/image_op_t directly.
      */
     void generateDrawOps()
     {
@@ -526,26 +487,29 @@ private:
         const fpx_t contentH = cssH - layout.topMenu.height - layout.statusBar.height;
 
         // Top menu bar
-        addBgOp({ 0, 0, cssW, layout.topMenu.height }, theme.topMenu.bg);
+        addBgOp({ .w = cssW, .h = layout.topMenu.height }, theme.topMenu.bg);
         // Left toolbar
-        addBgOp({ 0, layout.topMenu.height, layout.leftToolbar.width, contentH }, theme.leftToolbar.bg);
+        addBgOp({ .y = layout.topMenu.height, .w = layout.leftToolbar.width, .h = contentH }, theme.leftToolbar.bg);
         // Right toolbar
-        addBgOp({ cssW - layout.rightToolbar.width, layout.topMenu.height, layout.rightToolbar.width, contentH },
+        addBgOp({ .x = cssW - layout.rightToolbar.width,
+                  .y = layout.topMenu.height,
+                  .w = layout.rightToolbar.width,
+                  .h = contentH },
                 theme.rightToolbar.bg);
         // Workspace tabs strip
-        addBgOp({ layout.leftToolbar.width,
-                  layout.topMenu.height,
-                  cssW - layout.leftToolbar.width - layout.rightToolbar.width,
-                  layout.workspaceTab.height },
+        addBgOp({ .x = layout.leftToolbar.width,
+                  .y = layout.topMenu.height,
+                  .w = cssW - layout.leftToolbar.width - layout.rightToolbar.width,
+                  .h = layout.workspaceTab.height },
                 theme.workspaceTabs.bg);
         // Workspace area
-        addBgOp({ layout.leftToolbar.width,
-                  layout.topMenu.height + layout.workspaceTab.height,
-                  cssW - layout.leftToolbar.width - layout.rightToolbar.width,
-                  contentH - layout.workspaceTab.height },
+        addBgOp({ .x = layout.leftToolbar.width,
+                  .y = layout.topMenu.height + layout.workspaceTab.height,
+                  .w = cssW - layout.leftToolbar.width - layout.rightToolbar.width,
+                  .h = contentH - layout.workspaceTab.height },
                 theme.workspace.bg);
         // Status bar
-        addBgOp({ 0, cssH - layout.statusBar.height, cssW, layout.statusBar.height }, theme.statusBar.bg);
+        addBgOp({ .y = cssH - layout.statusBar.height, .w = cssW, .h = layout.statusBar.height }, theme.statusBar.bg);
 
         // ---- Interactive elements ----
         const auto & tabBar = m_resManager.tabBar();
@@ -555,7 +519,7 @@ private:
 
             // Draw background (if visible and not inherited from parent)
             if (style.colors.bg.a() > 0 && !style.colors.bg.isInherit()) {
-                BGOp op;
+                bg_op_t op;
                 op.bound     = el.bound;
                 op.colors.fg = style.colors.bg;
                 if (el.type == UiElementType::Tab) {
@@ -593,13 +557,17 @@ private:
                 if (modelProgress > 0 && progress < 1) {
                     progress = 1;
                 }
-                m_progressOps.push_back({ el.bound, layout.workspaceTab.border, sectorW, totalSectors, progress });
+                m_progressOps.push_back({ .tabRect      = el.bound,
+                                          .tabRadius    = layout.workspaceTab.border,
+                                          .sectorW      = sectorW,
+                                          .totalSectors = totalSectors,
+                                          .progress     = progress });
             }
 
             // Draw text (if present)
             if (!style.text.empty() && style.font != 0) {
                 const fpx_t pH = style.padH;
-                TextOp      op;
+                text_op_t   op;
                 op.text  = std::move(style.text);
                 op.hFont = style.font;
                 op.color = style.colors.fg;
@@ -610,10 +578,10 @@ private:
                 const bool isCentered = (el.type == UiElementType::MenuButton || el.type == UiElementType::Tab);
                 op.alignH             = isCentered ? Ui::Res::Type::AlignH::CenterClamped : Ui::Res::Type::AlignH::Left;
                 if (isCentered) {
-                    op.pos     = { el.bound.x, el.bound.y, el.bound.w, el.bound.h };
+                    op.pos     = el.bound;
                     op.minPadH = pH;
                 } else {
-                    op.pos = { el.bound.x + pH, el.bound.y, el.bound.w - pH * 2, el.bound.h };
+                    op.pos = { .x = el.bound.x + pH, .y = el.bound.y, .w = el.bound.w - (pH * 2), .h = el.bound.h };
                 }
                 m_textOps.emplace_back(op);
             }
@@ -621,17 +589,21 @@ private:
             // Draw image (if present)
             if (!style.imageSrc.empty()) {
                 const std::string & imageSrc = style.imageSrc;
-                ImageOp             op;
+                image_op_t          op;
                 op.src   = imageSrc;
                 op.isSvg = isSvgFile(imageSrc);
                 // A toolbar button's icon is the button inset by its padding
                 const fpx_t buttonIcon = std::min(el.bound.w, el.bound.h) - (layout.toolbarButton.padding * 2.0F);
-                const fpx_t imgSz      = (el.type == UiElementType::TabClose)      ? layout.tabCloseIconSize
-                                       : (el.type == UiElementType::TabArrow)      ? el.bound.h
-                                       : (el.type == UiElementType::ToolbarButton) ? buttonIcon
-                                                                                   : m_layout.buttonImgSize();
-                fpx_t       imgW       = imgSz;
-                fpx_t       imgH       = imgSz;
+                const fpx_t imgSz      = [&]() -> fpx_t {
+                    switch (el.type) {
+                    case UiElementType::TabClose: return layout.tabCloseIconSize;
+                    case UiElementType::TabArrow: return el.bound.h;
+                    case UiElementType::ToolbarButton: return buttonIcon;
+                    default: return m_layout.buttonImgSize();
+                    }
+                }();
+                fpx_t imgW = imgSz;
+                fpx_t imgH = imgSz;
                 if (op.isSvg) {
                     float svgW = 0;
                     float svgH = 0;
@@ -645,9 +617,9 @@ private:
                         }
                     }
                 }
-                const fpx_t imgX = el.bound.x + (el.bound.w - imgW) / 2.0F;
-                const fpx_t imgY = el.bound.y + (el.bound.h - imgH) / 2.0F;
-                op.pos           = { imgX, imgY, imgW, imgH };
+                const fpx_t imgX = el.bound.x + ((el.bound.w - imgW) / 2.0F);
+                const fpx_t imgY = el.bound.y + ((el.bound.h - imgH) / 2.0F);
+                op.pos           = { .x = imgX, .y = imgY, .w = imgW, .h = imgH };
                 if (el.type == UiElementType::TabArrow) {
                     op.tinted   = true;
                     op.tint     = theme.tabArrow.fg;
@@ -682,7 +654,7 @@ private:
         switch (el.type) {
         case UiElementType::MenuButton: {
             if (el.state == UiElementState::Disabled) {
-                return { theme.menuItemDisabledColor, theme.topMenuButton.bg };
+                return { .fg = theme.menuItemDisabledColor, .bg = theme.topMenuButton.bg };
             }
             // Action menus (icon buttons): no bg change on hover/active
             for (const auto & menu : m_resManager.menus()) {
@@ -709,7 +681,7 @@ private:
                 return theme.workspaceTabHover;
             }
             if (isActiveTab) {
-                return { theme.workspaceTab.fg, theme.workspaceTabActive.bg };
+                return { .fg = theme.workspaceTab.fg, .bg = theme.workspaceTabActive.bg };
             }
             return theme.workspaceTab;
         }
@@ -745,7 +717,7 @@ private:
         // Painted by their owner (DockColumn) or not at all, so this must paint
         // nothing: Ui::Color's default is debug magenta, which the bg gate below
         // would happily draw under every dock element
-        default: return { Ui::Color::Inherit(), Ui::Color::Inherit() };
+        default: return { .fg = Ui::Color::Inherit(), .bg = Ui::Color::Inherit() };
         }
     }
 
@@ -793,7 +765,7 @@ private:
                 return style;
             }
             style.font           = tab->isActive ? m_layout.itemFontBold() : m_layout.itemFont();
-            const fpx_t textMaxW = el.bound.w - layout.workspaceTab.padding * 2 - layout.workspaceTab.height;
+            const fpx_t textMaxW = el.bound.w - (layout.workspaceTab.padding * 2) - layout.workspaceTab.height;
             style.text           = Ui::Render::truncateFileName(tab->label, textMaxW, m_render.get(), style.font);
             return style;
         }
@@ -831,7 +803,7 @@ private:
     void addBgOp(const Ui::Res::Type::bound_t & bound, const Ui::Color & color)
     {
         if (color.a() > 0) {
-            BGOp op;
+            bg_op_t op;
             op.bound     = bound;
             op.colors.fg = color;
             m_bgOps.emplace_back(op);
@@ -872,11 +844,11 @@ private:
             if (op.hovered) {
                 const auto & layout = m_resManager.layout();
                 const auto & theme  = m_resManager.theme();
-                shadow              = { layout.iconHoverShadowX,
-                                        layout.iconHoverShadowY,
-                                        layout.iconHoverShadowBlur,
-                                        theme.shadowOpacity,
-                                        theme.colorShadow };
+                shadow              = { .offsetX = layout.iconHoverShadowX,
+                                        .offsetY = layout.iconHoverShadowY,
+                                        .blur    = layout.iconHoverShadowBlur,
+                                        .opacity = theme.shadowOpacity,
+                                        .color   = theme.colorShadow };
             }
             // Transparent tint (a == 0) signals "not tinted" to the backend;
             // Ui::Color{} defaults to opaque, which would force the tinted path.
@@ -901,18 +873,18 @@ private:
     // tip, all through IRender primitives. progress N (1..total): first sector
     // rounded (TL/BL), middle sectors plain, then the |> tip; at total, a fully
     // rounded bar.
-    void drawProgress(const progress_t & p)
+    void drawProgress(const progress_op_t & p)
     {
         const int totalSectors = p.totalSectors;
         if (p.sectorW <= 0 || p.tabRect.h <= 0 || p.progress <= 0) {
             return;
         }
 
-        const Ui::Res::Type::color_pair_t loadColors = { m_resManager.theme().colorLoad,
-                                                         m_resManager.theme().workspaceTabs.bg };
+        const Ui::Res::Type::color_pair_t loadColors = { .fg = m_resManager.theme().colorLoad,
+                                                         .bg = m_resManager.theme().workspaceTabs.bg };
 
         if (p.progress >= totalSectors) {
-            m_render->fillRect({ p.tabRect.x, p.tabRect.y, p.sectorW * totalSectors, p.tabRect.h },
+            m_render->fillRect({ .x = p.tabRect.x, .y = p.tabRect.y, .w = p.sectorW * totalSectors, .h = p.tabRect.h },
                                p.tabRadius,
                                loadColors,
                                {});
@@ -921,21 +893,25 @@ private:
 
         fpx_t curX = p.tabRect.x;
 
-        const Ui::Res::Type::border_t firstRadius = { p.tabRadius.topLeft, 0, 0, p.tabRadius.bottomLeft };
-        m_render->fillRect({ curX, p.tabRect.y, p.sectorW, p.tabRect.h }, firstRadius, loadColors, {});
+        const Ui::Res::Type::border_t firstRadius = { .topLeft    = p.tabRadius.topLeft,
+                                                      .bottomLeft = p.tabRadius.bottomLeft };
+        m_render->fillRect({ .x = curX, .y = p.tabRect.y, .w = p.sectorW, .h = p.tabRect.h },
+                           firstRadius,
+                           loadColors,
+                           {});
         curX += p.sectorW;
 
         const int midCount = p.progress - 1;
         if (midCount > 0) {
             const fpx_t midW = p.sectorW * midCount;
-            m_render->fillRect({ curX, p.tabRect.y, midW, p.tabRect.h }, {}, loadColors, {});
+            m_render->fillRect({ .x = curX, .y = p.tabRect.y, .w = midW, .h = p.tabRect.h }, {}, loadColors, {});
             curX += midW;
         }
 
         // Arrow tip |>. Snap to the physical pixel grid so fractional tab
         // geometry does not leave the tip at an arbitrary sub-pixel position.
         const fpx_t tipX = std::round(curX + p.sectorW);
-        const fpx_t tipY = std::round(p.tabRect.y + p.tabRect.h / 2.0F);
+        const fpx_t tipY = std::round(p.tabRect.y + (p.tabRect.h / 2.0F));
         m_render->drawTriangle(curX, p.tabRect.y, tipX, tipY, curX, p.tabRect.y + p.tabRect.h, loadColors.fg);
     }
 
@@ -953,10 +929,10 @@ private:
     fpx_t m_height = 0;
 
     // Batched draw ops
-    std::vector<BGOp>       m_bgOps {};
-    std::vector<TextOp>     m_textOps {};
-    std::vector<ImageOp>    m_imageOps {};
-    std::vector<progress_t> m_progressOps {};
+    std::vector<bg_op_t>       m_bgOps;
+    std::vector<text_op_t>     m_textOps;
+    std::vector<image_op_t>    m_imageOps;
+    std::vector<progress_op_t> m_progressOps;
 
     // Extra-ops hook fires after generateDrawOps() and before the ops are
     // flushed, so callers can append BG/Image ops into the same frame (docks).

@@ -38,6 +38,7 @@ using Ui::Res::ResPath;
 using Ui::Res::Dock::dock_config_t;
 using Ui::Res::Store::LayoutStore;
 using Ui::Res::Type::Changed;
+using Ui::Res::Type::changes_t;
 
 namespace {
 ResPath resPath() { return ResPath(std::string(TEST_RES_DIR)); }
@@ -45,8 +46,8 @@ ResPath resPath() { return ResPath(std::string(TEST_RES_DIR)); }
 
 TEST(LayoutStore, LoadShippedLayoutChangesFromDefault)
 {
-    LayoutStore   store;
-    const Changed changed = store.load(resPath().layoutFile());
+    LayoutStore     store;
+    const changes_t changed = store.load(resPath().layoutFile());
     // The shipped file differs from the zero-initialized default, so at least
     // one of the Layout / Popup bits must be set.
     EXPECT_NE(changed, Changed::None);
@@ -93,7 +94,7 @@ TEST(LayoutStore, MissingFileAppliesPopupDefaults)
 {
     LayoutStore store;
     // A path that does not exist -> loadPopupFrom(nullptr) applies CSS defaults.
-    const Changed changed = store.load(std::string(TEST_RES_DIR) + "/does-not-exist.json");
+    const changes_t changed = store.load(std::string(TEST_RES_DIR) + "/does-not-exist.json");
     EXPECT_EQ(changed, Changed::Popup);
     // Defaults: fontSize 14 * lineHeight 1.38 + paddingV 6 * 2 = 31.32
     EXPECT_NEAR(store.popup().itemHeight, 14.0F * 1.38F + 6.0F * 2.0F, 0.01F);

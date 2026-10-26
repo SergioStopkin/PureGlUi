@@ -1,6 +1,8 @@
 ---
 Checks: '*,
 -abseil-*,
+-boost-use-ranges,
+-llvm-use-ranges,
 -altera-id-dependent-backward-branch,
 -altera-unroll-loops,
 -bugprone-easily-swappable-parameters,
@@ -32,10 +34,19 @@ Checks: '*,
 -modernize-use-trailing-return-type,
 -modernize-use-using,
 -performance-avoid-endl,
+-portability-avoid-pragma-once,
 -readability-function-cognitive-complexity,
 -readability-identifier-length,
 -readability-magic-numbers
 '
+
+# Neither Boost nor LLVM's containers are used, so their -use-ranges repeat modernize-use-ranges
+# [] inserts a missing key on the excluded classes, which at() cannot; every other container reads through at()
+# The ignored headers sit behind an umbrella a library documents (glib, gio, FreeType, EGL, cairo, librsvg, Wayland);
+# GL and X11 come through our own shims, which export them by IWYU pragma
+CheckOptions:
+  cppcoreguidelines-pro-bounds-avoid-unchecked-container-access.ExcludeClasses: '::std::map;::std::unordered_map;::std::flat_map;::nlohmann::basic_json'
+  misc-include-cleaner.IgnoreHeaders: 'glib/.*;gio/.*;gobject/.*;freetype/.*;ft2build\.h;EGL/.*;KHR/.*;cairo.*;librsvg/.*;wayland-.*'
 
 WarningsAsErrors:   '*'
 FormatStyle:        webkit

@@ -34,8 +34,10 @@ template <typename First, typename... Rest>
     // 2^32 over the golden ratio: odd, its bits in no pattern, so values close together hash far apart
     constexpr std::size_t GOLDEN_RATIO_32 = 0x9e3779b9;
     std::size_t           hash            = std::hash<First> {}(first);
-    ((hash = Bit::Xor(hash, std::hash<Rest> {}(rest) + GOLDEN_RATIO_32 + Bit::Shl(hash, 6U) + Bit::Shr(hash, 2U))),
-     ...);
+    const auto            combine         = [&hash](std::size_t value) {
+        hash = Bit::Xor(hash, value + GOLDEN_RATIO_32 + Bit::Shl(hash, 6U) + Bit::Shr(hash, 2U));
+    };
+    (combine(std::hash<Rest> {}(rest)), ...);
     return hash;
 }
 

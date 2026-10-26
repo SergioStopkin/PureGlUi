@@ -43,7 +43,7 @@ namespace Ui::Render {
 // moment the grip grows to meet it.
 [[nodiscard]] inline thumb_metrics_t sliderMetrics(const Ui::Res::Type::bound_t & track, fpx_t thumbLength)
 {
-    return { track, thumbLength, 1.0F, Axis::Horizontal };
+    return { .track = track, .thumbLength = thumbLength, .maxValue = 1.0F, .axis = Axis::Horizontal };
 }
 
 } // namespace Ui::Render

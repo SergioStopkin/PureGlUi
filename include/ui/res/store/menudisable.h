@@ -53,10 +53,9 @@ inline void disableUnhandled(std::vector<Ui::Res::Type::menu_t> & menus, const U
 
     for (Ui::Res::Type::menu_t & item : std::ranges::reverse_view(order)) {
         if (!item.items.empty()) {
-            const bool anyEnabledChild = std::any_of(
-            item.items.begin(),
-            item.items.end(),
-            [](const Ui::Res::Type::menu_t & child) { return !child.separator && child.enabled; });
+            const bool anyEnabledChild = std::ranges::any_of(item.items, [](const Ui::Res::Type::menu_t & child) {
+                return !child.separator && child.enabled;
+            });
             if (!anyEnabledChild) {
                 item.enabled = false;
             }

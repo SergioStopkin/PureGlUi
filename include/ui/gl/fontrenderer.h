@@ -21,9 +21,12 @@
 #include "common/noncopyable.h"
 #include "common/unicode.h"
 #include "ui/config.h"
+#include "ui/gl/fontrec.h"
 #include "ui/gl/fonttypes.h"
+#include "ui/gl/glyphbitmap.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/font.h"
+#include "ui/res/type/fontweight.h"
 #include "ui/type.h"
 
 // NOLINTBEGIN(llvm-include-order)
@@ -35,7 +38,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fontconfig/fontconfig.h>
 #include <functional>
@@ -68,51 +74,6 @@ constexpr bool LOG_TEXT_LAYOUT = false;
  */
 class FontRenderer final : private Common::NonCopyable {
 public:
-    struct alignas(64) glyph_bitmap_t final {
-        fpx_t width   = 0;
-        fpx_t height  = 0;
-        int   left    = 0;
-        int   top     = 0; // bitmap offsets
-        int   advance = 0; // in pixels (approx)
-        // texture coordinates in atlas
-        fpx_t                      u0 = 0;
-        fpx_t                      v0 = 0;
-        fpx_t                      u1 = 0;
-        fpx_t                      v1 = 0;
-        std::vector<unsigned char> buf; // grayscale 8bit
-    };
-
-    struct alignas(128) font_rec_t final {
-        Ui::Res::Type::font_t key;      // Cache key: family name, scaled size, weight
-        std::string           filePath; // Resolved font file path
-        font_metrics_t        metrics;  // In CSS pixels
-
-        // FreeType handles & cached glyphs. Fallback faces are loaded on demand
-        // per missing codepoint via fontconfig. fallback_faces is keyed by font
-        // file path so each unique font loads only once at this pixel size.
-        // codepoint_face caches per-codepoint resolution (nullptr value = no
-        // font on the system has this codepoint - render a tofu glyph instead).
-        FT_Face                                     ft_face {};
-        std::unordered_map<std::string, FT_Face>    fallback_faces;
-        std::unordered_map<uint32_t, FT_Face>       codepoint_face;
-        std::unordered_map<wchar_t, glyph_bitmap_t> glyphs;
-
-        // texture atlas (one per font)
-        Ui::Res::Type::bound_t     atlas { .x = 0, .y = 0, .w = 1024, .h = 1024 };
-        fpx_t                      atlas_row_h = 0;
-        std::vector<unsigned char> atlas_buf;
-        GLuint                     atlas_tex = 0;
-
-        // GL resources for text rendering
-        GLuint program        = 0;
-        GLuint vao            = 0;
-        GLuint vbo            = 0;
-        GLint  uProjection    = -1;
-        GLint  uColor         = -1;
-        GLint  uTex           = -1;
-        GLint  uPremultiplied = -1;
-    };
-
     // makeCurrent makes the owning GL context current; called before GL
     // resource teardown (textures/atlases must be deleted in their context).
     FontRenderer(Ui::task_fn_t makeCurrent, std::string fontDir)
@@ -169,13 +130,10 @@ public:
 
         // Scale font size for HiDPI - size is in CSS pixels
         const int cssSize    = font.size > 0 ? font.size : 12;
-        int       scaledSize = toPhysFloor(cssSize);
-        if (scaledSize < 1) {
-            scaledSize = 1;
-        }
+        const int scaledSize = std::max(toPhysFloor(cssSize), 1);
 
         // Check font cache to avoid duplicate atlases
-        const Ui::Res::Type::font_t cacheKey { font.family, scaledSize, font.weight };
+        const Ui::Res::Type::font_t cacheKey { .family = font.family, .size = scaledSize, .weight = font.weight };
         auto                        cacheIt = m_fontCache.find(cacheKey);
         if (cacheIt != m_fontCache.end()) {
             // Found existing font with same face+size - reuse it!
@@ -223,7 +181,7 @@ public:
                         std::string  stem   = (dotPos != std::string::npos) ? filename.substr(0, dotPos) : filename;
 
                         // Normalize: convert to lowercase
-                        std::transform(stem.begin(), stem.end(), stem.begin(), ::tolower);
+                        std::ranges::transform(stem, stem.begin(), ::tolower);
 
                         fontMap[stem] = entry.path().string();
                         if constexpr (FONT_DEBUG) {
@@ -246,7 +204,7 @@ public:
             // Trim whitespace and normalize to lowercase
             firstFont.erase(0, firstFont.find_first_not_of(" \t"));
             firstFont.erase(firstFont.find_last_not_of(" \t") + 1);
-            std::transform(firstFont.begin(), firstFont.end(), firstFont.begin(), ::tolower);
+            std::ranges::transform(firstFont, firstFont.begin(), ::tolower);
 
             // Look up weight-specific variant first, then fall back to other variant
             const std::string boldKey    = firstFont + "-bold";
@@ -336,7 +294,7 @@ public:
                 // Copy glyph bitmap into atlas buffer
                 int yy = 0;
                 while (yy < g.height) {
-                    auto dst_off = static_cast<size_t>((f->atlas.y + yy) * f->atlas.w + f->atlas.x);
+                    auto dst_off = static_cast<size_t>(((f->atlas.y + yy) * f->atlas.w) + f->atlas.x);
                     auto src_off = static_cast<size_t>(yy * g.width);
                     std::copy(g.buf.begin() + src_off,
                               g.buf.begin() + src_off + static_cast<size_t>(g.width),
@@ -368,7 +326,7 @@ public:
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-#if defined(GL_LUMINANCE)
+#ifdef GL_LUMINANCE
                 glTexImage2D(GL_TEXTURE_2D,
                              0,
                              GL_LUMINANCE,
@@ -378,7 +336,7 @@ public:
                              GL_LUMINANCE,
                              GL_UNSIGNED_BYTE,
                              f->atlas_buf.data());
-#elif defined(GL_RED)
+#elifdef GL_RED
                 glTexImage2D(GL_TEXTURE_2D,
                              0,
                              GL_RED,
@@ -592,9 +550,9 @@ public:
             // actually contains the requested codepoint via the matched
             // pattern's charset before opening the file.
             FcCharSet * actualCs = nullptr;
-            const bool  hasChar  = FcPatternGetCharSet(match, FC_CHARSET, 0, &actualCs) == FcResultMatch
-                              && actualCs != nullptr && FcCharSetHasChar(actualCs, static_cast<FcChar32>(cp)) == FcTrue;
-            FcChar8 * filePtr = nullptr;
+            const bool hasChar   = FcPatternGetCharSet(match, FC_CHARSET, 0, &actualCs) == FcResultMatch
+                                && actualCs != nullptr && FcCharSetHasChar(actualCs, static_cast<FcChar32>(cp)) == FcTrue;
+            FcChar8 *  filePtr   = nullptr;
             if (hasChar && FcPatternGetString(match, FC_FILE, 0, &filePtr) == FcResultMatch && filePtr != nullptr) {
                 const std::string path     = Common::fromCString(filePtr);
                 const auto        existing = fr.fallback_faces.find(path);
@@ -640,7 +598,7 @@ public:
 
         int yy = 0;
         while (yy < g.height) {
-            auto dst_off = static_cast<size_t>((fr.atlas.y + yy) * fr.atlas.w + fr.atlas.x);
+            auto dst_off = static_cast<size_t>(((fr.atlas.y + yy) * fr.atlas.w) + fr.atlas.x);
             auto src_off = static_cast<size_t>(yy * g.width);
             std::copy(g.buf.begin() + src_off,
                       g.buf.begin() + src_off + static_cast<size_t>(g.width),
@@ -660,7 +618,7 @@ public:
 
         if (fr.atlas_tex != 0) {
             glBindTexture(GL_TEXTURE_2D, fr.atlas_tex);
-#if defined(GL_LUMINANCE)
+#ifdef GL_LUMINANCE
             glTexSubImage2D(GL_TEXTURE_2D,
                             0,
                             0,
@@ -670,7 +628,7 @@ public:
                             GL_LUMINANCE,
                             GL_UNSIGNED_BYTE,
                             fr.atlas_buf.data());
-#elif defined(GL_RED)
+#elifdef GL_RED
             glTexSubImage2D(GL_TEXTURE_2D,
                             0,
                             0,
@@ -689,8 +647,8 @@ public:
     // installed font can render. Visible feedback beats silent skipping.
     static void insertTofuGlyph(font_rec_t & fr, wchar_t ch)
     {
-        const int w = std::max(2, static_cast<int>(fr.key.size) / 2);
-        const int h = std::max(2, (static_cast<int>(fr.key.size) * 7) / 10);
+        const int w = std::max(2, fr.key.size / 2);
+        const int h = std::max(2, (fr.key.size * 7) / 10);
 
         glyph_bitmap_t g;
         g.width       = static_cast<fpx_t>(w);
@@ -702,14 +660,14 @@ public:
         const auto hs = static_cast<size_t>(h);
         g.buf.assign(ws * hs, 0);
         for (int x = 0; x < w; ++x) {
-            const auto xs             = static_cast<size_t>(x);
-            g.buf[xs]                 = 0xFF;
-            g.buf[(hs - 1) * ws + xs] = 0xFF;
+            const auto xs                  = static_cast<size_t>(x);
+            g.buf.at(xs)                   = 0xFF;
+            g.buf.at(((hs - 1) * ws) + xs) = 0xFF;
         }
         for (int y = 0; y < h; ++y) {
-            const auto ys             = static_cast<size_t>(y);
-            g.buf[ys * ws]            = 0xFF;
-            g.buf[ys * ws + (ws - 1)] = 0xFF;
+            const auto ys                  = static_cast<size_t>(y);
+            g.buf.at(ys * ws)              = 0xFF;
+            g.buf.at((ys * ws) + (ws - 1)) = 0xFF;
         }
 
         commitGlyph(fr, ch, std::move(g));
@@ -896,7 +854,7 @@ private:
             float  lineWidth = 0;
 
             for (size_t i = 0; i < remaining.size(); ++i) {
-                const wchar_t ch = remaining[i];
+                const wchar_t ch = remaining.at(i);
                 ensureGlyph(fr, ch);
                 auto git = fr.glyphs.find(ch);
                 if (git == fr.glyphs.end()) {
@@ -918,7 +876,7 @@ private:
                 size_t charBreak = 1;
                 lineWidth        = 0;
                 for (size_t i = 0; i < remaining.size(); ++i) {
-                    const wchar_t ch = remaining[i];
+                    const wchar_t ch = remaining.at(i);
                     ensureGlyph(fr, ch);
                     auto git = fr.glyphs.find(ch);
                     if (git == fr.glyphs.end()) {

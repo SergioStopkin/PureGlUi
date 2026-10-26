@@ -21,6 +21,8 @@
 #include "common/unicode.h"
 #include "ui/color.h"
 #include "ui/config.h"
+#include "ui/gl/batchmode.h"
+#include "ui/gl/fontrec.h"
 #include "ui/gl/fontrenderer.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
@@ -29,6 +31,7 @@
 #include "ui/gl/textalign.h"
 #include "ui/interface/irender.h"
 #include "ui/render/shadow.h"
+#include "ui/render/textop.h"
 #include "ui/type.h"
 
 #include <algorithm>
@@ -103,7 +106,7 @@ public:
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-        m_mode = Mode::None;
+        m_mode = Ui::Gl::BatchMode::None;
         m_textBatch.clear();
     }
 
@@ -112,7 +115,7 @@ public:
                   const Ui::Res::Type::color_pair_t & colors,
                   const Ui::Render::shadow_t &        shadow) override
     {
-        ensureMode(Mode::Rect);
+        ensureMode(Ui::Gl::BatchMode::Rect);
         if (shadow.isVisible()) {
             drawShadow(bound, radii, shadow);
         }
@@ -127,7 +130,13 @@ public:
                   Ui::Res::Type::AlignV          alignV,
                   Ui::fpx_t                      minPadH) override
     {
-        m_textBatch.emplace_back(text_item { font, std::string(text), pos, color, alignH, alignV, minPadH });
+        m_textBatch.emplace_back(Ui::Render::text_op_t { .text    = std::string(text),
+                                                         .hFont   = font,
+                                                         .color   = color,
+                                                         .pos     = pos,
+                                                         .alignH  = alignH,
+                                                         .alignV  = alignV,
+                                                         .minPadH = minPadH });
     }
 
     void drawImage(std::string_view               src,
@@ -144,7 +153,7 @@ public:
             return;
         }
 
-        ensureMode(Mode::Image);
+        ensureMode(Ui::Gl::BatchMode::Image);
 
         // Any non-identity scale takes the scaled path - the press effect
         // (iconActiveScale) SHRINKS the icon (e.g. 0.86), so `scale > 1.0F`
@@ -226,7 +235,7 @@ public:
         glBindVertexArray(0);
         glUseProgram(0);
 
-        m_mode = Mode::None; // next rect/image re-begins its batch
+        m_mode = Ui::Gl::BatchMode::None; // next rect/image re-begins its batch
     }
 
     void endFrame() override
@@ -246,22 +255,6 @@ public:
     }
 
 private:
-    enum class Mode : uint8_t {
-        None,
-        Rect,
-        Image,
-    };
-
-    struct alignas(128) text_item final {
-        Ui::font_handle_t      font = 0;
-        std::string            text;
-        Ui::Res::Type::bound_t pos;
-        Ui::Color              color;
-        Ui::Res::Type::AlignH  alignH  = Ui::Res::Type::AlignH::Left;
-        Ui::Res::Type::AlignV  alignV  = Ui::Res::Type::AlignV::Center;
-        Ui::fpx_t              minPadH = 0;
-    };
-
     static bool isSvgFile(std::string_view src) { return src.size() >= 4 && src.substr(src.size() - 4) == ".svg"; }
 
     // Resolve the SvgRenderer document key for an image source (shared by
@@ -281,15 +274,15 @@ private:
         return key;
     }
 
-    void ensureMode(Mode mode)
+    void ensureMode(Ui::Gl::BatchMode mode)
     {
         if (m_mode == mode) {
             return;
         }
         endCurrentMode();
-        if (mode == Mode::Rect) {
+        if (mode == Ui::Gl::BatchMode::Rect) {
             m_rounded.begin(m_width, m_height, m_scale);
-        } else if (mode == Mode::Image) {
+        } else if (mode == Ui::Gl::BatchMode::Image) {
             m_svgRenderer.begin(m_width, m_height, m_scale);
         }
         m_mode = mode;
@@ -297,12 +290,12 @@ private:
 
     void endCurrentMode()
     {
-        if (m_mode == Mode::Rect) {
+        if (m_mode == Ui::Gl::BatchMode::Rect) {
             Ui::Gl::Rounded::end();
-        } else if (m_mode == Mode::Image) {
+        } else if (m_mode == Ui::Gl::BatchMode::Image) {
             Ui::Gl::SvgRenderer::end();
         }
-        m_mode = Mode::None;
+        m_mode = Ui::Gl::BatchMode::None;
     }
 
     // Layered expanded rounded rects under the shape, decreasing alpha outward.
@@ -318,23 +311,23 @@ private:
         const float baseAlpha = (static_cast<float>(shadow.color.a()) / 255.0F) * shadow.opacity;
         const int   layers    = std::min(blur, 5);
         for (int i = layers; i >= 1; --i) {
-            const float alpha  = baseAlpha * (1.0F - static_cast<float>(i) / (layers + 1)) * 0.5F;
+            const float alpha  = baseAlpha * (1.0F - (static_cast<float>(i) / (layers + 1))) * 0.5F;
             const float expand = static_cast<float>(i) * 2;
 
-            const Ui::Res::Type::border_t expanded { radii.topLeft + expand,
-                                                     radii.topRight + expand,
-                                                     radii.bottomRight + expand,
-                                                     radii.bottomLeft + expand };
+            const Ui::Res::Type::border_t expanded { .topLeft     = radii.topLeft + expand,
+                                                     .topRight    = radii.topRight + expand,
+                                                     .bottomRight = radii.bottomRight + expand,
+                                                     .bottomLeft  = radii.bottomLeft + expand };
             const Ui::Color               shadowColor(shadow.color.r(),
-                                        shadow.color.g(),
-                                        shadow.color.b(),
-                                        static_cast<uint8_t>(alpha * 255.0F));
-            m_rounded.draw({ bound.x + shadow.offsetX - expand,
-                             bound.y + shadow.offsetY - expand,
-                             bound.w + expand * 2,
-                             bound.h + expand * 2 },
+                                                      shadow.color.g(),
+                                                      shadow.color.b(),
+                                                      static_cast<uint8_t>(alpha * 255.0F));
+            m_rounded.draw({ .x = bound.x + shadow.offsetX - expand,
+                             .y = bound.y + shadow.offsetY - expand,
+                             .w = bound.w + (expand * 2),
+                             .h = bound.h + (expand * 2) },
                            expanded,
-                           { shadowColor, shadowColor });
+                           { .fg = shadowColor, .bg = shadowColor });
         }
     }
 
@@ -345,14 +338,12 @@ private:
         }
 
         // Batch by font to minimize GL state changes.
-        std::sort(m_textBatch.begin(), m_textBatch.end(), [](const text_item & a, const text_item & b) {
-            return a.font < b.font;
-        });
+        std::ranges::sort(m_textBatch, {}, &Ui::Render::text_op_t::hFont);
 
-        Ui::font_handle_t                  prevFont = 0;
-        Ui::Gl::FontRenderer::font_rec_t * fr       = nullptr;
+        Ui::font_handle_t    prevFont = 0;
+        Ui::Gl::font_rec_t * fr       = nullptr;
         for (auto & item : m_textBatch) {
-            if (item.font != prevFont) {
+            if (item.hFont != prevFont) {
                 if (fr != nullptr) {
                     glBindVertexArray(0);
                     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -361,8 +352,8 @@ private:
                     glDisable(GL_FRAMEBUFFER_SRGB);
                 }
 
-                fr       = m_fontRenderer->font(item.font);
-                prevFont = item.font;
+                fr       = m_fontRenderer->font(item.hFont);
+                prevFont = item.hFont;
 
                 if (fr == nullptr || fr->program == 0U) {
                     fr = nullptr;
@@ -487,7 +478,7 @@ private:
     Ui::task_fn_t                         m_makeCurrent; // makes the owning window's GL context current (GL teardown)
     Ui::Gl::Rounded                       m_rounded;
     Ui::Gl::SvgRenderer                   m_svgRenderer;
-    std::unique_ptr<Ui::Gl::FontRenderer> m_fontRenderer {};
+    std::unique_ptr<Ui::Gl::FontRenderer> m_fontRenderer;
 
     // Flat-color shader for the loading-bar arrow triangle.
     GLuint m_flatProgram     = 0;
@@ -496,13 +487,13 @@ private:
     GLint  m_flatUProjection = -1;
     GLint  m_flatUColor      = -1;
 
-    std::vector<text_item> m_textBatch {};
-    std::vector<float>     m_vertexBuffer {};
+    std::vector<Ui::Render::text_op_t> m_textBatch;
+    std::vector<float>                 m_vertexBuffer;
 
-    Mode      m_mode   = Mode::None;
-    Ui::fpx_t m_width  = 0;
-    Ui::fpx_t m_height = 0;
-    float     m_scale  = 1;
+    Ui::Gl::BatchMode m_mode   = Ui::Gl::BatchMode::None;
+    Ui::fpx_t         m_width  = 0;
+    Ui::fpx_t         m_height = 0;
+    float             m_scale  = 1;
 };
 
 } // namespace Ui::Gl

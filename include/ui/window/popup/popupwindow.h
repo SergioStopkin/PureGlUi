@@ -23,15 +23,23 @@
 #include "ui/window/eglcontext.h"
 #include "ui/window/nativewindow.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <memory>
-#include <utility>
+#include <string>
 
 #if !defined(_WIN32) && !defined(__APPLE__)
 #ifdef HAVE_WAYLAND
 #include <xdg-shell-client-protocol.h>
+#endif
+#ifdef HAVE_X11
+#include "ui/window/platform/x11include.h"
+#endif
+#if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
+#include "ui/window/popup/eglcache.h"
 #endif
 #endif
 
@@ -141,18 +149,29 @@ public:
         m_bound.w = width;
         m_bound.h = height;
 
-#if defined(_WIN32)
+#ifdef _WIN32
         return createWin32Popup();
-#elif defined(__APPLE__)
+#elifdef __APPLE__
         return createMacOsPopup();
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
         return createWaylandPopup();
-#elif defined(HAVE_X11)
+#elifdef HAVE_X11
         return createX11Popup();
 #else
         std::cerr << "[PopupWindow] No supported window system" << std::endl;
         return false;
 #endif
+    }
+
+    // The base window's create() makes a top-level window, which a popup never is: it
+    // refuses, so a popup is made only by create(parent, width, height) above
+    bool create(fpx_t /*width*/,
+                fpx_t /*height*/,
+                NativeDisplayHandle /*display*/,
+                NativeWindowHandle /*parentWindow*/,
+                const std::string & /*title*/) override
+    {
+        return false;
     }
 
     void setBackground(const Ui::Color & color) override { m_bgColor = color; }
@@ -179,7 +198,7 @@ public:
     {
         m_rounded     = enabled;
         const fpx_t r = std::max(0.0F, radius);
-        m_cornerRadii = { r, r, r, r };
+        m_cornerRadii = { .topLeft = r, .topRight = r, .bottomRight = r, .bottomLeft = r };
         // On Wayland, no shape mask needed - alpha compositing handles rounded corners natively
     }
 
@@ -191,7 +210,7 @@ public:
     {
         m_cornerRadii = radii;
         m_rounded     = (radii.topLeft > 0 || radii.topRight > 0 || radii.bottomRight > 0 || radii.bottomLeft > 0);
-#if defined(__APPLE__)
+#ifdef __APPLE__
         applyCornerMask(radii);
 #endif
     }
@@ -218,7 +237,7 @@ public:
             if (t >= 1.0F) {
                 return 1.0F;
             }
-            return t * t * (3.0F - 2.0F * t);
+            return t * t * (3.0F - (2.0F * t));
         };
 
         if (px >= m_cornerRadii.topLeft && px <= m_bound.w - m_cornerRadii.topRight && py >= m_cornerRadii.topLeft
@@ -248,7 +267,7 @@ public:
             auto cornerHard = [&](fpx_t cx, fpx_t cy, fpx_t r) {
                 const fpx_t dx = px - cx;
                 const fpx_t dy = py - cy;
-                return (dx * dx + dy * dy) <= (r * r);
+                return ((dx * dx) + (dy * dy)) <= (r * r);
             };
             if (px < m_cornerRadii.topLeft && py < m_cornerRadii.topLeft && m_cornerRadii.topLeft > 0.0F) {
                 return cornerHard(m_cornerRadii.topLeft, m_cornerRadii.topLeft, m_cornerRadii.topLeft);
@@ -308,7 +327,7 @@ public:
         auto cornerMask = [&](fpx_t cx, fpx_t cy, fpx_t r) {
             const fpx_t dx   = px - cx;
             const fpx_t dy   = py - cy;
-            const fpx_t dist = std::sqrt(dx * dx + dy * dy);
+            const fpx_t dist = std::sqrt((dx * dx) + (dy * dy));
             return 1.0F - smoothStep(r - m_borderAA, r + m_borderAA, dist);
         };
 
@@ -552,8 +571,8 @@ private:
         // Set window type hint for proper stacking
         const Atom wmWindowType     = XInternAtom(m_display, "_NET_WM_WINDOW_TYPE", Ui::Window::Platform::X11::False);
         Atom       wmWindowTypeMenu = XInternAtom(m_display,
-                                            "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU",
-                                            Ui::Window::Platform::X11::False);
+                                                  "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU",
+                                                  Ui::Window::Platform::X11::False);
         XChangeProperty(m_display,
                         m_xWindow,
                         wmWindowType,
@@ -640,9 +659,9 @@ private:
         viTemplate.c_class       = TrueColor;
         int           numVisuals = 0;
         XVisualInfo * visuals    = XGetVisualInfo(m_display,
-                                               VisualScreenMask | VisualDepthMask | VisualClassMask,
-                                               &viTemplate,
-                                               &numVisuals);
+                                                  VisualScreenMask | VisualDepthMask | VisualClassMask,
+                                                  &viTemplate,
+                                                  &numVisuals);
 
         if (visuals == nullptr || numVisuals == 0) {
             if constexpr (POPUP_DEBUG) {
@@ -658,7 +677,7 @@ private:
         // Find a visual with ARGB format
         VisualID result = 0;
         for (int i = 0; i < numVisuals; ++i) {
-            XVisualInfo * vi = &visuals[i]; // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+            const XVisualInfo * vi = &visuals[i]; // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
             // Check for proper RGBA masks (8 bits per component)
             if (vi->bits_per_rgb == 8 && vi->red_mask != 0 && vi->green_mask != 0 && vi->blue_mask != 0) {
@@ -835,7 +854,7 @@ private:
 
 #endif // !defined(_WIN32) && !defined(__APPLE__)
 
-#if defined(_WIN32)
+#ifdef _WIN32
     bool createWin32Popup()
     {
         // Convert relative-to-parent position to screen coordinates
@@ -863,7 +882,7 @@ private:
     }
 #endif // _WIN32
 
-#if defined(__APPLE__)
+#ifdef __APPLE__
     bool createMacOsPopup()
     {
         int parentScreenX {};
@@ -896,16 +915,6 @@ private:
         return true;
     }
 #endif // __APPLE__
-
-    // Prevent direct use of base Ui::IWindow::create() - use create(NativeWindow &, fpx_t, fpx_t)
-    bool create(fpx_t /*width*/,
-                fpx_t /*height*/,
-                NativeDisplayHandle /*display*/,
-                NativeWindowHandle /*parentWindow*/,
-                const std::string & /*title*/) override
-    {
-        return false;
-    }
 
     NativeWindow * m_parent = nullptr;
 
@@ -966,7 +975,9 @@ private:
         // Handle repositioning if needed
     }
 
-    static constexpr xdg_popup_listener s_xdgPopupListener = { xdgPopupConfigure, xdgPopupDone, xdgPopupRepositioned };
+    static constexpr xdg_popup_listener s_xdgPopupListener = { .configure    = xdgPopupConfigure,
+                                                               .popup_done   = xdgPopupDone,
+                                                               .repositioned = xdgPopupRepositioned };
 #endif // HAVE_WAYLAND
 #endif // !defined(_WIN32) && !defined(__APPLE__)
 
@@ -979,13 +990,9 @@ private:
 
     // Static cache for EGL config discovery results (survives popup destroy/recreate)
 #if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
-    struct alignas(2) EglCache final {
-        bool searched      = false; // Has the ARGB visual search been done?
-        bool hasCompositor = false; // Cached compositor check result
-    };
-    static EglCache & eglCache()
+    static Ui::Window::Popup::egl_cache_t & eglCache()
     {
-        static EglCache cache;
+        static Ui::Window::Popup::egl_cache_t cache;
         return cache;
     }
 #endif // HAVE_X11 && !HAVE_WAYLAND

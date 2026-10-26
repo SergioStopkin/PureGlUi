@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include "common/bit.h"
 #include "common/json.h"
 #include "common/sanitize.h"
 #include "nlohmann/json.hpp"
@@ -32,6 +31,7 @@
 #include "ui/res/type/popup.h"
 #include "ui/res/type/region.h"
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -122,8 +122,8 @@ public:
         }
 
         // Item height = fontSize * lineHeight + paddingTop + paddingBottom
-        m_popup.itemHeight = Ui::Convert::parseCssNumber(fontSize) * Ui::Convert::parseCssNumber(lineHeight)
-                           + m_popup.itemPaddingV * 2.0F;
+        m_popup.itemHeight = (Ui::Convert::parseCssNumber(fontSize) * Ui::Convert::parseCssNumber(lineHeight))
+                           + (m_popup.itemPaddingV * 2.0F);
 
         // Parse separator height and margin "Vpx Hpx"
         m_popup.separatorHeight  = Ui::Convert::parseCssNumber(separatorHeight);
@@ -139,7 +139,7 @@ public:
     // Load res/layout.json once, deriving BOTH layout_t and popup_t from the
     // single parse. Returns the combined Changed bits. On file-load failure the
     // popup falls back to CSS defaults (layout is left untouched).
-    Ui::Res::Type::Changed load(const std::string & file)
+    Ui::Res::Type::changes_t load(const std::string & file)
     {
         using Ui::Res::Key::CssPropKey;
         using Ui::Res::Key::cssPropKeyName;
@@ -150,7 +150,7 @@ public:
 
         nlohmann::json j;
         if (!Common::loadJson(file, j)) {
-            return loadPopupFrom(nullptr);
+            return Ui::Res::Type::changes_t(loadPopupFrom(nullptr));
         }
 
         const Ui::Res::Type::layout_t oldLayout = m_layout;
@@ -159,7 +159,7 @@ public:
         // one the layout needs, so a missing one is said: its values stay zero
         auto hasObject = [&j, &file](ElementKey key) {
             const std::string name = elementKeyName(key);
-            if (j.contains(name) && j[name].is_object()) {
+            if (j.contains(name) && j.at(name).is_object()) {
                 return true;
             }
             std::cerr << "[LayoutStore] " << file << " has no \"" << name << "\" block" << std::endl;
@@ -195,8 +195,8 @@ public:
                 if (end != std::string::npos) {
                     const auto variable = value.substr(start + prefix.size(), end - start - prefix.size());
 
-                    if (cssVariables.find(variable) != cssVariables.end()) {
-                        return cssVariables[variable];
+                    if (const auto found = cssVariables.find(variable); found != cssVariables.end()) {
+                        return found->second;
                     }
                 }
             }
@@ -270,10 +270,7 @@ public:
             // Compute progress sectors: tabW / TL_radius
             const int tlr = Ui::roundToInt(m_layout.workspaceTab.border.topLeft);
             if (tlr > 0) {
-                m_layout.progressSectors = static_cast<int>(m_layout.workspaceTab.width) / tlr;
-                if (m_layout.progressSectors < 2) {
-                    m_layout.progressSectors = 2;
-                }
+                m_layout.progressSectors = std::max(static_cast<int>(m_layout.workspaceTab.width) / tlr, 2);
             }
         }
 
@@ -370,11 +367,11 @@ public:
                     vals.emplace_back(Ui::Convert::parseCssNumber(tok));
                 }
                 if (vals.size() == 1) {
-                    m_layout.menuItemHoverMarginV = vals[0];
-                    m_layout.menuItemHoverMarginH = vals[0];
+                    m_layout.menuItemHoverMarginV = vals.at(0);
+                    m_layout.menuItemHoverMarginH = vals.at(0);
                 } else if (vals.size() >= 2) {
-                    m_layout.menuItemHoverMarginV = vals[0];
-                    m_layout.menuItemHoverMarginH = vals[1];
+                    m_layout.menuItemHoverMarginV = vals.at(0);
+                    m_layout.menuItemHoverMarginH = vals.at(1);
                 }
             }
         }
@@ -445,14 +442,14 @@ public:
 
         if (hasObject(ElementKey::DialogIcon)) {
             const auto & di     = block(ElementKey::DialogIcon);
-            m_layout.dialogIcon = { Ui::Convert::parseCssNumber(resolveVariable(
-                                    Common::Json::string(di, cssPropKeyName(CssPropKey::Left), "16px"))),
-                                    Ui::Convert::parseCssNumber(
-                                    resolveVariable(Common::Json::string(di, cssPropKeyName(CssPropKey::Top), "16px"))),
-                                    Ui::Convert::parseCssNumber(resolveVariable(
-                                    Common::Json::string(di, cssPropKeyName(CssPropKey::Width), "20px"))),
-                                    Ui::Convert::parseCssNumber(resolveVariable(
-                                    Common::Json::string(di, cssPropKeyName(CssPropKey::Height), "20px"))) };
+            const auto   number = [&di, &resolveVariable](CssPropKey key, const std::string & fallback) {
+                return Ui::Convert::parseCssNumber(
+                resolveVariable(Common::Json::string(di, cssPropKeyName(key), fallback)));
+            };
+            m_layout.dialogIcon = { .x = number(CssPropKey::Left, "16px"),
+                                    .y = number(CssPropKey::Top, "16px"),
+                                    .w = number(CssPropKey::Width, "20px"),
+                                    .h = number(CssPropKey::Height, "20px") };
         }
 
         if (hasObject(ElementKey::DialogClose)) {
@@ -570,7 +567,7 @@ public:
         const Ui::Res::Type::Changed layoutChanged = (m_layout == oldLayout) ? Ui::Res::Type::Changed::None
                                                                              : Ui::Res::Type::Changed::Layout;
         // Derive popup metrics from the same parsed JSON (single parse).
-        return static_cast<Ui::Res::Type::Changed>(Common::Bit::Or(layoutChanged, loadPopupFrom(&j)));
+        return Ui::Res::Type::changes_t(layoutChanged, loadPopupFrom(&j));
     }
 };
 

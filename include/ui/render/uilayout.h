@@ -22,15 +22,18 @@
 #include "ui/gl/fontrenderer.h"
 #include "ui/idkind.h"
 #include "ui/interface/irender.h"
+#include "ui/render/eventkind.h"
 #include "ui/render/tabstripwidthof.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
 #include "ui/res/dock/anchor.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/fontweight.h"
 #include "ui/tabbar.h"
 #include "ui/type.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -45,9 +48,9 @@ struct alignas(32) UiElement final {
     // Which events may reach this element. Stamped from defaultAccepts(type)
     // and overridable per element, so "can this be clicked / hovered" is a
     // property of the element rather than a test scattered across renderers
-    EventKind      accepts = EventKind::None;
-    UiElementType  type    = UiElementType::MenuButton;
-    UiElementState state   = UiElementState::None;
+    event_kinds_t  accepts;
+    UiElementType  type  = UiElementType::MenuButton;
+    UiElementState state = UiElementState::None;
 };
 
 /**
@@ -99,16 +102,18 @@ public:
 
         // Resolve font handles (create once, reuse)
         if (render != nullptr) {
-            m_menuFont     = render->createFont(theme.topMenuFont);
-            m_itemFont     = render->createFont(theme.workspaceTabFont);
-            m_itemFontBold = render->createFont(
-            { theme.workspaceTabFont.family, theme.workspaceTabFont.size, theme.workspaceTabActiveWeight });
+            m_menuFont      = render->createFont(theme.topMenuFont);
+            m_itemFont      = render->createFont(theme.workspaceTabFont);
+            m_itemFontBold  = render->createFont({ .family = theme.workspaceTabFont.family,
+                                                   .size   = theme.workspaceTabFont.size,
+                                                   .weight = theme.workspaceTabActiveWeight });
             m_statusBarFont = render->createFont(theme.statusBarFont);
             m_tooltipFont   = render->createFont(theme.tooltipFont);
             m_popupFont     = render->createFont(theme.menuItemFont);
-            m_popupFontBold = render->createFont(
-            { theme.menuItemFont.family, theme.menuItemFont.size, Ui::Res::Type::FontWeight::Bold });
-            m_shortcutFont = render->createFont(theme.shortcutFont);
+            m_popupFontBold = render->createFont({ .family = theme.menuItemFont.family,
+                                                   .size   = theme.menuItemFont.size,
+                                                   .weight = Ui::Res::Type::FontWeight::Bold });
+            m_shortcutFont  = render->createFont(theme.shortcutFont);
         }
 
         // ---- Top menu buttons ----
@@ -129,10 +134,10 @@ public:
                 } else {
                     textW = static_cast<fpx_t>(menuText.size()) * layout.fallbackCharWidth;
                 }
-                const fpx_t buttonW = textW + padH * 2;
+                const fpx_t buttonW = textW + (padH * 2);
 
                 auto & el = addElement(UiElementType::MenuButton,
-                                       { cursorX, 0, buttonW, layout.topMenu.height },
+                                       { .x = cursorX, .w = buttonW, .h = layout.topMenu.height },
                                        menu.id);
                 if (!menu.enabled) {
                     el.state = UiElementState::Disabled;
@@ -149,7 +154,7 @@ public:
                     const fpx_t btnW = layout.topMenu.height; // square
                     rightCursor -= btnW;
                     auto & el = addElement(UiElementType::MenuButton,
-                                           { rightCursor, 0, btnW, layout.topMenu.height },
+                                           { .x = rightCursor, .w = btnW, .h = layout.topMenu.height },
                                            it->id);
                     if (!it->enabled) {
                         el.state = UiElementState::Disabled;
@@ -181,7 +186,7 @@ public:
                 const fpx_t btnX    = barX + ((barW - shape.width) / 2.0F);
 
                 auto & btn = addElement(UiElementType::ToolbarButton,
-                                        { btnX, cursorY, shape.width, shape.height },
+                                        { .x = btnX, .y = cursorY, .w = shape.width, .h = shape.height },
                                         button.id);
                 if (!button.enabled) {
                     btn.state = UiElementState::Disabled;
@@ -199,9 +204,9 @@ public:
 
             if (!statusText.empty() && m_statusBarFont != 0) {
                 const fpx_t textX = layout.leftToolbar.width + padH;
-                const fpx_t textW = windowCssW - layout.leftToolbar.width - layout.rightToolbar.width - padH * 2;
+                const fpx_t textW = windowCssW - layout.leftToolbar.width - layout.rightToolbar.width - (padH * 2);
 
-                addElement(UiElementType::Text, { textX, barY, textW, barH }, STATUS_TEXT_ID);
+                addElement(UiElementType::Text, { .x = textX, .y = barY, .w = textW, .h = barH }, STATUS_TEXT_ID);
             }
         }
 
@@ -245,7 +250,7 @@ public:
             Common::Unicode::fromUtf8(resManager.localeManager().get(item.label)));
             if (!item.shortcut.empty()) {
                 shortcutW      = std::max(shortcutW,
-                                     render.textWidth(m_shortcutFont, Common::Unicode::fromUtf8(item.shortcut)));
+                                          render.textWidth(m_shortcutFont, Common::Unicode::fromUtf8(item.shortcut)));
                 shortcutLabelW = std::max(shortcutLabelW, labelW);
                 continue;
             }
@@ -290,23 +295,23 @@ public:
                 UiElement sep;
                 sep.type    = UiElementType::Separator;
                 sep.accepts = defaultAccepts(UiElementType::Separator);
-                sep.bound   = { popupStyle.separatorMarginH,
-                                cursorY + popupStyle.separatorMarginV,
-                                cssWidth - popupStyle.separatorMarginH * 2,
-                                popupStyle.separatorHeight };
+                sep.bound   = { .x = popupStyle.separatorMarginH,
+                                .y = cursorY + popupStyle.separatorMarginV,
+                                .w = cssWidth - (popupStyle.separatorMarginH * 2),
+                                .h = popupStyle.separatorHeight };
                 items.emplace_back(sep);
-                cursorY += popupStyle.separatorHeight + popupStyle.separatorMarginV * 2;
+                cursorY += popupStyle.separatorHeight + (popupStyle.separatorMarginV * 2);
                 continue;
             }
 
             UiElement el;
             el.type  = UiElementType::MenuItem;
-            el.bound = { 0, cursorY, cssWidth, popupStyle.itemHeight };
+            el.bound = { .y = cursorY, .w = cssWidth, .h = popupStyle.itemHeight };
             el.id    = item.id;
             // A submenu parent opens on hover and is not clickable. This is the
             // one place that knows whether an item has children, so the rule is
             // recorded here rather than re-derived from ResManager at press time
-            el.accepts = item.items.empty() ? defaultAccepts(UiElementType::MenuItem) : EventKind::Hover;
+            el.accepts = item.items.empty() ? defaultAccepts(UiElementType::MenuItem) : event_kinds_t(EventKind::Hover);
             if (!item.enabled) {
                 el.state = UiElementState::Disabled;
             }
@@ -330,8 +335,7 @@ public:
         // Iterate in reverse (last drawn = topmost). Disabled elements are inert -
         // not hit targets - so press/release/click skip them (matching hover).
         for (auto it = m_elements.rbegin(); it != m_elements.rend(); ++it) { // NOLINT(modernize-loop-convert)
-            if (it->state != UiElementState::Disabled && acceptsEvent(it->accepts, event)
-                && it->bound.contains(cssX, cssY)) {
+            if (it->state != UiElementState::Disabled && it->accepts.has(event) && it->bound.contains(cssX, cssY)) {
                 return &(*it);
             }
         }
@@ -418,7 +422,7 @@ public:
     }
 
 private:
-    std::vector<UiElement> m_elements {};
+    std::vector<UiElement> m_elements;
     Ui::font_handle_t      m_menuFont      = 0;
     Ui::font_handle_t      m_itemFont      = 0;
     Ui::font_handle_t      m_itemFontBold  = 0;
@@ -442,11 +446,11 @@ private:
         if (tab == nullptr || !tab->hasContent) {
             return;
         }
-        const fpx_t w = tabH - closeMargin * 2;
+        const fpx_t w = tabH - (closeMargin * 2);
         const fpx_t h = w;
         const fpx_t x = tabX + tabW - w - closeRight;
         const fpx_t y = tabY + closeMargin;
-        addElement(UiElementType::TabClose, { x, y, w, h }, tabId);
+        addElement(UiElementType::TabClose, { .x = x, .y = y, .w = w, .h = h }, tabId);
     }
 
     // Build workspace tab elements with browser-like adaptive sizing:
@@ -477,7 +481,7 @@ private:
         if (maxTabW * count <= availW) {
             fpx_t cursorX = offsetX;
             for (const id_t wsId : tabIds) {
-                addElement(UiElementType::Tab, { cursorX, offsetY, maxTabW, tabH }, wsId);
+                addElement(UiElementType::Tab, { .x = cursorX, .y = offsetY, .w = maxTabW, .h = tabH }, wsId);
                 addTabClose(cursorX, offsetY, maxTabW, tabH, closeM, closeR, wsId, tabBar);
                 cursorX += maxTabW;
             }
@@ -489,7 +493,7 @@ private:
             const fpx_t tabW    = availW / count;
             fpx_t       cursorX = offsetX;
             for (const id_t wsId : tabIds) {
-                addElement(UiElementType::Tab, { cursorX, offsetY, tabW, tabH }, wsId);
+                addElement(UiElementType::Tab, { .x = cursorX, .y = offsetY, .w = tabW, .h = tabH }, wsId);
                 addTabClose(cursorX, offsetY, tabW, tabH, closeM, closeR, wsId, tabBar);
                 cursorX += tabW;
             }
@@ -519,21 +523,21 @@ private:
         fpx_t       cursorX = offsetX;
 
         if (showLeft) {
-            addElement(UiElementType::TabArrow, { cursorX, offsetY, arrowW, tabH }, TAB_ARROW_LEFT);
+            addElement(UiElementType::TabArrow, { .x = cursorX, .y = offsetY, .w = arrowW, .h = tabH }, TAB_ARROW_LEFT);
             cursorX += arrowW;
         }
 
         const size_t visibleEnd = std::min(scrollOff + visibleCount, count);
         for (size_t i = scrollOff; i < visibleEnd; ++i) {
-            const id_t wsId = tabIds[i];
-            addElement(UiElementType::Tab, { cursorX, offsetY, tabW, tabH }, wsId);
+            const id_t wsId = tabIds.at(i);
+            addElement(UiElementType::Tab, { .x = cursorX, .y = offsetY, .w = tabW, .h = tabH }, wsId);
             addTabClose(cursorX, offsetY, tabW, tabH, closeM, closeR, wsId, tabBar);
             cursorX += tabW;
         }
 
         if (showRight) {
             const fpx_t arrowX = offsetX + availW - arrowW;
-            addElement(UiElementType::TabArrow, { arrowX, offsetY, arrowW, tabH }, TAB_ARROW_RIGHT);
+            addElement(UiElementType::TabArrow, { .x = arrowX, .y = offsetY, .w = arrowW, .h = tabH }, TAB_ARROW_RIGHT);
         }
     }
 };

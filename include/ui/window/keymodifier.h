@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include "common/flags.h"
+
 #include <cstdint>
 
 namespace Ui::Window {
@@ -24,16 +26,9 @@ namespace Ui::Window {
 /**
  * @brief Keyboard modifier flags
  */
-enum class KeyModifier : uint32_t { None = 0, Shift = 1U << 0U, Control = 1U << 1U, Alt = 1U << 2U, Meta = 1U << 3U };
+enum class KeyModifier : uint8_t { None = 0, Shift = 1U << 0U, Control = 1U << 1U, Alt = 1U << 2U, Meta = 1U << 3U };
 
-inline uint32_t toUint(KeyModifier m) { return static_cast<uint32_t>(m); }
-
-inline KeyModifier toKeyModifier(uint32_t v) { return static_cast<KeyModifier>(v); }
-
-inline KeyModifier operator|(KeyModifier a, KeyModifier b) { return toKeyModifier(toUint(a) | toUint(b)); }
-
-inline KeyModifier operator&(KeyModifier a, KeyModifier b) { return toKeyModifier(toUint(a) & toUint(b)); }
-
-inline bool hasModifier(KeyModifier modifiers, KeyModifier flag) { return (toUint(modifiers) & toUint(flag)) != 0; }
+// The modifiers held at once
+using key_modifiers_t = Common::flags_t<KeyModifier>;
 
 } // namespace Ui::Window

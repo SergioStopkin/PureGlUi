@@ -21,25 +21,25 @@
 // Does NOT include platform window classes to avoid circular dependencies
 // with interface headers (iwindow.h, icontext.h).
 
-#if defined(_WIN32)
+#ifdef _WIN32
 // Win32 has no display concept; use void* (always nullptr)
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 // macOS has no display concept; use void* (always nullptr)
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
 #include <wayland-client.h>
-#elif defined(HAVE_X11)
+#elifdef HAVE_X11
 #include "ui/window/platform/x11include.h"
 #endif
 
 namespace Ui::Window {
 
-#if defined(_WIN32)
+#ifdef _WIN32
 using NativeDisplayHandle = void *;
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 using NativeDisplayHandle = void *;
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
 using NativeDisplayHandle = wl_display *;
-#elif defined(HAVE_X11)
+#elifdef HAVE_X11
 using NativeDisplayHandle = Display *;
 #else
 #error "No supported window system found"

@@ -19,22 +19,12 @@
 
 namespace Common {
 
-// View a buffer as its raw bytes (unsigned char*) for C APIs that take byte
-// pointers (XChangeProperty, librsvg, ...). Takes the pointer to the first
-// element so a container is passed as c.data() - never the container object
-// itself. char-family aliasing is defined behavior. Project rule: no
-// reinterpret_cast - the two-step static_cast through void* is the same
-// defined operation, and this named helper is its single home.
-template <typename T>
-[[nodiscard]] unsigned char * asBytes(T * buffer)
+// A buffer as the bytes a C API takes for data of another type (XChangeProperty's
+// format-32 longs, librsvg's text), passed as c.data() - never the container itself.
+// It arrives as void* by plain conversion, and reading it as bytes is defined behavior
+[[nodiscard]] inline const unsigned char * asBytes(const void * buffer)
 {
-    return static_cast<unsigned char *>(static_cast<void *>(buffer));
-}
-
-template <typename T>
-[[nodiscard]] const unsigned char * asBytes(const T * buffer)
-{
-    return static_cast<const unsigned char *>(static_cast<const void *>(buffer));
+    return static_cast<const unsigned char *>(buffer);
 }
 
 } // namespace Common

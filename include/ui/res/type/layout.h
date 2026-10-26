@@ -53,7 +53,7 @@ struct alignas(128) layout_t final {
     Ui::Res::Type::border_t menuButtonActiveBorder; // top-menu-button-label:active border-radius
     Ui::Res::Type::border_t menuItemHoverBorder;    // top-menu-item:hover border-radius
     Ui::Res::Type::border_t tabCloseBorderRadius;   // workspace-tab-close border-radius
-    Ui::Res::Type::bound_t  dialogIcon { 16, 16, 20, 20 };
+    Ui::Res::Type::bound_t  dialogIcon { .x = 16, .y = 16, .w = 20, .h = 20 };
     Ui::Res::Type::border_t dialogCloseBorder;
     Ui::Res::Type::border_t dialogButtonBorder;
     Ui::Res::Type::border_t scrollbarBorder;

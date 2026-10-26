@@ -22,7 +22,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(${TARGET_SRC} PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Framework usage requirements (GL/X11/EGL/cairo/rsvg/freetype/wayland + their includes + C++20) all come from the ui
+# Framework usage requirements (GL/X11/EGL/cairo/rsvg/freetype/wayland + their includes + C++23) all come from the ui
 # INTERFACE target. jemalloc is an app-level allocator choice, so it stays here rather than in the fw contract.
 target_link_libraries(${TARGET_SRC} PRIVATE ui)
 

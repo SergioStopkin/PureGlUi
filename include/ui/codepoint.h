@@ -19,23 +19,26 @@
 
 #include "common/unicode.h"
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
 namespace Ui {
 
 // Named Unicode codepoints used as UI chrome (ellipsis in truncated labels,
-// leader dots, future bullets / arrows / checkmarks etc). char32_t underlying
-// type is portable - wchar_t is 16-bit on Windows and would truncate astral
-// codepoints. List sorted by codepoint value so additions slot in naturally.
-enum class Codepoint : char32_t {
+// leader dots, future bullets / arrows / checkmarks etc), sorted by value so
+// additions slot in naturally
+//
+// Every one listed is in the Basic Multilingual Plane, so 16 bits hold it; an
+// astral one does not compile until the type is widened to char32_t
+enum class Codepoint : std::uint16_t {
     TwoDotH   = 0x2025, // two dot (horizontal)
     ThreeDotH = 0x2026, // three dot (horizontal)
 };
 
 // Build a wstring carrying a single named codepoint. Delegates to
-// Common::Unicode::fromUtf32 so the Windows 16-bit wchar_t case is encoded as a
-// surrogate pair correctly; on Linux / macOS this is a single wide char.
+// Common::Unicode::fromUtf32 as char32_t, since wchar_t is 16-bit on Windows and an
+// astral codepoint there is a surrogate pair; on Linux / macOS it is one wide char
 [[nodiscard]] inline std::wstring wstr(Codepoint cp)
 {
     const auto value = static_cast<char32_t>(cp);

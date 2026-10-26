@@ -22,15 +22,15 @@
 #ifndef NOMINMAX
 #define NOMINMAX 1
 #endif
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 #define APPLE 1
-#elif defined(__linux__)
+#elifdef __linux__
 #define LINUX 1
 #endif
 
-#if defined(WINDOWS)
+#ifdef WINDOWS
 #include <windows.h>
-#elif defined(APPLE)
+#elifdef APPLE
 #include <TargetConditionals.h>
 #include <objc/message.h>
 #include <objc/objc.h>
@@ -46,6 +46,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <ios>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -75,7 +76,7 @@ public:
     // nothing here ever sets one
     static std::string environmentVariable(std::string_view name)
     {
-#if defined(WINDOWS)
+#ifdef WINDOWS
         // Wide, so a value outside the code page survives
         const wchar_t * value = _wgetenv(Common::Unicode::fromUtf8(name).c_str());
         return (value != nullptr) ? Common::Unicode::toUtf8(value) : std::string {};
@@ -90,7 +91,7 @@ public:
     // unset, which leaves a path joined to it relative
     static std::filesystem::path homeDir()
     {
-#if defined(WINDOWS)
+#ifdef WINDOWS
         return Common::Unicode::fromUtf8(environmentVariable("USERPROFILE"));
 #else
         return environmentVariable("HOME");
@@ -111,7 +112,7 @@ public:
         std::ifstream cpuinfo("/proc/cpuinfo");
         std::string   line;
         while (std::getline(cpuinfo, line)) {
-            if (line.find("model name") == 0) {
+            if (line.starts_with("model name")) {
                 const auto at = line.find('@');
                 if (at != std::string::npos) {
                     const auto start = line.find_first_not_of(" \t", at + 1);
@@ -128,7 +129,7 @@ public:
         if (maxFreq >> khz && khz > 0) {
             return formatGHz(khz / 1.0e6);
         }
-#elif defined(APPLE)
+#elifdef APPLE
         uint64_t hz  = 0;
         size_t   len = sizeof(hz);
         if (sysctlbyname("hw.cpufrequency_max", &hz, &len, nullptr, 0) == 0 && hz > 0) {
@@ -147,7 +148,7 @@ public:
                 }
             }
         }
-#elif defined(WINDOWS)
+#elifdef WINDOWS
         // The registry carries core 0's rated clock in MHz - the same base value
         // the brand string advertises; no WMI dependency needed.
         DWORD mhz  = 0;
@@ -173,7 +174,7 @@ public:
         std::ifstream meminfo("/proc/meminfo");
         std::string   line;
         while (std::getline(meminfo, line)) {
-            if (line.find("MemTotal:") == 0) {
+            if (line.starts_with("MemTotal:")) {
                 std::istringstream iss(line);
                 std::string        label;
                 int64_t            kb = 0;
@@ -181,13 +182,13 @@ public:
                 return std::to_string(kb / 1024 / 1024) + " GB";
             }
         }
-#elif defined(APPLE)
+#elifdef APPLE
         uint64_t bytes = 0;
         size_t   len   = sizeof(bytes);
         if (sysctlbyname("hw.memsize", &bytes, &len, nullptr, 0) == 0 && bytes > 0) {
             return std::to_string(bytes / (1024 * 1024 * 1024)) + " GB";
         }
-#elif defined(WINDOWS)
+#elifdef WINDOWS
         MEMORYSTATUSEX status {};
         status.dwLength = sizeof(status);
         if (GlobalMemoryStatusEx(&status) != 0 && status.ullTotalPhys > 0) {
@@ -206,7 +207,7 @@ public:
     static void setSystemName(const std::string & name)
     {
         (void)name; // Unused on some platforms
-#if defined(WINDOWS)
+#ifdef WINDOWS
         // Windows: Set process name (shown in Task Manager) and window title (already set elsewhere)
         // No direct API to set process name, but can set AppUserModelID for taskbar grouping
         typedef HRESULT(WINAPI * SetAppUserModelIDFunc)(PCWSTR);
@@ -220,14 +221,14 @@ public:
             }
             FreeLibrary(shell32);
         }
-#elif defined(APPLE)
+#elifdef APPLE
         // macOS: Set application name in the dock
-        id nsApp = ((id(*)(Class, SEL))objc_msgSend)(objc_getClass("NSApplication"),
-                                                     sel_registerName("sharedApplication"));
+        id nsApp = ((id (*)(Class, SEL))objc_msgSend)(objc_getClass("NSApplication"),
+                                                      sel_registerName("sharedApplication"));
         if (nsApp) {
-            id nsStr = ((id(*)(Class, SEL, const char *))objc_msgSend)(objc_getClass("NSString"),
-                                                                       sel_registerName("stringWithUTF8String:"),
-                                                                       name.c_str());
+            id nsStr = ((id (*)(Class, SEL, const char *))objc_msgSend)(objc_getClass("NSString"),
+                                                                        sel_registerName("stringWithUTF8String:"),
+                                                                        name.c_str());
             ((void (*)(id, SEL, id))objc_msgSend)(nsApp, sel_registerName("setApplicationName:"), nsStr);
         }
 #endif

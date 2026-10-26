@@ -49,11 +49,14 @@ public:
     // Press and scroll report an element_event_t rather than a bool so a drag
     // or a wheel routes the same way a click does. `changed` carries what the
     // bool used to mean: this needs a repaint.
-    virtual Render::element_event_t
-    onMousePress(int x, int y, Ui::Window::MouseButton button, int clickCount, Ui::Window::KeyModifier modifiers) = 0;
-    virtual Render::element_event_t onMouseRelease(int x, int y, Ui::Window::MouseButton button)                  = 0;
-    virtual bool                    onMouseLeave()                                                                = 0;
-    virtual Render::element_event_t onScroll(int x, int y, fpx_t deltaY)                                          = 0;
+    virtual Render::element_event_t onMousePress(int                         x,
+                                                 int                         y,
+                                                 Ui::Window::MouseButton     button,
+                                                 int                         clickCount,
+                                                 Ui::Window::key_modifiers_t modifiers)          = 0;
+    virtual Render::element_event_t onMouseRelease(int x, int y, Ui::Window::MouseButton button) = 0;
+    virtual bool                    onMouseLeave()                                               = 0;
+    virtual Render::element_event_t onScroll(int x, int y, fpx_t deltaY)                         = 0;
 };
 
 } // namespace Ui

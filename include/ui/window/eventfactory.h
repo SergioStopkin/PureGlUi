@@ -22,26 +22,26 @@
 #include <memory>
 
 // Include platform-specific event handler based on build target (compile-time)
-#if defined(_WIN32)
+#ifdef _WIN32
 #include "ui/window/platform/win32event.h"
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 #include "ui/window/platform/macosevent.h"
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
 #include "ui/window/platform/waylandevent.h"
-#elif defined(HAVE_X11)
+#elifdef HAVE_X11
 #include "ui/window/platform/x11event.h"
 #endif
 
 namespace Ui::Window {
 
 // Type alias for the current platform's native event handler (compile-time detection)
-#if defined(_WIN32)
+#ifdef _WIN32
 using NativeEvent = Platform::Win32Event;
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 using NativeEvent = Platform::MacOsEvent;
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
 using NativeEvent = Platform::WaylandEvent;
-#elif defined(HAVE_X11)
+#elifdef HAVE_X11
 using NativeEvent = Platform::X11Event;
 #else
 #error "No supported event system found"

@@ -24,6 +24,7 @@
 #include "ui/interface/iwindow.h"
 #include "ui/window/clickcounter.h"
 #include "ui/window/event.h"
+#include "ui/window/eventtype.h"
 #include "ui/window/platform/waylandwindow.h"
 
 #include <algorithm>
@@ -427,7 +428,7 @@ private:
 
     static void seatName(void * /*data*/, wl_seat * /*seat*/, const char * /*name*/) { }
 
-    static constexpr wl_seat_listener s_seatListener = { seatCapabilities, seatName };
+    static constexpr wl_seat_listener s_seatListener = { .capabilities = seatCapabilities, .name = seatName };
 
     // -------- Clipboard (wl_data_source) listeners --------
     // Only send + cancelled matter for a copy selection; the DnD callbacks are
@@ -459,8 +460,12 @@ private:
     static void dataSourceDndFinished(void * /*data*/, wl_data_source * /*source*/) { }
     static void dataSourceAction(void * /*data*/, wl_data_source * /*source*/, uint32_t /*dndAction*/) { }
     static constexpr wl_data_source_listener s_dataSourceListener = {
-        dataSourceTarget,           dataSourceSend,        dataSourceCancelled,
-        dataSourceDndDropPerformed, dataSourceDndFinished, dataSourceAction,
+        .target             = dataSourceTarget,
+        .send               = dataSourceSend,
+        .cancelled          = dataSourceCancelled,
+        .dnd_drop_performed = dataSourceDndDropPerformed,
+        .dnd_finished       = dataSourceDndFinished,
+        .action             = dataSourceAction,
     };
 
     // -------- Pointer listeners --------
@@ -611,10 +616,16 @@ private:
     {
     }
 
-    static constexpr wl_pointer_listener s_pointerListener = { pointerEnter,       pointerLeave,    pointerMotion,
-                                                               pointerButton,      pointerAxis,     pointerFrame,
-                                                               pointerAxisSource,  pointerAxisStop, pointerAxisDiscrete,
-                                                               pointerAxisValue120 };
+    static constexpr wl_pointer_listener s_pointerListener = { .enter         = pointerEnter,
+                                                               .leave         = pointerLeave,
+                                                               .motion        = pointerMotion,
+                                                               .button        = pointerButton,
+                                                               .axis          = pointerAxis,
+                                                               .frame         = pointerFrame,
+                                                               .axis_source   = pointerAxisSource,
+                                                               .axis_stop     = pointerAxisStop,
+                                                               .axis_discrete = pointerAxisDiscrete,
+                                                               .axis_value120 = pointerAxisValue120 };
 
     // -------- Keyboard listeners --------
 
@@ -721,29 +732,32 @@ private:
         // Could implement key repeat here
     }
 
-    static constexpr wl_keyboard_listener s_keyboardListener = {
-        keyboardKeymap, keyboardEnter, keyboardLeave, keyboardKey, keyboardModifiers, keyboardRepeatInfo
-    };
+    static constexpr wl_keyboard_listener s_keyboardListener = { .keymap      = keyboardKeymap,
+                                                                 .enter       = keyboardEnter,
+                                                                 .leave       = keyboardLeave,
+                                                                 .key         = keyboardKey,
+                                                                 .modifiers   = keyboardModifiers,
+                                                                 .repeat_info = keyboardRepeatInfo };
 
-    KeyModifier modifiers() const
+    key_modifiers_t modifiers() const
     {
         if (!m_xkbState) {
-            return KeyModifier::None;
+            return {};
         }
 
-        KeyModifier mods = KeyModifier::None;
+        key_modifiers_t mods;
 
         if (xkb_state_mod_name_is_active(m_xkbState, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE)) {
-            mods = mods | KeyModifier::Shift;
+            mods |= KeyModifier::Shift;
         }
         if (xkb_state_mod_name_is_active(m_xkbState, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE)) {
-            mods = mods | KeyModifier::Control;
+            mods |= KeyModifier::Control;
         }
         if (xkb_state_mod_name_is_active(m_xkbState, XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE)) {
-            mods = mods | KeyModifier::Alt;
+            mods |= KeyModifier::Alt;
         }
         if (xkb_state_mod_name_is_active(m_xkbState, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_EFFECTIVE)) {
-            mods = mods | KeyModifier::Meta;
+            mods |= KeyModifier::Meta;
         }
 
         return mods;

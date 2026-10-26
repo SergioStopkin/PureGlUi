@@ -36,10 +36,10 @@ Construction and load:
   loads `app.json` for identity (`title`) and session location
   (`sessionDir`/`sessionFile`) plus the native open-dialog config, then builds
   the persisted-setting registry.
-- `void loadAll()` - resets the `Changed` mask, then loads locale, theme (current
+- `void loadAll()` - resets the `changes_t` mask, then loads locale, theme (current
   name+mode), layout+popup, input, dialog, shortcut, icon defaults, buttons,
-  menus, docks, and rebuilds the action map. Sub-store loads funnel their
-  `Changed` bit through an internal `markChanged` so `changed()` aggregates them.
+  menus, docks, and rebuilds the action map. Each sub-store load's `Changed` bit
+  (or `changes_t`) is `|=` into the mask, so `changed()` gathers them.
 
 Read accessors (all return `const &` unless noted):
 
@@ -81,7 +81,7 @@ State getters/setters (each setter fires the persist hook where noted):
 - `tabBar()` -> `Ui::TabBar&` (mutable and const) - chrome tab view-model.
 - `activeMenuId()`, `setActiveMenu(id_t)`, `clearActiveMenu()`.
 - `statusText()`, `setStatusText(text)`.
-- `changed()` -> `Type::Changed`.
+- `changed()` -> `Type::changes_t`.
 - `switchThemeMode()`, `setThemeName(name)` - reload theme + fire persist hook.
 - `dockState(name)` -> `Dock::dock_state_t`; `setDockState(name, state)` (const;
   fires persist hook).
@@ -172,7 +172,7 @@ Locale string table keyed by JSON key.
 ## Sub-stores (Ui::Res::Store)
 
 The 7 logical loaders `ResManager` composes. Loaders that diff old-vs-new return
-a `Type::Changed` bit which the facade ORs into its pending reload mask; loaders
+a `Type::Changed` bit which the facade `|=` into its pending `changes_t` mask; loaders
 that never diff return `void`. `MenuStore` and `DockStore` are
 `Common::NonCopyable` and take injected `&` collaborators.
 
@@ -189,7 +189,7 @@ that never diff return `void`. `MenuStore` and `DockStore` are
 - `LayoutStore` (`store/layoutstore.h`) - loads `res/layout.json` once, deriving
   BOTH `layout_t` (region geometry, `:root` CSS vars, dialog/tab/dock metrics)
   and `popup_t` (dropdown item/separator heights) from the single parse. Returns
-  the combined `Changed::Layout | Changed::Popup`. Dock definitions are committed
+  a `changes_t` of `Changed::Layout` and `Changed::Popup`, each when it changed. Dock definitions are committed
   separately via `setDocks()` (`ResManager::loadDocks` supplies them).
 - `ThemeStore` (`store/themestore.h`) - loads the active theme
   (`submenu/theme/<name>-<mode>.json` -> `theme_t`), resolves `var()` chains and
@@ -317,8 +317,9 @@ Menu / button / dialog / icon:
 - `IconPlace` enum + `iconPlaceFromName` (`iconplace.h`) - Left / Right icon
   position relative to the label.
 - `Changed` enum (`changed.h`) - `uint16_t` bit flags (None, Locale, Theme,
-  Layout, Popup, Shortcut, Menu, Button, Render, Icon, All) that stores return
-  and the facade ORs.
+  Layout, Popup, Shortcut, Menu, Button, Render, Icon, All) that stores return,
+  and `changes_t` (`Common::flags_t<Changed>`), the set the facade gathers them
+  into and `apply` takes.
 
 ## Key enums (Ui::Res::Key)
 

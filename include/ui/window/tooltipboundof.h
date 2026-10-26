@@ -41,9 +41,9 @@ namespace Ui::Window {
     const fpx_t beside = (after + width > windowWidth) ? anchor.x - box.margin - width : after;
     const fpx_t x      = std::clamp(beside, 0.0F, std::max(0.0F, windowWidth - width));
     const fpx_t y      = std::clamp(anchor.y + ((anchor.h - box.height) / 2.0F),
-                               0.0F,
-                               std::max(0.0F, windowHeight - box.height));
-    return { x, y, width, box.height };
+                                    0.0F,
+                                    std::max(0.0F, windowHeight - box.height));
+    return { .x = x, .y = y, .w = width, .h = box.height };
 }
 
 } // namespace Ui::Window

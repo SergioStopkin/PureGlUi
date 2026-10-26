@@ -21,6 +21,7 @@
 #include "ui/res/type/iconplace.h"
 #include "ui/type.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 

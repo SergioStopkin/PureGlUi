@@ -17,19 +17,16 @@
 
 /**
  * @file TestBit.cpp
- * @brief Unit tests for Common::Bit - the bitflag helpers the res loaders use to
- *        combine Changed flags. Covers Or/And/Xor/Shl/Shr on both plain ints and
- *        the Changed enum (the actual mixed enum/int use in the stores).
+ * @brief Unit tests for Common::Bit - the bit helpers for platform masks (GL, X11,
+ *        EGL) and the hash. Covers Or/And/Xor/Shl/Shr on plain ints; an enum's
+ *        flags combine through Common::flags_t instead (TestFlags.cpp).
  */
 
 #include "common/bit.h"
-#include "ui/res/type/changed.h"
 
-#include <cstdint>
 #include <gtest/gtest.h>
 
 using Common::Bit;
-using Ui::Res::Type::Changed;
 
 TEST(Bit, OrAndXorInts)
 {
@@ -43,23 +40,4 @@ TEST(Bit, ShiftInts)
     EXPECT_EQ(Bit::Shl(1, 4), 16U);
     EXPECT_EQ(Bit::Shr(16, 2), 4U);
     EXPECT_EQ(Bit::Shl(0, 3), 0U);
-}
-
-TEST(Bit, OrCombinesChangedFlags)
-{
-    // Layout = 0x0004, Popup = 0x0008 -> 0x000C. This is exactly how LayoutStore
-    // aggregates the two bits it derives from one parse.
-    const auto combined = Bit::Or(Changed::Layout, Changed::Popup);
-    EXPECT_EQ(combined, static_cast<std::uint16_t>(0x000C));
-    // Casting back through Changed keeps both bits set.
-    const auto asChanged = static_cast<Changed>(combined);
-    EXPECT_EQ(Bit::And(asChanged, Changed::Layout), static_cast<std::uint16_t>(Changed::Layout));
-    EXPECT_EQ(Bit::And(asChanged, Changed::Popup), static_cast<std::uint16_t>(Changed::Popup));
-}
-
-TEST(Bit, AndDetectsAbsentFlag)
-{
-    const auto only = Bit::Or(Changed::Theme, Changed::None);
-    EXPECT_EQ(Bit::And(static_cast<Changed>(only), Changed::Layout), 0U);
-    EXPECT_NE(Bit::And(static_cast<Changed>(only), Changed::Theme), 0U);
 }

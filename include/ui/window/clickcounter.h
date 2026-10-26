@@ -43,7 +43,7 @@ struct alignas(32) ClickCounter final {
         const uint32_t elapsed = timeMs - m_lastTime;
         const int      dx      = x - m_lastX;
         const int      dy      = y - m_lastY;
-        const bool     isNear  = (dx * dx + dy * dy) <= (m_distancePx * m_distancePx);
+        const bool     isNear  = ((dx * dx) + (dy * dy)) <= (m_distancePx * m_distancePx);
         // Explicit m_hasPrior gate: using m_lastTime==0 as the "no prior
         // click" sentinel would misclassify a genuine timestamp of 0
         // (Wayland uses ms since an arbitrary epoch, X11 timestamps wrap)

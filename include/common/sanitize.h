@@ -88,12 +88,12 @@ public:
 
         std::string result = string(input, key, 255);
 
-        if (result[0] == '/' || result[0] == '\\') {
+        if (result.starts_with('/') || result.starts_with('\\')) {
             std::cerr << "[Sanitize] Absolute path rejected for key: " << key << std::endl;
             return {};
         }
 
-        if (result.find("..") != std::string::npos) {
+        if (result.contains("..")) {
             std::cerr << "[Sanitize] Path traversal rejected for key: " << key << std::endl;
             return {};
         }
@@ -113,7 +113,7 @@ public:
         if (input.empty()) {
             return {};
         }
-        if (input.find('\0') != std::string_view::npos) {
+        if (input.contains('\0')) {
             std::cerr << "[Sanitize] Embedded NUL rejected for key: " << key << std::endl;
             return {};
         }

@@ -20,6 +20,7 @@
 #include "ui/res/dock/theme.h"
 #include "ui/res/type/colorpair.h"
 #include "ui/res/type/font.h"
+#include "ui/res/type/fontweight.h"
 #include "ui/type.h"
 
 namespace Ui::Res::Type {

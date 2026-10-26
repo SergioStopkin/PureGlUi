@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Debian/Ubuntu: versioned clang (clang-16), Fedora/RHEL/macOS: unversioned
+# Debian/Ubuntu: versioned clang (clang-22), Fedora/RHEL/macOS: unversioned
 CLANG_VERSION=""
 if command -v apt-get >/dev/null 2>&1; then
     _clang_ver=`sed -n 's/^clang-\([0-9][0-9]*\)$/\1/p' .github/dependencies/linux`

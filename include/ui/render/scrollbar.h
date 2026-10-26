@@ -64,10 +64,10 @@ public:
         const fpx_t                  minThumb = isHovered ? layout.scrollbarHoverMinThumb : layout.scrollbarMinThumb;
 
         m_viewportHeight = viewportHeight;
-        m_metrics        = { track,
-                             thumbLengthFor(track.h, contentHeight, viewportHeight, minThumb),
-                             hiddenOf(contentHeight, viewportHeight),
-                             Axis::Vertical };
+        m_metrics        = { .track       = track,
+                             .thumbLength = thumbLengthFor(track.h, contentHeight, viewportHeight, minThumb),
+                             .maxValue    = hiddenOf(contentHeight, viewportHeight),
+                             .axis        = Axis::Vertical };
         m_drawTrack      = isHovered ? track : trackIn(area, layout.scrollbarW, layout.scrollbarRight);
     }
 
@@ -81,7 +81,7 @@ public:
     [[nodiscard]] Ui::Res::Type::bound_t thumb(fpx_t value) const
     {
         const Ui::Res::Type::bound_t span = thumb_track_t::thumbBound(m_metrics, value);
-        return { m_drawTrack.x, span.y, m_drawTrack.w, span.h };
+        return { .x = m_drawTrack.x, .y = span.y, .w = m_drawTrack.w, .h = span.h };
     }
 
     [[nodiscard]] Ui::Res::Type::border_t radius() const
@@ -132,7 +132,7 @@ private:
     // in res, so the bar overhangs the content rather than eating into it
     [[nodiscard]] static Ui::Res::Type::bound_t trackIn(const Ui::Res::Type::bound_t & area, fpx_t width, fpx_t right)
     {
-        return { area.x + area.w - right - width, area.y, width, area.h };
+        return { .x = area.x + area.w - right - width, .y = area.y, .w = width, .h = area.h };
     }
 
     // Extent that is off screen, which is the value's upper bound

@@ -26,7 +26,8 @@
 
 #include "ui/res/respath.h"
 #include "ui/res/store/dialogstore.h"
-#include "ui/res/type/dialog.h"
+#include "ui/res/type/dialogtype.h"
+#include "ui/res/type/dialogtypeconfig.h"
 
 #include <gtest/gtest.h>
 #include <string>

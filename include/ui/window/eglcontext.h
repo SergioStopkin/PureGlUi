@@ -20,12 +20,16 @@
 #include "common/bit.h"
 #include "common/noncopyable.h"
 #include "ui/interface/icontext.h"
+#include "ui/window/configattempt.h"
 #include "ui/window/nativedisplayhandle.h"
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #ifdef __linux__
@@ -255,30 +259,26 @@ public:
         m_hasMsaa  = false;
 
         // Try configs in priority order
-        struct alignas(32) ConfigAttempt {
-            bool             alpha;
-            bool             msaa;
-            std::string_view desc;
-            bool             stencil = true;
-        };
-
-        std::vector<ConfigAttempt> attempts;
+        std::vector<Ui::Window::config_attempt_t> attempts;
         if (wantAlpha && wantMsaa) {
-            attempts = { { true, true, "MSAA+alpha" },
-                         { true, false, "alpha" },
-                         { false, true, "MSAA" },
-                         { false,
-                           false,
-                           "basic" } };
+            attempts = { { .alpha = true, .msaa = true, .desc = "MSAA+alpha" },
+                         { .alpha = true, .msaa = false, .desc = "alpha" },
+                         { .alpha = false, .msaa = true, .desc = "MSAA" },
+                         { .alpha = false, .msaa = false, .desc = "basic" } };
         } else if (wantAlpha) {
-            attempts = { { true, false, "alpha" }, { false, false, "basic" } };
+            attempts = { { .alpha = true, .msaa = false, .desc = "alpha" },
+                         { .alpha = false, .msaa = false, .desc = "basic" } };
         } else if (wantMsaa) {
-            attempts = { { false, true, "MSAA" }, { false, false, "basic" } };
+            attempts = { { .alpha = false, .msaa = true, .desc = "MSAA" },
+                         { .alpha = false, .msaa = false, .desc = "basic" } };
         } else {
-            attempts = { { false, false, "basic" } };
+            attempts = { { .alpha = false, .msaa = false, .desc = "basic" } };
         }
         // A driver with no stencil config must still open a window
-        attempts.emplace_back(ConfigAttempt { false, false, "basic without stencil", false });
+        attempts.emplace_back(Ui::Window::config_attempt_t { .alpha   = false,
+                                                             .msaa    = false,
+                                                             .desc    = "basic without stencil",
+                                                             .stencil = false });
 
         for (const auto & attempt : attempts) {
             std::vector<EGLint> attribs = { EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
@@ -367,16 +367,17 @@ public:
         EGLConfig matchedConfig     = nullptr;
         EGLConfig matchedMsaaConfig = nullptr;
 
-        for (EGLint i = 0; i < numConfigs; ++i) {
+        configs.resize(static_cast<std::size_t>(numConfigs));
+        for (EGLConfig config : configs) {
             EGLint visualId = 0;
-            eglGetConfigAttrib(m_eglDisplay, configs[i], EGL_NATIVE_VISUAL_ID, &visualId);
+            eglGetConfigAttrib(m_eglDisplay, config, EGL_NATIVE_VISUAL_ID, &visualId);
 
-            if (static_cast<uint64_t>(visualId) == targetVisualId) {
+            if (std::cmp_equal(visualId, targetVisualId)) {
                 // Check if this config supports window surfaces and OpenGL
                 EGLint surfaceType = 0;
                 EGLint renderType  = 0;
-                eglGetConfigAttrib(m_eglDisplay, configs[i], EGL_SURFACE_TYPE, &surfaceType);
-                eglGetConfigAttrib(m_eglDisplay, configs[i], EGL_RENDERABLE_TYPE, &renderType);
+                eglGetConfigAttrib(m_eglDisplay, config, EGL_SURFACE_TYPE, &surfaceType);
+                eglGetConfigAttrib(m_eglDisplay, config, EGL_RENDERABLE_TYPE, &renderType);
 
                 if (Common::Bit::And(surfaceType, EGL_WINDOW_BIT) == 0
                     || Common::Bit::And(renderType, EGL_OPENGL_BIT) == 0) {
@@ -385,10 +386,10 @@ public:
 
                 // Check for MSAA
                 EGLint samples = 0;
-                eglGetConfigAttrib(m_eglDisplay, configs[i], EGL_SAMPLES, &samples);
+                eglGetConfigAttrib(m_eglDisplay, config, EGL_SAMPLES, &samples);
 
                 if (samples >= 4 && matchedMsaaConfig == nullptr) {
-                    matchedMsaaConfig = configs[i];
+                    matchedMsaaConfig = config;
                     if constexpr (EGL_DEBUG) {
                         std::cout << "[EglContext] Found MSAA config for visual " << targetVisualId
                                   << " (samples=" << samples << ")" << std::endl;
@@ -396,7 +397,7 @@ public:
                 }
 
                 if (matchedConfig == nullptr) {
-                    matchedConfig = configs[i];
+                    matchedConfig = config;
                 }
 
                 // If we found both, we can stop

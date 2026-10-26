@@ -50,7 +50,7 @@ struct alignas(16) config_t final {
     [[nodiscard]] fpx_t toPhysRound(fpx_t css) const { return static_cast<fpx_t>(std::lround(css)) * scale; }
     [[nodiscard]] Ui::Res::Type::bound_t toPhysRound(const Ui::Res::Type::bound_t & css) const
     {
-        return { toPhysRound(css.x), toPhysRound(css.y), toPhysRound(css.w), toPhysRound(css.h) };
+        return { .x = toPhysRound(css.x), .y = toPhysRound(css.y), .w = toPhysRound(css.w), .h = toPhysRound(css.h) };
     }
 
     // physical px -> CSS px.

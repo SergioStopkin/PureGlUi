@@ -20,7 +20,6 @@
 #include "ui/type.h"
 
 #include <cmath>
-#include <cstdint>
 
 namespace Ui::Gl {
 
@@ -40,7 +39,7 @@ struct alignas(32) font_metrics_t final {
     // atlas uses GL_LINEAR - a fractional baseline blurs glyph pixels across rows.
     [[nodiscard]] fpx_t baseline(fpx_t cssY, fpx_t cssH, fpx_t scale) const
     {
-        return std::floor((cssY + (cssH - height) / 2.0F + ascent) * scale);
+        return std::floor((cssY + ((cssH - height) / 2.0F) + ascent) * scale);
     }
 
     // Cap-height baseline Y (physical px). Centers the cap block inside the CSS
@@ -51,7 +50,7 @@ struct alignas(32) font_metrics_t final {
     [[nodiscard]] fpx_t baselineCap(fpx_t cssY, fpx_t cssH, fpx_t scale) const
     {
         const fpx_t capHeight = (ascent + x_height) / 2.0F;
-        return std::floor((cssY + (cssH + capHeight) / 2.0F) * scale);
+        return std::floor((cssY + ((cssH + capHeight) / 2.0F)) * scale);
     }
 
     // Baseline Y for text sitting against the top of the box: the ascender

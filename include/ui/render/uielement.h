@@ -50,9 +50,9 @@ inline int toInt(UiElementType type) { return static_cast<int>(type); }
 // UiLayout::hitTest, UiRenderer::updateHover and PopupRenderer::onMousePress.
 // Text is the notable one: it is clickable (status bar copies on click) but
 // deliberately NOT hoverable, which used to be a `type != Text` test.
-[[nodiscard]] inline constexpr EventKind defaultAccepts(UiElementType type)
+[[nodiscard]] constexpr event_kinds_t defaultAccepts(UiElementType type)
 {
-    const auto clickAndHover = static_cast<EventKind>(Common::Bit::Or(EventKind::LeftClick, EventKind::Hover));
+    const event_kinds_t clickAndHover { EventKind::LeftClick, EventKind::Hover };
     switch (type) {
     case UiElementType::MenuButton:
     case UiElementType::ToolbarButton:
@@ -63,7 +63,7 @@ inline int toInt(UiElementType type) { return static_cast<int>(type); }
     case UiElementType::DockRow:
     case UiElementType::DockExpander:
     case UiElementType::DockMenu: return clickAndHover;
-    case UiElementType::Text: return EventKind::LeftClick;
+    case UiElementType::Text: return event_kinds_t(EventKind::LeftClick);
     // Drag only, all three, for their own reasons.
     //
     // Grip hover (the resize cursor) is still resolved geometrically by
@@ -76,9 +76,9 @@ inline int toInt(UiElementType type) { return static_cast<int>(type); }
     case UiElementType::DockSlider:
     case UiElementType::DockScrollbar: return ANY_DRAG;
     case UiElementType::Separator:
-    case UiElementType::Image: return EventKind::None;
+    case UiElementType::Image: return {};
     }
-    return EventKind::None;
+    return {};
 }
 
 } // namespace Ui::Render

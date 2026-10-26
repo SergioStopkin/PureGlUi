@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -117,7 +118,7 @@ private:
 
     static uint32_t decodeUtf8(std::string_view text, size_t & i)
     {
-        const auto b     = static_cast<unsigned char>(text[i]);
+        const auto b     = static_cast<unsigned char>(text.at(i));
         uint32_t   cp    = 0;
         size_t     extra = 0;
         if (b < 0x80U) {
@@ -141,7 +142,7 @@ private:
             if (i >= text.size()) {
                 return REPLACEMENT;
             }
-            const auto cc = static_cast<unsigned char>(text[i]);
+            const auto cc = static_cast<unsigned char>(text.at(i));
             if ((cc & 0xC0U) != 0x80U) {
                 return REPLACEMENT;
             }
@@ -153,10 +154,10 @@ private:
 
     static uint32_t decodeUtf16(std::u16string_view text, size_t & i)
     {
-        const auto unit = codeUnit(text[i]);
+        const auto unit = codeUnit(text.at(i));
         ++i;
         if (unit >= 0xD800U && unit <= 0xDBFFU && i < text.size()) {
-            const auto low = codeUnit(text[i]);
+            const auto low = codeUnit(text.at(i));
             if (low >= 0xDC00U && low <= 0xDFFFU) {
                 ++i;
                 return 0x10000U + (((unit - 0xD800U) << 10U) | (low - 0xDC00U));
@@ -168,10 +169,10 @@ private:
     static uint32_t decodeWide(std::wstring_view text, size_t & i)
     {
         if constexpr (sizeof(wchar_t) == 2) {
-            const auto unit = codeUnit(text[i]);
+            const auto unit = codeUnit(text.at(i));
             ++i;
             if (unit >= 0xD800U && unit <= 0xDBFFU && i < text.size()) {
-                const auto low = codeUnit(text[i]);
+                const auto low = codeUnit(text.at(i));
                 if (low >= 0xDC00U && low <= 0xDFFFU) {
                     ++i;
                     return 0x10000U + (((unit - 0xD800U) << 10U) | (low - 0xDC00U));
@@ -179,7 +180,7 @@ private:
             }
             return unit;
         } else {
-            const auto cp = codeUnit(text[i]);
+            const auto cp = codeUnit(text.at(i));
             ++i;
             return cp;
         }

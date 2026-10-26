@@ -26,8 +26,6 @@
 #include "ui/type.h"
 
 #include <functional>
-#include <iostream>
-#include <memory>
 #include <string>
 #include <utility>
 
@@ -95,13 +93,14 @@ public:
             derived().makeCurrent();
             auto rgba = m_bgColor.toGLRGBA();
             glClearColor(rgba.at(0), rgba.at(1), rgba.at(2), rgba.at(3));
-            derived().updateNativeBackground();
+            // Only a platform with a native background pixel to match has this hook, so the
+            // base declares none for it to shadow
+            if constexpr (requires { derived().updateNativeBackground(); }) {
+                derived().updateNativeBackground();
+            }
             requestRender();
         }
     }
-
-    // Platform hook: update native window background pixel (no-op by default)
-    void updateNativeBackground() { }
 
     void setRoundedCorners(bool enabled, fpx_t radius) override
     {
@@ -163,7 +162,7 @@ protected:
     Ui::Res::Type::bound_t m_bound {};
 
     // Background color
-    Ui::Color m_bgColor {};
+    Ui::Color m_bgColor;
 
     // Rounded corners state
     bool  m_rounded      = false;

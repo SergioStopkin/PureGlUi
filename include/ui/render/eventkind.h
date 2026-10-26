@@ -17,16 +17,14 @@
 
 #pragma once
 
-#include "common/bit.h"
+#include "common/flags.h"
 
 #include <cstdint>
 
 namespace Ui::Render {
 
-// What can happen to a UI element. Doubles as the per-element capability mask:
-// an element declares the set it accepts, and anything outside that set never
-// reaches it. Combine and test with Common::Bit, as Ui::Res::Type::Changed does
-// - no bitwise operators are defined for it.
+// What can happen to a UI element. Its set, event_kinds_t, is the per-element capability
+// mask: an element declares the set it accepts, and anything outside that set never reaches it
 //
 // This is what replaces asking "what type is this element?" in four separate
 // switches. A new interactive element declares its mask instead.
@@ -43,18 +41,16 @@ enum class EventKind : uint16_t {
     Scroll      = 0x0100,
 };
 
+// The events an element accepts
+using event_kinds_t = Common::flags_t<EventKind>;
+
 // Every click flavour, for an element that wants presses without caring which
 // button - and so a mask can be written without spelling out four constants
-inline constexpr EventKind ANY_CLICK = static_cast<EventKind>(
-Common::Bit::Or(Common::Bit::Or(EventKind::LeftClick, EventKind::RightClick),
-                Common::Bit::Or(EventKind::MiddleClick, EventKind::DoubleClick)));
+inline constexpr event_kinds_t ANY_CLICK { EventKind::LeftClick,
+                                           EventKind::RightClick,
+                                           EventKind::MiddleClick,
+                                           EventKind::DoubleClick };
 
-inline constexpr EventKind ANY_DRAG = static_cast<EventKind>(
-Common::Bit::Or(Common::Bit::Or(EventKind::DragStart, EventKind::Drag), EventKind::DragEnd));
-
-[[nodiscard]] inline constexpr bool acceptsEvent(EventKind mask, EventKind event)
-{
-    return Common::Bit::And(mask, event) != 0U;
-}
+inline constexpr event_kinds_t ANY_DRAG { EventKind::DragStart, EventKind::Drag, EventKind::DragEnd };
 
 } // namespace Ui::Render

@@ -1,6 +1,6 @@
 # PureGlUi API Documentation
 
-PureGlUi is a domain-blind C++20 desktop UI framework built directly on EGL/OpenGL
+PureGlUi is a domain-blind C++23 desktop UI framework built directly on EGL/OpenGL
 (no GLFW, no GLX). It decides *what* to draw and *where*, and *what an input means*
 (as an intent). It knows menus, tabs, dialogs, themes, layout, and shortcuts, but it
 never knows what "OpenFile" or "a 3D model" or "a workspace" *is* - a host supplies
@@ -53,7 +53,7 @@ Input and execution are decoupled through a tagged intent vocabulary:
   (a tagged `IntentKind` + payload). See [render.md](render.md), [vocabulary.md](vocabulary.md).
 - Intents-in: `Ui::routeIntent(intent, chrome)` is a pure `IntentKind -> command`
   switch over `Ui::IChromeCommands` (emitAction/openPopup/openDialog/setActiveTab/...).
-  `Ui::Shell` privately implements `IChromeCommands`. See [interfaces.md](interfaces.md).
+  `Ui::Shell` publicly implements `IChromeCommands`. See [interfaces.md](interfaces.md).
 
 This is why the framework is host-free: the same intent stream can be recorded,
 tested headlessly, or executed against a live shell.

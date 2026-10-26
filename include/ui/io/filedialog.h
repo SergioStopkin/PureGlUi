@@ -26,9 +26,10 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
-#if defined(_WIN32)
+#ifdef _WIN32
 // clang-format off
 #include <windows.h>
 // clang-format on
@@ -36,15 +37,19 @@
 // LPTBBUTTON and HIMAGELIST without including commctrl.h itself.
 #include <commctrl.h>
 #include <shobjidl.h>
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 // Workaround for Xcode 16.4 SDK regression: Icons.h in HIServices uses CALLBACK_API
 // which is undefined in 64-bit C++ mode, causing "use of undeclared identifier" errors.
 #define __ICONS__
 #import <Cocoa/Cocoa.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
-#elif defined(__linux__)
-#include <cstdio>
-#include <memory>
+#elifdef __linux__
+#include <cstddef>
+#include <fcntl.h>
+#include <spawn.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace Ui::Io {
@@ -70,9 +75,9 @@ public:
                                               const std::string &                             title,
                                               const std::vector<file_filter_t> &              filters)
     {
-#if defined(_WIN32)
+#ifdef _WIN32
         return openFilesWin32(owner, startDir, title, filters);
-#elif defined(__APPLE__)
+#elifdef __APPLE__
         return openFilesMacOs(startDir, title, filters);
 #else
         return openFilesLinux(startDir, title, filters);
@@ -80,27 +85,16 @@ public:
     }
 
 private:
-#if defined(_WIN32)
-    // COM out-parameter: interfaces are returned through void**. Project rule:
-    // no reinterpret_cast - the two-step static_cast through void* is the same
-    // defined operation, and this named helper is its single home.
-    template <typename T>
-    static void ** comOut(T ** interfacePointer)
-    {
-        return static_cast<void **>(static_cast<void *>(interfacePointer));
-    }
-#endif
-
     // Canonical spec is semicolon-separated globs ("*.step;*.iges"). Most native
     // dialogs want space-separated; macOS wants bare extensions.
     static std::string specToSpaces(const std::string & spec)
     {
         std::string out = spec;
-        std::replace(out.begin(), out.end(), ';', ' ');
+        std::ranges::replace(out, ';', ' ');
         return out;
     }
 
-#if defined(_WIN32)
+#ifdef _WIN32
     static std::vector<std::string> openFilesWin32(HWND                               owner,
                                                    const std::string &                startDir,
                                                    const std::string &                title,
@@ -114,8 +108,9 @@ private:
             return files;
         }
 
+        // IID_PPV_ARGS names the interface from the pointer's type and hands COM its void**
         IFileOpenDialog * dialog = nullptr;
-        hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_IFileOpenDialog, comOut(&dialog));
+        hr                       = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&dialog));
         if (FAILED(hr)) {
             CoUninitialize();
             return files;
@@ -140,14 +135,14 @@ private:
         storage.emplace_back(L"All files");
         storage.emplace_back(L"*.*");
         for (size_t i = 0; i + 1 < storage.size(); i += 2) {
-            specs.push_back({ storage[i].c_str(), storage[i + 1].c_str() });
+            specs.push_back({ .pszName = storage.at(i).c_str(), .pszSpec = storage.at(i + 1).c_str() });
         }
         dialog->SetFileTypes(static_cast<UINT>(specs.size()), specs.data());
 
         if (!startDir.empty()) {
             const std::wstring wideDir = Common::Unicode::fromUtf8(startDir);
             IShellItem *       folder  = nullptr;
-            hr = SHCreateItemFromParsingName(wideDir.c_str(), nullptr, IID_IShellItem, comOut(&folder));
+            hr                         = SHCreateItemFromParsingName(wideDir.c_str(), nullptr, IID_PPV_ARGS(&folder));
             if (SUCCEEDED(hr)) {
                 dialog->SetFolder(folder);
                 folder->Release();
@@ -180,7 +175,7 @@ private:
         CoUninitialize();
         return files;
     }
-#elif defined(__APPLE__)
+#elifdef __APPLE__
     static std::vector<std::string> openFilesMacOs(const std::string &                startDir,
                                                    const std::string &                title,
                                                    const std::vector<file_filter_t> & filters)
@@ -243,47 +238,78 @@ private:
         const std::string dir      = startDir.empty() ? "." : startDir;
         const std::string dlgTitle = title.empty() ? "Open File" : title;
 
-        // zenity (GNOME/GTK) filter args + kdialog (KDE) filter string, both
-        // derived from the supplied filters; a trailing "All files" is appended.
-        std::string zenityFilters;
-        std::string kdialogFilter;
+        // zenity (GNOME/GTK) and kdialog (KDE), each an argv of its own: no shell runs
+        // them, so a quote in a folder or a title is one more character of its argument.
+        // Both take the supplied filters plus a trailing "All files"
+        std::vector<std::string> zenity = { "zenity",     "--file-selection", "--title=" + dlgTitle,
+                                            "--multiple", "--separator=\n",   "--filename=" + dir + "/" };
+        std::string              kdialogFilter;
         for (const auto & filter : filters) {
             const std::string patterns = specToSpaces(filter.spec);
-            zenityFilters += " --file-filter='" + filter.name + "|" + patterns + "'";
+            zenity.emplace_back("--file-filter=" + filter.name + "|" + patterns);
             kdialogFilter += patterns + "|" + filter.name + "\n";
         }
-        zenityFilters += " --file-filter='All files|*'";
+        zenity.emplace_back("--file-filter=All files|*");
         kdialogFilter += "*|All files";
 
-        // Both support multi-selection (Ctrl+click, Shift+click).
-        const std::array<std::string, 2> commands = {
-            "zenity --file-selection --title='" + dlgTitle + "' --multiple --separator='\n' --filename='" + dir + "/'"
-            + zenityFilters + " 2>/dev/null",
-
-            "kdialog --getopenfilename --multiple '" + dir + "' '" + kdialogFilter + "' 2>/dev/null"
+        // Both support multi-selection (Ctrl+click, Shift+click)
+        const std::array<std::vector<std::string>, 2> commands = {
+            std::move(zenity),
+            std::vector<std::string> { "kdialog", "--getopenfilename", "--multiple", dir, kdialogFilter },
         };
-
         for (const auto & command : commands) {
-            // NOLINTNEXTLINE(cert-env33-c)
-            std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
-            if (!pipe) {
-                continue;
-            }
-
-            std::string           result;
-            std::array<char, 256> buffer {};
-            while (std::fgets(buffer.data(), static_cast<int>(buffer.size()), pipe.get()) != nullptr) {
-                result += buffer.data();
-            }
-
-            const int status = pclose(pipe.release());
-            if (status == 0 && !result.empty()) {
+            std::string result = outputOf(command);
+            if (!result.empty()) {
                 return splitLines(result);
             }
         }
 
         std::cerr << "[FileDialog] No file dialog available (install zenity or kdialog)" << std::endl;
         return {};
+    }
+
+    // A program's stdout, run straight from its argv with no shell; empty when it is
+    // missing, fails or is cancelled. Its stderr goes nowhere
+    static std::string outputOf(std::vector<std::string> args)
+    {
+        std::vector<char *> argv;
+        argv.reserve(args.size() + 1);
+        for (std::string & arg : args) {
+            argv.emplace_back(arg.data());
+        }
+        argv.emplace_back(nullptr);
+
+        // Both ends close on exec, so the child keeps only the copy made its stdout
+        std::array<int, 2> pipeEnds {};
+        if (pipe2(pipeEnds.data(), O_CLOEXEC) != 0) {
+            return {};
+        }
+        posix_spawn_file_actions_t actions {};
+        posix_spawn_file_actions_init(&actions);
+        posix_spawn_file_actions_adddup2(&actions, pipeEnds.at(1), STDOUT_FILENO);
+        posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+        pid_t      child     = 0;
+        const bool isSpawned = posix_spawnp(&child, argv.at(0), &actions, nullptr, argv.data(), environ) == 0;
+        posix_spawn_file_actions_destroy(&actions);
+        close(pipeEnds.at(1));
+
+        std::string           output;
+        std::array<char, 256> buffer {};
+        while (isSpawned) {
+            const ssize_t count = read(pipeEnds.at(0), buffer.data(), buffer.size());
+            if (count <= 0) {
+                break;
+            }
+            output.append(buffer.data(), static_cast<std::size_t>(count));
+        }
+        close(pipeEnds.at(0));
+
+        // A wait status of 0 is a normal exit with code 0
+        int status = 0;
+        if (!isSpawned || waitpid(child, &status, 0) != child || status != 0) {
+            return {};
+        }
+        return output;
     }
 #endif
 

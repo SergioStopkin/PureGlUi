@@ -21,6 +21,7 @@
 #include "nlohmann/json.hpp"
 #include "ui/res/respath.h"
 
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <string>

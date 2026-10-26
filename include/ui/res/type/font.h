@@ -18,17 +18,13 @@
 #pragma once
 
 #include "common/hash.h"
+#include "ui/res/type/fontweight.h"
 
 #include <cstddef>
 #include <functional>
 #include <string>
 
 namespace Ui::Res::Type {
-
-enum class FontWeight : unsigned char {
-    Regular = 0,
-    Bold,
-};
 
 struct alignas(64) font_t final {
     std::string family;

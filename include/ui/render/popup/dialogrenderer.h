@@ -20,33 +20,27 @@
 #include "common/time.h"
 #include "common/unicode.h"
 #include "ui/gl/textalign.h"
+#include "ui/render/popup/dialogbutton.h"
 #include "ui/render/popup/popuprendererbase.h"
 #include "ui/render/scrollbar.h"
 #include "ui/render/uielementstate.h"
 #include "ui/res/type/dialog.h"
+#include "ui/res/type/dialogaction.h"
+#include "ui/res/type/dialogtype.h"
 #include "ui/type.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace Ui::Render::Popup {
-
-struct alignas(64) dialog_button_t final {
-    Ui::Res::Type::bound_t      bound {};
-    std::string                 label;
-    Ui::Render::UiElementState  state   = Ui::Render::UiElementState::None;
-    bool                        primary = false;
-    Ui::Res::Type::DialogAction action  = Ui::Res::Type::DialogAction::None;
-
-    bool operator==(const dialog_button_t &) const = default;
-};
 
 /**
  * @brief Renderer for modal dialog windows
@@ -121,7 +115,7 @@ public:
                 targetIndex = m_keyboardFocus;
             } else {
                 for (size_t i = 0; i < m_buttons.size(); ++i) {
-                    if (m_buttons[i].primary) {
+                    if (m_buttons.at(i).primary) {
                         targetIndex = i;
                         break;
                     }
@@ -129,9 +123,9 @@ public:
             }
             if (targetIndex != Ui::INVALID_ID) {
                 clearKeyboardFocus();
-                m_buttons[targetIndex].state = Ui::Render::UiElementState::Hovered;
-                m_keyAnimationTarget         = KeyAnimationTarget::Button;
-                m_keyAnimationIndex          = targetIndex;
+                m_buttons.at(targetIndex).state = Ui::Render::UiElementState::Hovered;
+                m_keyAnimationTarget            = KeyAnimationTarget::Button;
+                m_keyAnimationIndex             = targetIndex;
                 startKeyAnimation();
             }
         } else if (key == "Left") {
@@ -233,7 +227,7 @@ public:
                                              int y,
                                              Ui::Window::MouseButton /*button*/,
                                              int /*clickCount*/,
-                                             Ui::Window::KeyModifier /*modifiers*/) override
+                                             Ui::Window::key_modifiers_t /*modifiers*/) override
     {
         const fpx_t cssX = toCss(x);
         const fpx_t cssY = toCss(y);
@@ -330,7 +324,7 @@ private:
             if (m_keyAnimationTarget == KeyAnimationTarget::Close) {
                 m_closeState = Ui::Render::UiElementState::Active;
             } else if (m_keyAnimationTarget == KeyAnimationTarget::Button && m_keyAnimationIndex < m_buttons.size()) {
-                m_buttons[m_keyAnimationIndex].state = Ui::Render::UiElementState::Active;
+                m_buttons.at(m_keyAnimationIndex).state = Ui::Render::UiElementState::Active;
             }
         }
 
@@ -341,9 +335,9 @@ private:
                 m_closeState = Ui::Render::UiElementState::None;
                 dismiss();
             } else if (m_keyAnimationTarget == KeyAnimationTarget::Button && m_keyAnimationIndex < m_buttons.size()) {
-                m_buttons[m_keyAnimationIndex].state = Ui::Render::UiElementState::None;
+                m_buttons.at(m_keyAnimationIndex).state = Ui::Render::UiElementState::None;
                 if (m_onClose) {
-                    m_onClose(m_buttons[m_keyAnimationIndex].action);
+                    m_onClose(m_buttons.at(m_keyAnimationIndex).action);
                 }
             }
             m_keyAnimationTarget = KeyAnimationTarget::None;
@@ -374,7 +368,7 @@ private:
 
         // Clear previous hover state
         if (m_keyboardFocus != Ui::INVALID_ID && m_keyboardFocus < count) {
-            m_buttons[m_keyboardFocus].state = Ui::Render::UiElementState::None;
+            m_buttons.at(m_keyboardFocus).state = Ui::Render::UiElementState::None;
         }
 
         if (m_keyboardFocus == Ui::INVALID_ID) {
@@ -387,7 +381,7 @@ private:
             m_keyboardFocus = static_cast<size_t>(next) % count;
         }
 
-        m_buttons[m_keyboardFocus].state = Ui::Render::UiElementState::Hovered;
+        m_buttons.at(m_keyboardFocus).state = Ui::Render::UiElementState::Hovered;
 
         if (m_renderRequest) {
             m_renderRequest();
@@ -455,9 +449,9 @@ private:
             if (m_font != 0) {
                 const std::string & text = m_resManager.localeManager().get(btn.label);
                 auto                tw   = m_fontRenderer.textWidth(m_font, text);
-                textW                    = std::max(layout.dialogButtonMinW, tw + layout.dialogButtonPad * 2);
+                textW                    = std::max(layout.dialogButtonMinW, tw + (layout.dialogButtonPad * 2));
             }
-            btn.bound = { 0, btnY, textW, layout.dialogButtonH };
+            btn.bound = { .y = btnY, .w = textW, .h = layout.dialogButtonH };
             totalW += textW;
         }
         totalW += layout.dialogButtonPad * static_cast<fpx_t>(m_buttons.size() - 1);
@@ -475,11 +469,11 @@ private:
         const auto & layout     = m_resManager.layout();
         const fpx_t  dialogCssW = m_width > 0 ? toCss(m_width) : layout.dialog.width;
         const fpx_t  margin     = layout.dialogCloseMargin;
-        const fpx_t  totalSize  = layout.dialogCloseSize + margin * 2;
-        m_closeBound            = { dialogCssW - layout.dialogCloseRight - totalSize,
-                                    layout.dialogCloseTop,
-                                    totalSize,
-                                    totalSize };
+        const fpx_t  totalSize  = layout.dialogCloseSize + (margin * 2);
+        m_closeBound            = { .x = dialogCssW - layout.dialogCloseRight - totalSize,
+                                    .y = layout.dialogCloseTop,
+                                    .w = totalSize,
+                                    .h = totalSize };
     }
 
     void renderDialog(bool premultiplied)
@@ -499,7 +493,9 @@ private:
 
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         m_rounded.begin(m_width, m_height, g_config.scale);
-        m_rounded.draw({ 0, 0, cssW, cssH }, m_resManager.layout().dialog.border, { theme.dialog.bg, bgColor });
+        m_rounded.draw({ .w = cssW, .h = cssH },
+                       m_resManager.layout().dialog.border,
+                       { .fg = theme.dialog.bg, .bg = bgColor });
 
         for (const auto & btn : m_buttons) {
             Ui::Color                    btnBg;
@@ -516,16 +512,16 @@ private:
             } else {
                 btnBg = theme.dialogButton.bg;
             }
-            m_rounded.draw(btnBound, m_resManager.layout().dialogButtonBorder, { btnBg, bgColor });
+            m_rounded.draw(btnBound, m_resManager.layout().dialogButtonBorder, { .fg = btnBg, .bg = bgColor });
         }
 
         // Close button (X) background - skip when inherited (already drawn by dialog bg)
         {
-            const Ui::Color rawBg = (m_closeState == Ui::Render::UiElementState::Active)  ? theme.dialogCloseActive.bg
-                                  : (m_closeState == Ui::Render::UiElementState::Hovered) ? theme.dialogCloseHover.bg
-                                                                                          : theme.dialogClose.bg;
+            const Ui::Color rawBg = closeColors(theme).bg;
             if (!rawBg.isInherit()) {
-                m_rounded.draw(m_closeBound, m_resManager.layout().dialogCloseBorder, { rawBg, theme.dialog.bg });
+                m_rounded.draw(m_closeBound,
+                               m_resManager.layout().dialogCloseBorder,
+                               { .fg = rawBg, .bg = theme.dialog.bg });
             }
         }
 
@@ -541,10 +537,10 @@ private:
             const Ui::Color & iconColor = (m_dialog.type == Ui::Res::Type::DialogType::Warning) ? theme.colorWarn
                                                                                                 : theme.colorInfo;
             m_svgRenderer.drawTinted(m_iconKey,
-                                     { iconBound.x * g_config.scale,
-                                       iconBound.y * g_config.scale,
-                                       iconBound.w * g_config.scale,
-                                       iconBound.h * g_config.scale },
+                                     { .x = iconBound.x * g_config.scale,
+                                       .y = iconBound.y * g_config.scale,
+                                       .w = iconBound.w * g_config.scale,
+                                       .h = iconBound.h * g_config.scale },
                                      iconColor);
         }
 
@@ -554,12 +550,9 @@ private:
             const fpx_t closeY = (m_closeBound.y + margin) * g_config.scale;
             const fpx_t closeS = m_resManager.layout().dialogCloseSize * g_config.scale;
 
-            const Ui::Color closeColor = (m_closeState == Ui::Render::UiElementState::Active)
-                                       ? theme.dialogCloseActive.fg
-                                       : (m_closeState == Ui::Render::UiElementState::Hovered)
-                                       ? theme.dialogCloseHover.fg
-                                       : theme.dialogClose.fg;
-            m_svgRenderer.drawTinted(m_closeIconKey, { closeX, closeY, closeS, closeS }, closeColor);
+            m_svgRenderer.drawTinted(m_closeIconKey,
+                                     { .x = closeX, .y = closeY, .w = closeS, .h = closeS },
+                                     closeColors(theme).fg);
         }
 
         endSvgDraw();
@@ -570,7 +563,7 @@ private:
             auto * titleFr = fontRenderer.font(m_titleFont);
             if (titleFr != nullptr && titleFr->program != 0U) {
                 const auto textW    = fontRenderer.textWidth(m_titleFont, titleText);
-                const auto startX   = Ui::Gl::TextAlign::startXCenter({ 0, 0, cssW, 0 }, textW, g_config.scale);
+                const auto startX   = Ui::Gl::TextAlign::startXCenter({ .w = cssW }, textW, g_config.scale);
                 const auto baseline = titleFr->metrics.baselineCap(m_resManager.layout().dialog.padding,
                                                                    m_resManager.layout().dialogTitleHeight,
                                                                    g_config.scale);
@@ -601,7 +594,7 @@ private:
                 // Available text width (reserve scrollbar space using hover extent)
                 const fpx_t scrollbarLeftEdge = cssW - layout.dialog.padding - layout.scrollbarHoverRight
                                               - layout.scrollbarHoverW;
-                const float maxTextWidth = (scrollbarLeftEdge - layout.dialog.padding) * g_config.scale;
+                const float maxTextWidth      = (scrollbarLeftEdge - layout.dialog.padding) * g_config.scale;
 
                 // Word-wrap: split on \n first, then wrap long lines
                 auto wrappedLines = Ui::Gl::FontRenderer::wrapText(*fr, contentText, maxTextWidth);
@@ -661,10 +654,12 @@ private:
                     // The strip the bar lives at the right edge of; ScrollBar puts
                     // it there, in whichever state it is in, and answers with the
                     // geometry and colours both this and the docks draw from
-                    m_scrollBar.setGeometry(
-                    { layout.dialog.padding, contentTop, cssW - (layout.dialog.padding * 2.0F), m_viewportHeight },
-                    m_contentHeight,
-                    m_viewportHeight);
+                    m_scrollBar.setGeometry({ .x = layout.dialog.padding,
+                                              .y = contentTop,
+                                              .w = cssW - (layout.dialog.padding * 2.0F),
+                                              .h = m_viewportHeight },
+                                            m_contentHeight,
+                                            m_viewportHeight);
 
                     const Ui::Res::Type::border_t border    = m_scrollBar.radius();
                     const Ui::Res::Type::bound_t  drawTrack = m_scrollBar.track();
@@ -677,21 +672,26 @@ private:
                     const Ui::Color   thumbBgTop    = atTop ? theme.dialog.bg : theme.scrollbarTrack;
                     const Ui::Color   thumbBgBottom = atBottom ? theme.dialog.bg : theme.scrollbarTrack;
 
-                    m_rounded.draw(drawTrack, border, { theme.scrollbarTrack, theme.dialog.bg });
+                    m_rounded.draw(drawTrack, border, { .fg = theme.scrollbarTrack, .bg = theme.dialog.bg });
 
                     if (atTop == atBottom) {
-                        m_rounded.draw(drawThumb, border, { thumbColor, thumbBgTop });
+                        m_rounded.draw(drawThumb, border, { .fg = thumbColor, .bg = thumbBgTop });
                     } else {
-                        const Ui::Res::Type::border_t topBorder    = { border.topLeft, border.topRight, 0, 0 };
-                        const Ui::Res::Type::border_t bottomBorder = { 0, 0, border.bottomLeft, border.bottomRight };
+                        const Ui::Res::Type::border_t topBorder    = { .topLeft  = border.topLeft,
+                                                                       .topRight = border.topRight };
+                        const Ui::Res::Type::border_t bottomBorder = { .bottomRight = border.bottomRight,
+                                                                       .bottomLeft  = border.bottomLeft };
                         const fpx_t                   halfH        = drawThumb.h / 2;
-                        const Ui::Res::Type::bound_t  topHalf      = { drawThumb.x, drawThumb.y, drawThumb.w, halfH };
-                        const Ui::Res::Type::bound_t  bottomHalf   = { drawThumb.x,
-                                                                       drawThumb.y + halfH,
-                                                                       drawThumb.w,
-                                                                       drawThumb.h - halfH };
-                        m_rounded.draw(topHalf, topBorder, { thumbColor, thumbBgTop });
-                        m_rounded.draw(bottomHalf, bottomBorder, { thumbColor, thumbBgBottom });
+                        const Ui::Res::Type::bound_t  topHalf      = { .x = drawThumb.x,
+                                                                       .y = drawThumb.y,
+                                                                       .w = drawThumb.w,
+                                                                       .h = halfH };
+                        const Ui::Res::Type::bound_t  bottomHalf   = { .x = drawThumb.x,
+                                                                       .y = drawThumb.y + halfH,
+                                                                       .w = drawThumb.w,
+                                                                       .h = drawThumb.h - halfH };
+                        m_rounded.draw(topHalf, topBorder, { .fg = thumbColor, .bg = thumbBgTop });
+                        m_rounded.draw(bottomHalf, bottomBorder, { .fg = thumbColor, .bg = thumbBgBottom });
                     }
                     Ui::Gl::Rounded::end();
                 }
@@ -704,10 +704,10 @@ private:
             if (!linkText.empty()) {
                 auto * fr = fontRenderer.font(m_font);
                 if (fr != nullptr && fr->program != 0U) {
-                    const fpx_t lineH = fr->metrics.height * m_resManager.theme().dialogLineHeight;
-                    const fpx_t linkY = cssH - m_resManager.layout().dialog.padding
-                                      - m_resManager.layout().dialogButtonH - m_resManager.layout().dialogButtonPad
-                                      - lineH;
+                    const fpx_t lineH    = fr->metrics.height * m_resManager.theme().dialogLineHeight;
+                    const fpx_t linkY    = cssH - m_resManager.layout().dialog.padding
+                                         - m_resManager.layout().dialogButtonH - m_resManager.layout().dialogButtonPad
+                                         - lineH;
                     const float startX   = m_resManager.layout().dialog.padding * g_config.scale;
                     const auto  baseline = fr->metrics.baseline(linkY, lineH, g_config.scale);
                     auto        verts    = Ui::Gl::FontRenderer::buildTextVerts(*fr, linkText, startX, baseline);
@@ -759,7 +759,19 @@ private:
 
     static Ui::Res::Type::bound_t shiftedBound(const Ui::Res::Type::bound_t & bound, fpx_t shift)
     {
-        return { bound.x + shift, bound.y + shift, bound.w, bound.h };
+        return { .x = bound.x + shift, .y = bound.y + shift, .w = bound.w, .h = bound.h };
+    }
+
+    // The close button's colours in its state, read for its background and its glyph alike
+    [[nodiscard]] const Ui::Res::Type::color_pair_t & closeColors(const Ui::Res::Type::theme_t & theme) const
+    {
+        if (m_closeState == Ui::Render::UiElementState::Active) {
+            return theme.dialogCloseActive;
+        }
+        if (m_closeState == Ui::Render::UiElementState::Hovered) {
+            return theme.dialogCloseHover;
+        }
+        return theme.dialogClose;
     }
 
     Ui::Res::Type::dialog_t      m_dialog;
@@ -779,7 +791,7 @@ private:
     // Geometry is only known at render (it depends on the dialog width), so the
     // bar keeps it for the event handlers - a popup has no UiLayout to derive from
     Ui::Render::ScrollBar m_scrollBar { m_resManager };
-    Common::Time::point_t m_lastFrameTime {};
+    Common::Time::point_t m_lastFrameTime;
     Ui::task_fn_t         m_renderRequest;
 
     // Keyboard animation state
@@ -787,7 +799,7 @@ private:
     int                   m_keyAnimationPhase {};
     size_t                m_keyAnimationIndex {};
     KeyAnimationTarget    m_keyAnimationTarget = KeyAnimationTarget::None;
-    Common::Time::point_t m_keyAnimationStart {};
+    Common::Time::point_t m_keyAnimationStart;
 };
 
 } // namespace Ui::Render::Popup

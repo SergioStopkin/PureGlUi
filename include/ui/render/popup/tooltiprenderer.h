@@ -52,10 +52,12 @@ public:
             return true;
         }
 
-        const Ui::Res::Type::bound_t bound = { 0, 0, toCss(m_width), toCss(m_height) };
+        const Ui::Res::Type::bound_t bound = { .w = toCss(m_width), .h = toCss(m_height) };
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         m_rounded.begin(m_width, m_height, g_config.scale);
-        m_rounded.draw(bound, box.border, { colors.bg, premultiplied ? Ui::Color::TransparentBlack() : colors.bg });
+        m_rounded.draw(bound,
+                       box.border,
+                       { .fg = colors.bg, .bg = premultiplied ? Ui::Color::TransparentBlack() : colors.bg });
         Ui::Gl::Rounded::end();
 
         auto * font = m_fontRenderer.font(m_font);
@@ -79,7 +81,7 @@ public:
                                              int /*y*/,
                                              Ui::Window::MouseButton /*button*/,
                                              int /*clickCount*/,
-                                             Ui::Window::KeyModifier /*modifiers*/) override
+                                             Ui::Window::key_modifiers_t /*modifiers*/) override
     {
         return {};
     }

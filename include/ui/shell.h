@@ -40,6 +40,8 @@
 #include "ui/render/uielement.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/dialog.h"
+#include "ui/res/type/dialogaction.h"
 #include "ui/res/type/layout.h"
 #include "ui/res/util.h"
 #include "ui/result.h"
@@ -47,6 +49,7 @@
 #include "ui/type.h"
 #include "ui/window/displaystextof.h"
 #include "ui/window/event.h"
+#include "ui/window/eventtype.h"
 #include "ui/window/nativewindow.h"
 #include "ui/window/windowmanager.h"
 
@@ -80,7 +83,7 @@ constexpr bool SHELL_DEBUG = false;
  * temp status). A host composes a Shell, adds content +
  * domain actions, and wires the domain hooks (tab activate/close, key press).
  */
-class Shell final : private Common::NonCopyable, private Ui::IChromeCommands {
+class Shell final : public Ui::IChromeCommands, private Common::NonCopyable {
 public:
     // No banner here: m_resManager is constructed - and logs its app.json load -
     // before this body runs, so anything printed here can never be the first line.
@@ -119,9 +122,12 @@ public:
     void setOnTabActivated(std::function<void(id_t)> fn) { m_onTabActivated = std::move(fn); }
     void setOnTabClosed(std::function<void(id_t)> fn) { m_onTabClosed = std::move(fn); }
 
-    // Activate a tab as a click on it does. The one chrome command in public, for
-    // an action that picks the tab itself (CycleTab), so the strip scrolls it into
-    // view - a click's tab is already in it
+    // -- IChromeCommands: the window/chrome commands routeIntent() drives. The
+    // domain-coupled ones (tabs, dock rows) fire host hooks
+
+    // Activate a tab as a click on it does. An action that picks the tab itself
+    // (CycleTab) calls it too, so the strip scrolls it into view - a click's tab is
+    // already in it
     void setActiveTab(id_t tabId) override
     {
         if (m_onTabActivated) {
@@ -142,6 +148,90 @@ public:
                                               order.size()));
         if (tabBar.scrollOffset() != before) {
             m_windowManager.requestContentRefresh();
+        }
+    }
+
+    void emitAction(const std::string & actionKey, const std::string & arg) override
+    {
+        // arg is the item label (value) for parameterized actions, "" otherwise.
+        m_actions.dispatch(actionKey, arg);
+    }
+
+    [[nodiscard]] bool isPopupOpen() const override { return m_openMenuId != Ui::INVALID_ID; }
+
+    void openPopup(id_t menuId) override { createMenuPopup(menuId); }
+
+    void closePopup() override
+    {
+        // Deferred: the click may originate inside the popup window we are about to
+        // destroy, so close after the current event drains. routeIntent has already
+        // gated this on isPopupOpen().
+        m_openMenuId = Ui::INVALID_ID;
+        m_resManager.clearActiveMenu();
+        m_windowManager.requestContentRefresh();
+        m_windowManager.subscribe().defer([this]() { destroyPopup(); });
+    }
+
+    void openDialog(id_t itemId) override
+    {
+        const Ui::Res::Type::menu_t item = m_resManager.findMenuItem(itemId);
+        m_hoveredMenuId                  = Ui::INVALID_ID;
+        m_windowManager.onMouseLeave();
+        m_windowManager.subscribe().defer([this, dialog = item.dialog]() { m_windowManager.openDialog(dialog); });
+    }
+
+    void closeTab(id_t tabId) override
+    {
+        if (m_onTabClosed) {
+            m_onTabClosed(tabId);
+        }
+    }
+
+    void activateRow(id_t rowId) override
+    {
+        if (m_onDockRowActivated) {
+            m_onDockRowActivated(rowId);
+        }
+    }
+
+    void openRowMenu(id_t elementId) override
+    {
+        // The press that started this click already closed this row's menu, so the
+        // click IS the close - opening again would leave the chevron unable to close
+        if (m_pressClosedRowMenu == elementId) {
+            m_pressClosedRowMenu = Ui::INVALID_ID;
+            return;
+        }
+        const Ui::Res::Type::menu_t menu = m_resManager.findMenuItemByKey(m_windowManager.rowMenuKey(elementId));
+        if (menu.id == Ui::INVALID_ID || menu.items.empty()) {
+            std::cerr << "[Shell] Dock row names no menu with items: element " << elementId << std::endl;
+            return;
+        }
+
+        // Right-aligned under the row, where the value and its chevron sit - and above
+        // the row when the list would run past the bottom of the window, which is
+        // where a dock's last rows are. The row element's bound is the whole row:
+        // its value column shares the id and is laid out after it
+        const Ui::Res::Type::bound_t & row     = m_windowManager.elementBound(elementId);
+        const fpx_t                    height  = menuPopupCssHeight(menu);
+        const fpx_t                    below   = row.y + row.h;
+        const bool                     isBelow = below + height <= toCss(m_windowManager.windowHeight());
+        const fpx_t x = std::max(0.0F, row.x + row.w - m_windowManager.menuPopupCssWidth(menu.items));
+        showMenuPopup(menu, x, isBelow ? below : row.y - height);
+        m_rowMenuElement = elementId;
+    }
+
+    void toggleRow(id_t rowId) override
+    {
+        if (m_onDockRowToggled) {
+            m_onDockRowToggled(rowId);
+        }
+    }
+
+    void copyText(const std::string & text) override
+    {
+        if (m_windowManager.copyToClipboard(text)) {
+            showTempStatus(m_resManager.localeManager().get("StatusCopiedToClipboard"));
         }
     }
 
@@ -305,7 +395,7 @@ public:
         // A node two levels deep that has children is the submenu to reopen
         // (covers both a hovered submenu-parent and a hovered submenu-child).
         if (segments.size() >= 2) {
-            const Ui::key_t             parentKey = segments[0] + ":" + segments[1];
+            const Ui::key_t             parentKey = segments.at(0) + ":" + segments.at(1);
             const Ui::Res::Type::menu_t parent    = m_resManager.findMenuItemByKey(parentKey);
             if (parent.id != Ui::INVALID_ID && !parent.items.empty()) {
                 m_windowManager.reopenSubmenu(parent.id);
@@ -1138,7 +1228,7 @@ private:
     void createMenuPopup(id_t menuId)
     {
         const auto & menus = m_resManager.menus();
-        auto         it = std::find_if(menus.begin(), menus.end(), [menuId](const auto & m) { return m.id == menuId; });
+        const auto   it    = std::ranges::find(menus, menuId, &Ui::Res::Type::menu_t::id);
 
         if (it == menus.end()) {
             std::cerr << "[Shell] Menu not found: " << menuId << std::endl;
@@ -1217,7 +1307,7 @@ private:
 
         const Ui::Res::Type::border_t popupRadii = m_resManager.layout().topMenuDropdown.border.scaled(g_config.scale);
 
-        const Ui::Res::Type::bound_t popupBound = { buttonX, buttonY, popupWidth, popupHeight };
+        const Ui::Res::Type::bound_t popupBound = { .x = buttonX, .y = buttonY, .w = popupWidth, .h = popupHeight };
         if (!m_windowManager.createPopup(popupBound, popupRadii, m_resManager.theme().second.bg)) {
             std::cerr << "[Shell] Failed to create popup window" << std::endl;
             return;
@@ -1331,81 +1421,8 @@ private:
 
     // Execute one intent emitted by the Context facade. The intent -> chrome
     // command routing lives in Ui::routeIntent (shared with tests); the commands
-    // themselves are the IChromeCommands overrides below (setActiveTab is public).
+    // themselves are the IChromeCommands overrides in the public section
     void execute(const Ui::intent_t & intent) { Ui::routeIntent(intent, *this); }
-
-    // -- IChromeCommands: the window/chrome commands routeIntent() drives. Each
-    // mirrors the branch it replaced in the former execute() switch. Domain-coupled
-    // ones (tab activate/close) fire host hooks.
-    void emitAction(const std::string & actionKey, const std::string & arg) override
-    {
-        // arg is the item label (value) for parameterized actions, "" otherwise.
-        m_actions.dispatch(actionKey, arg);
-    }
-
-    [[nodiscard]] bool isPopupOpen() const override { return m_openMenuId != Ui::INVALID_ID; }
-
-    void openPopup(id_t menuId) override { createMenuPopup(menuId); }
-
-    void closePopup() override
-    {
-        // Deferred: the click may originate inside the popup window we are about to
-        // destroy, so close after the current event drains. routeIntent has already
-        // gated this on isPopupOpen().
-        m_openMenuId = Ui::INVALID_ID;
-        m_resManager.clearActiveMenu();
-        m_windowManager.requestContentRefresh();
-        m_windowManager.subscribe().defer([this]() { destroyPopup(); });
-    }
-
-    void openDialog(id_t itemId) override
-    {
-        const Ui::Res::Type::menu_t item = m_resManager.findMenuItem(itemId);
-        m_hoveredMenuId                  = Ui::INVALID_ID;
-        m_windowManager.onMouseLeave();
-        m_windowManager.subscribe().defer([this, dialog = item.dialog]() { m_windowManager.openDialog(dialog); });
-    }
-
-    void closeTab(id_t tabId) override
-    {
-        if (m_onTabClosed) {
-            m_onTabClosed(tabId);
-        }
-    }
-
-    void activateRow(id_t rowId) override
-    {
-        if (m_onDockRowActivated) {
-            m_onDockRowActivated(rowId);
-        }
-    }
-
-    void openRowMenu(id_t elementId) override
-    {
-        // The press that started this click already closed this row's menu, so the
-        // click IS the close - opening again would leave the chevron unable to close
-        if (m_pressClosedRowMenu == elementId) {
-            m_pressClosedRowMenu = Ui::INVALID_ID;
-            return;
-        }
-        const Ui::Res::Type::menu_t menu = m_resManager.findMenuItemByKey(m_windowManager.rowMenuKey(elementId));
-        if (menu.id == Ui::INVALID_ID || menu.items.empty()) {
-            std::cerr << "[Shell] Dock row names no menu with items: element " << elementId << std::endl;
-            return;
-        }
-
-        // Right-aligned under the row, where the value and its chevron sit - and above
-        // the row when the list would run past the bottom of the window, which is
-        // where a dock's last rows are. The row element's bound is the whole row:
-        // its value column shares the id and is laid out after it
-        const Ui::Res::Type::bound_t & row     = m_windowManager.elementBound(elementId);
-        const fpx_t                    height  = menuPopupCssHeight(menu);
-        const fpx_t                    below   = row.y + row.h;
-        const bool                     isBelow = below + height <= toCss(m_windowManager.windowHeight());
-        const fpx_t x = std::max(0.0F, row.x + row.w - m_windowManager.menuPopupCssWidth(menu.items));
-        showMenuPopup(menu, x, isBelow ? below : row.y - height);
-        m_rowMenuElement = elementId;
-    }
 
     // The open row menu's element when a press at these main-window px lands on its
     // row, INVALID otherwise. Asked before the popup is destroyed, which forgets it
@@ -1416,20 +1433,6 @@ private:
         }
         const Ui::Res::Type::bound_t & row = m_windowManager.elementBound(m_rowMenuElement);
         return row.contains(toCss(x), toCss(y)) ? m_rowMenuElement : Ui::INVALID_ID;
-    }
-
-    void toggleRow(id_t rowId) override
-    {
-        if (m_onDockRowToggled) {
-            m_onDockRowToggled(rowId);
-        }
-    }
-
-    void copyText(const std::string & text) override
-    {
-        if (m_windowManager.copyToClipboard(text)) {
-            showTempStatus(m_resManager.localeManager().get("StatusCopiedToClipboard"));
-        }
     }
 
     void handleResize()

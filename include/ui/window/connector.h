@@ -123,7 +123,7 @@ public:
         m_renderer->resize(width, height);
     }
 
-    void apply(Ui::Res::Type::Changed changed) override
+    void apply(Ui::Res::Type::changes_t changed) override
     {
         if (!m_renderer.has_value()) {
             return;
@@ -161,11 +161,11 @@ public:
         return false;
     }
 
-    Ui::Render::element_event_t onMousePress(int                     x,
-                                             int                     y,
-                                             Ui::Window::MouseButton button,
-                                             int                     clickCount,
-                                             Ui::Window::KeyModifier modifiers) override
+    Ui::Render::element_event_t onMousePress(int                         x,
+                                             int                         y,
+                                             Ui::Window::MouseButton     button,
+                                             int                         clickCount,
+                                             Ui::Window::key_modifiers_t modifiers) override
     {
         if (!m_renderer.has_value()) {
             return {};

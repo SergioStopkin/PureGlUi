@@ -1,7 +1,7 @@
 bc
-clang-16
-clang-format-16
-clang-tidy-16
+clang-22
+clang-format-22
+clang-tidy-22
 cmake-format
 cppcheck
 flatpak
@@ -19,5 +19,5 @@ libx11-dev
 libxcomposite-dev
 libxrandr-dev
 libxrender-dev
-llvm-16
+llvm-22
 xvfb

@@ -17,7 +17,7 @@
 
 #pragma once
 
-#if defined(_WIN32)
+#ifdef _WIN32
 #include <ratio>
 #include <windows.h>
 #endif
@@ -54,14 +54,14 @@ public:
         if (span <= span_t::zero()) {
             return;
         }
-#if defined(_WIN32)
+#ifdef _WIN32
         // A plain sleep there wakes on the system timer's tick, 15.6 ms unless some
         // process asked for a finer one; a high-resolution waitable timer does not
         using ticks_t       = std::chrono::duration<LONGLONG, std::ratio<1, 10'000'000>>;
         HANDLE        timer = CreateWaitableTimerExW(nullptr,
-                                              nullptr,
-                                              CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
-                                              TIMER_ALL_ACCESS);
+                                                     nullptr,
+                                                     CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                                     TIMER_ALL_ACCESS);
         LARGE_INTEGER due {};
         // Negative: relative to now, in 100 ns units
         due.QuadPart = -std::chrono::duration_cast<ticks_t>(span).count();

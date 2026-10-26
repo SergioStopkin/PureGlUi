@@ -43,10 +43,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool has(const std::string & actionKey) const
-    {
-        return m_handlers.find(actionKey) != m_handlers.end();
-    }
+    [[nodiscard]] bool has(const std::string & actionKey) const { return m_handlers.contains(actionKey); }
 };
 
 } // namespace Ui::Action

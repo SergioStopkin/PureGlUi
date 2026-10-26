@@ -370,7 +370,8 @@ private:
         // Handle output removal if needed
     }
 
-    static constexpr wl_registry_listener s_registryListener = { registryGlobal, registryGlobalRemove };
+    static constexpr wl_registry_listener s_registryListener = { .global        = registryGlobal,
+                                                                 .global_remove = registryGlobalRemove };
 
     static void xdgWmBasePing(void * /*data*/, xdg_wm_base * wmBase, uint32_t serial)
     {
@@ -413,10 +414,10 @@ private:
         // Optional: handle window manager capabilities
     }
 
-    static constexpr xdg_toplevel_listener s_xdgToplevelListener = { xdgToplevelConfigure,
-                                                                     xdgToplevelClose,
-                                                                     xdgToplevelConfigureBounds,
-                                                                     xdgToplevelWmCapabilities };
+    static constexpr xdg_toplevel_listener s_xdgToplevelListener = { .configure        = xdgToplevelConfigure,
+                                                                     .close            = xdgToplevelClose,
+                                                                     .configure_bounds = xdgToplevelConfigureBounds,
+                                                                     .wm_capabilities  = xdgToplevelWmCapabilities };
 
     static void outputGeometry(void * /*data*/,
                                wl_output * /*output*/,
@@ -458,8 +459,12 @@ private:
 
     static void outputDescription(void * /*data*/, wl_output * /*output*/, const char * /*description*/) { }
 
-    static constexpr wl_output_listener s_outputListener = { outputGeometry, outputMode, outputDone,
-                                                             outputScale,    outputName, outputDescription };
+    static constexpr wl_output_listener s_outputListener = { .geometry    = outputGeometry,
+                                                             .mode        = outputMode,
+                                                             .done        = outputDone,
+                                                             .scale       = outputScale,
+                                                             .name        = outputName,
+                                                             .description = outputDescription };
 
     // -------- Helper methods --------
 

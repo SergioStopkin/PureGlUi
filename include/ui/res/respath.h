@@ -51,7 +51,7 @@ public:
     // a path the res data supplied outright
     [[nodiscard]] std::string iconPathOf(std::string_view iconField) const
     {
-        return (iconField.find('/') == std::string_view::npos) ? icon(iconField) : std::string(iconField);
+        return iconField.contains('/') ? std::string(iconField) : icon(iconField);
     }
     [[nodiscard]] std::string fontDir() const { return join("font"); }
     [[nodiscard]] std::string fontFile(std::string_view name) const { return join("font/") + std::string(name); }

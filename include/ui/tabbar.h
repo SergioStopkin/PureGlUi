@@ -21,6 +21,7 @@
 #include "ui/tab.h"
 #include "ui/type.h"
 
+#include <cstddef>
 #include <utility>
 #include <vector>
 

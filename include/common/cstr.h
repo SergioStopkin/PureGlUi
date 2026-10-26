@@ -18,7 +18,6 @@
 #pragma once
 
 #include <string>
-#include <string_view>
 
 namespace Common {
 
@@ -37,16 +36,6 @@ namespace Common {
         ++end;
     }
     return { str, end };
-}
-
-// View a NUL-terminated unsigned-char C string as text without copying. A view
-// must alias the same memory, so unlike fromCString this needs a pointer
-// conversion; char-family aliasing is defined behavior. Project rule: no
-// reinterpret_cast - the two-step static_cast through void* is the same defined
-// operation, and this named helper is its single home.
-[[nodiscard]] inline std::string_view viewCString(const unsigned char * str)
-{
-    return { static_cast<const char *>(static_cast<const void *>(str)) };
 }
 
 } // namespace Common

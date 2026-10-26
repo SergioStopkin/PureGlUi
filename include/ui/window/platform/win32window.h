@@ -132,7 +132,7 @@ public:
             // window's GL SwapBuffers does not overwrite the content surface's pixels.
             // WS_CLIPSIBLINGS: same protection between sibling popups.
             constexpr DWORD style = WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-            RECT            rect  = { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
+            RECT rect = { .left = 0, .top = 0, .right = static_cast<LONG>(width), .bottom = static_cast<LONG>(height) };
             AdjustWindowRectEx(&rect, style, FALSE, 0);
 
             m_hwnd = CreateWindowExW(0,
@@ -351,7 +351,10 @@ public:
             // actual style - the same adjustment create() applies. For
             // undecorated popups (WS_POPUP) and child windows the adjustment
             // is a no-op, so this stays correct for every window kind.
-            RECT       rect    = { 0, 0, static_cast<LONG>(bound.w), static_cast<LONG>(bound.h) };
+            RECT       rect    = { .left   = 0,
+                                   .top    = 0,
+                                   .right  = static_cast<LONG>(bound.w),
+                                   .bottom = static_cast<LONG>(bound.h) };
             const auto style   = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_STYLE));
             const auto exStyle = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_EXSTYLE));
             AdjustWindowRectEx(&rect, style, FALSE, exStyle);
@@ -537,11 +540,11 @@ public:
         // Win32 API requires int
         auto radius = static_cast<int>(m_cornerRadius);
         HRGN rgn    = CreateRoundRectRgn(0,
-                                      0,
-                                      static_cast<int>(m_bound.w) + 1,
-                                      static_cast<int>(m_bound.h) + 1,
-                                      radius * 2,
-                                      radius * 2);
+                                         0,
+                                         static_cast<int>(m_bound.w) + 1,
+                                         static_cast<int>(m_bound.h) + 1,
+                                         radius * 2,
+                                         radius * 2);
         SetWindowRgn(m_hwnd, rgn, TRUE);
     }
 
@@ -593,14 +596,9 @@ public:
     }
 
 private:
-    // BITMAPV5HEADER is the extended first member of the BITMAPINFO layout;
-    // CreateDIBSection reads it through BITMAPINFO* (Win32 idiom). Project rule:
-    // no reinterpret_cast - the two-step static_cast through void* is the same
-    // defined operation, and this named helper is its single home.
-    static BITMAPINFO * asBitmapInfo(BITMAPV5HEADER * header)
-    {
-        return static_cast<BITMAPINFO *>(static_cast<void *>(header));
-    }
+    // A BITMAPV5HEADER as the BITMAPINFO whose extended first member it is, which
+    // CreateDIBSection reads it through (Win32 idiom). It arrives as void* by plain conversion
+    static const BITMAPINFO * asBitmapInfo(const void * header) { return static_cast<const BITMAPINFO *>(header); }
 
     // GWLP_USERDATA stashes `this` for the static windowProc. LONG_PTR is an
     // integer, so static_cast cannot express the conversion - these named
@@ -668,7 +666,10 @@ private:
         }
         cairo_t * cr = cairo_create(surface);
 #if LIBRSVG_CHECK_VERSION(2, 46, 0)
-        const RsvgRectangle viewport = { 0, 0, static_cast<double>(size), static_cast<double>(size) };
+        const RsvgRectangle viewport = { .x      = 0,
+                                         .y      = 0,
+                                         .width  = static_cast<double>(size),
+                                         .height = static_cast<double>(size) };
         GError *            err      = nullptr;
         if (rsvg_handle_render_document(handle, cr, &viewport, &err) == 0) {
             if (err != nullptr) {

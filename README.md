@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-    A domain-blind, native desktop UI framework in C++20 on EGL/OpenGL.
+    A domain-blind, native desktop UI framework in C++23 on EGL/OpenGL.
     <br>
     The reusable chrome - windows, menus, tabs, dialogs, themes, docks - that a
     CAD, creative, or engineering tool builds on.

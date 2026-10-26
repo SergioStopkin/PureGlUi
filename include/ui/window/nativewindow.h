@@ -20,26 +20,26 @@
 #include "ui/window/nativewindowhandle.h"
 
 // Include platform-specific window based on build target (compile-time)
-#if defined(_WIN32)
+#ifdef _WIN32
 #include "ui/window/platform/win32window.h"
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 #include "ui/window/platform/macoswindow.h"
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
 #include "ui/window/platform/waylandwindow.h"
-#elif defined(HAVE_X11)
+#elifdef HAVE_X11
 #include "ui/window/platform/x11window.h"
 #endif
 
 namespace Ui::Window {
 
 // Type alias for the current platform's native window (compile-time detection)
-#if defined(_WIN32)
+#ifdef _WIN32
 using NativeWindow = Platform::Win32Window;
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 using NativeWindow = Platform::MacOsWindow;
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
 using NativeWindow = Platform::WaylandWindow;
-#elif defined(HAVE_X11)
+#elifdef HAVE_X11
 using NativeWindow = Platform::X11Window;
 #else
 #error "No supported window system found"

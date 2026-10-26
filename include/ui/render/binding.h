@@ -50,24 +50,32 @@ struct alignas(2) binding_t final {
     }
 
     switch (type) {
-    case UiElementType::Tab: outBinding = { IntentKind::SwitchTab, RenderScope::Layout }; return true;
-    case UiElementType::TabClose: outBinding = { IntentKind::CloseTab, RenderScope::Layout }; return true;
-    case UiElementType::ToolbarButton: outBinding = { IntentKind::EmitAction, RenderScope::Chrome }; return true;
+    case UiElementType::Tab:
+        outBinding = { .intent = IntentKind::SwitchTab, .scope = RenderScope::Layout };
+        return true;
+    case UiElementType::TabClose:
+        outBinding = { .intent = IntentKind::CloseTab, .scope = RenderScope::Layout };
+        return true;
+    case UiElementType::ToolbarButton:
+        outBinding = { .intent = IntentKind::EmitAction, .scope = RenderScope::Chrome };
+        return true;
     case UiElementType::Text:
         // Status-bar text copies itself; the temp status that follows is what
         // actually repaints, so this asks for nothing of its own
-        outBinding = { IntentKind::CopyText, RenderScope::None };
+        outBinding = { .intent = IntentKind::CopyText, .scope = RenderScope::None };
         return true;
-    case UiElementType::DockRow: outBinding = { IntentKind::ActivateRow, RenderScope::Chrome }; return true;
+    case UiElementType::DockRow:
+        outBinding = { .intent = IntentKind::ActivateRow, .scope = RenderScope::Chrome };
+        return true;
     case UiElementType::DockExpander:
         // Sits on top of its row, so it wins the click and toggles instead of
         // selecting - the same overlap trick TabClose uses over Tab
-        outBinding = { IntentKind::ToggleRow, RenderScope::Chrome };
+        outBinding = { .intent = IntentKind::ToggleRow, .scope = RenderScope::Chrome };
         return true;
     case UiElementType::DockMenu:
         // Over the row's value column, by the same overlap: a click on the value
         // opens its menu, a click on the label still selects the row
-        outBinding = { IntentKind::OpenRowMenu, RenderScope::Chrome };
+        outBinding = { .intent = IntentKind::OpenRowMenu, .scope = RenderScope::Chrome };
         return true;
     case UiElementType::MenuButton:
     case UiElementType::MenuItem:

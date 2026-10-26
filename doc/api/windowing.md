@@ -100,7 +100,7 @@ bool copyToClipboard(const std::string & text);
 void renderAll();                             // once per frame: content surfaces + refresh + drain queue
 void onMainWindowResize(fpx_t width, fpx_t height);
 bool refreshDisplayMetrics();                 // re-query DPI and refresh rate, recompute margins; true if scale changed
-void apply(Ui::Res::Type::Changed changed);   // push resource changes to all windows/renderers
+void apply(Ui::Res::Type::changes_t changed); // push resource changes to all windows/renderers
 ```
 
 `WindowManager` implements the `Ui::IEventApp` pointer-event sink (`onMouseMove`/`onMousePress`/`onMouseRelease`/`onMouseLeave`/`onScroll`, plus child-routed overloads taking an `id_t childId`). Incoming OS events flow `pollEvent -> dispatchEvent`, which classifies the source (dialog is modal and wins; then popup/submenu; then main/content surface), rebases coordinates, routes to the right sink, and finally notifies subscribers via `Ui::idOf(Ui::IdKind::Event, EventType)` - the shell subscribes there for its policy decisions (menu management, shortcuts, popup close). Dock grip drag is captured exclusively until mouse-up.
@@ -259,16 +259,17 @@ Header: `include/ui/window/event.h`
 Platform-agnostic input types.
 
 ```cpp
-enum class EventType : unsigned char {
+// each in its own header, one type per file
+enum class EventType : unsigned char {                                       // window/eventtype.h
     None, CloseRequested, Resize, MouseButtonPress, MouseButtonRelease,
     MouseMove, MouseLeave, Scroll, KeyPress, KeyRelease
 };
-// each in its own header now, one type per file
 enum class MouseButton : unsigned char { Left = 1, Middle = 2, Right = 3 };  // window/mousebutton.h
-enum class KeyModifier : uint32_t { None = 0, Shift = 1<<0, Control = 1<<1, Alt = 1<<2, Meta = 1<<3 };  // window/keymodifier.h
+enum class KeyModifier : uint8_t { None = 0, Shift = 1<<0, Control = 1<<1, Alt = 1<<2, Meta = 1<<3 };  // window/keymodifier.h
+using key_modifiers_t = Common::flags_t<KeyModifier>;                        // the modifiers held at once
 ```
 
-`MouseButton` values match X11 button numbers, which is what `toMouseButton()` converts. Free helpers: `toInt`/`toMouseButton` (`mousebutton.h`), `toUint`/`toKeyModifier`, `operator|`/`operator&` on `KeyModifier`, and `hasModifier(modifiers, flag)` (`keymodifier.h`).
+`MouseButton` values match X11 button numbers, which is what `toMouseButton()` converts. Free helpers: `toInt`/`toMouseButton` (`mousebutton.h`). An event carries the modifiers held as a `key_modifiers_t`, tested with `modifiers.has(KeyModifier::Control)` - see `Common::flags_t` in [common.md](common.md).
 
 ### Ui::Window::PointerShape
 
@@ -283,14 +284,12 @@ Deliberately short: each entry costs a name mapping on four platforms, so one is
 
 ```cpp
 struct alignas(128) Event final {
-    struct { int x, y; MouseButton button; int clickCount; } mouse;   // clickCount: 1 single, 2 double, ... (press only)
-    struct { uint32_t keysym; KeyModifier modifiers;
-             std::array<char, 8>  text;                                // UTF-8 typed char
-             std::array<char, 16> name; } key;                         // logical name ("Return", "F1", "q")
+    mouse_event_t      mouse;                                          // x, y, clickCount (press only), button, modifiers
+    key_event_t        key;                                            // keysym, modifiers, text (UTF-8 typed char), name ("Return", "F1", "q")
     NativeWindowHandle sourceWindow  = 0;
     id_t               childWindowId = Ui::INVALID_ID;                 // INVALID_ID = main window
-    struct { fpx_t deltaY; } scroll;                                   // positive = down
-    struct { fpx_t width, height; } resize;
+    scroll_event_t     scroll;                                         // deltaY, positive = down
+    resize_event_t     resize;                                         // width, height
     EventType type         = EventType::None;
     bool      isPopupEvent = false;
     [[nodiscard]] std::string toShortcutString() const;               // e.g. "Ctrl+C", "F1"

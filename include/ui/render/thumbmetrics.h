@@ -55,9 +55,9 @@ struct alignas(32) thumb_metrics_t final {
     [[nodiscard]] Ui::Res::Type::bound_t boundAt(fpx_t start) const
     {
         if (axis == Axis::Vertical) {
-            return { track.x, start, track.w, thumbLength };
+            return { .x = track.x, .y = start, .w = track.w, .h = thumbLength };
         }
-        return { start, track.y, thumbLength, track.h };
+        return { .x = start, .y = track.y, .w = thumbLength, .h = track.h };
     }
 
     // The pointer coordinate that matters here, so a caller holding both can stay

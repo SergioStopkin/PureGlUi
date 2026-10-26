@@ -145,7 +145,7 @@ TEST(Session, FilesSectionKeepsAHostKeyRegisteredBesideIt)
     Ui::Res::Key::SectionKey::Files,
     "lastExported",
     [] { return std::string { "/tmp/out.step" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
     manager.setSessionOpenFiles({ "/a.step" }, "/a.step");
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
@@ -464,7 +464,7 @@ TEST(Session, HostSectionLandsAsRealJson)
     manager.registerPersistedJson(
     HostSection::Extras,
     [] { return std::string { R"([{"kept":1}])" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     ASSERT_TRUE(json.is_object());
@@ -479,7 +479,7 @@ TEST(Session, HostSectionRoundTripsBackToItsSetter)
     manager.registerPersistedJson(
     HostSection::Extras,
     [] { return std::string { R"(["a","b"])" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
 
     const std::string blob = manager.serializeSession();
 
@@ -503,7 +503,7 @@ TEST(Session, HostSectionCoexistsWithFrameworkSections)
     manager.registerPersistedJson(
     HostSection::Extras,
     [] { return std::string { R"(["own"])" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     EXPECT_TRUE(json["extras"].is_array());
@@ -521,7 +521,7 @@ TEST(Session, HostSectionNamedLikeAKeyedFrameworkSectionIsRefused)
     manager.registerPersistedJson(
     HostSection::Colliding,
     [] { return std::string { R"(["stolen"])" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     ASSERT_TRUE(json["paths"].is_object()); // still the framework's
@@ -538,7 +538,7 @@ TEST(Session, HostSectionNamedLikeAFrameworkTypedBlockIsRefused)
     manager.registerPersistedJson(
     HostSection::Typed,
     [] { return std::string { R"(["stolen"])" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     EXPECT_FALSE(json.contains("files"));
@@ -551,7 +551,7 @@ TEST(Session, HostSectionWithAnEmptyNameIsRefused)
     manager.registerPersistedJson(
     HostSection::Unmappable,
     [] { return std::string { R"(["nowhere"])" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     EXPECT_FALSE(json.contains("")); // no section written under an empty key
@@ -564,11 +564,11 @@ TEST(Session, SecondProviderForTheSameSectionIsRefused)
     manager.registerPersistedJson(
     HostSection::Extras,
     [] { return std::string { R"(["first"])" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
     manager.registerPersistedJson(
     HostSection::Extras,
     [] { return std::string { R"(["second"])" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     ASSERT_TRUE(json["extras"].is_array());
@@ -583,7 +583,7 @@ TEST(Session, UnparseableProviderTextCostsOnlyItsOwnSection)
     manager.registerPersistedJson(
     HostSection::Extras,
     [] { return std::string { "{{{ not json" }; },
-    [](const std::string &) {});
+    [](const std::string &) { });
 
     std::string blob;
     ASSERT_NO_THROW(blob = manager.serializeSession());
@@ -597,10 +597,7 @@ TEST(Session, EmptyProviderTextOmitsTheSection)
 {
     Ui::Res::ResManager manager { TEST_RES_DIR };
     manager.loadAll();
-    manager.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string {}; },
-    [](const std::string &) {});
+    manager.registerPersistedJson(HostSection::Extras, [] { return std::string {}; }, [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     EXPECT_FALSE(json.contains("extras"));

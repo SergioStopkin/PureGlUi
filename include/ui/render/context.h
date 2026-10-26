@@ -58,11 +58,11 @@ public:
             // popup opener, and clicking the open menu closes it.
             const std::string actionKey = m_resManager.actionKeyFor(click.id);
             if (!actionKey.empty()) {
-                result.intents.push_back({ Ui::IntentKind::EmitAction, INVALID_ID, actionKey, {} });
+                result.intents.push_back({ .kind = Ui::IntentKind::EmitAction, .actionKey = actionKey, .arg = {} });
             } else {
                 const Ui::IntentKind kind = (click.id == openMenuId) ? Ui::IntentKind::ClosePopup
                                                                      : Ui::IntentKind::OpenPopup;
-                result.intents.push_back({ kind, click.id, {}, {} });
+                result.intents.push_back({ .kind = kind, .id = click.id, .actionKey = {}, .arg = {} });
             }
             return result;
         }
@@ -74,11 +74,13 @@ public:
             }
             // Clicking a leaf dismisses the menu, then either opens its dialog or
             // emits its action (label is the value parameterized actions consume).
-            result.intents.push_back({ Ui::IntentKind::ClosePopup, INVALID_ID, {}, {} });
+            result.intents.push_back({ .kind = Ui::IntentKind::ClosePopup, .actionKey = {}, .arg = {} });
             if (!item.dialog.title.empty()) {
-                result.intents.push_back({ Ui::IntentKind::OpenDialog, click.id, {}, {} });
+                result.intents.push_back(
+                { .kind = Ui::IntentKind::OpenDialog, .id = click.id, .actionKey = {}, .arg = {} });
             } else {
-                result.intents.push_back({ Ui::IntentKind::EmitAction, INVALID_ID, item.actionKey, item.label });
+                result.intents.push_back(
+                { .kind = Ui::IntentKind::EmitAction, .actionKey = item.actionKey, .arg = item.label });
             }
             return result;
         }
@@ -95,17 +97,17 @@ public:
         case Ui::IntentKind::EmitAction: {
             const std::string actionKey = m_resManager.actionKeyFor(click.id);
             if (!actionKey.empty()) {
-                result.intents.push_back({ binding.intent, INVALID_ID, actionKey, {} });
+                result.intents.push_back({ .kind = binding.intent, .actionKey = actionKey, .arg = {} });
             }
             break;
         }
         case Ui::IntentKind::CopyText:
-            result.intents.push_back({ binding.intent, INVALID_ID, {}, m_resManager.statusText() });
+            result.intents.push_back({ .kind = binding.intent, .actionKey = {}, .arg = m_resManager.statusText() });
             break;
         default:
             // id-carrying intents (SwitchTab, CloseTab, OpenPopup, OpenDialog, and
             // ActivateRow/ToggleRow, a dock row's element id being the host's row id)
-            result.intents.push_back({ binding.intent, click.id, {}, {} });
+            result.intents.push_back({ .kind = binding.intent, .id = click.id, .actionKey = {}, .arg = {} });
             break;
         }
         return result;
@@ -137,7 +139,7 @@ public:
         const auto & shortcuts = m_resManager.shortcuts();
         const auto   it        = shortcuts.find(normalizedKey);
         if (it != shortcuts.end() && !it->second.empty()) {
-            result.intents.push_back({ Ui::IntentKind::EmitAction, INVALID_ID, it->second, {} });
+            result.intents.push_back({ .kind = Ui::IntentKind::EmitAction, .actionKey = it->second, .arg = {} });
         }
         return result;
     }

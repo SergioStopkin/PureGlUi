@@ -20,6 +20,7 @@
 #include "common/noncopyable.h"
 #include "common/system.h"
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -70,7 +71,7 @@ public:
     ~BackgroundWorker()
     {
         {
-            const std::lock_guard<std::mutex> lock(m_mutex);
+            const std::scoped_lock lock(m_mutex);
             m_stop.store(true);
         }
         m_cv.notify_all();
@@ -90,9 +91,9 @@ public:
      */
     void post(unsigned int threads, std::function<void()> task)
     {
-        const unsigned int cost = (threads == 0) ? 1 : ((threads > m_budget) ? m_budget : threads);
+        const unsigned int cost = std::clamp(threads, 1U, m_budget);
         {
-            const std::lock_guard<std::mutex> lock(m_mutex);
+            const std::scoped_lock lock(m_mutex);
             if (m_stop.load()) {
                 return;
             }
@@ -136,7 +137,7 @@ private:
             }
             task();
             {
-                const std::lock_guard<std::mutex> lock(m_mutex);
+                const std::scoped_lock lock(m_mutex);
                 m_available += cost;
             }
             m_cv.notify_all();

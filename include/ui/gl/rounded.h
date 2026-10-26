@@ -28,7 +28,7 @@
 
 #include <array>
 #include <cmath>
-#include <iostream>
+#include <cstdint>
 #include <vector>
 
 namespace Ui::Gl {

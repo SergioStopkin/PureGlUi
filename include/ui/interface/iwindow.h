@@ -51,10 +51,10 @@ public:
                                                                  Ui::Window::NativeDisplayHandle display,
                                                                  Ui::Window::NativeWindowHandle  parentWindow,
                                                                  const std::string &             title) = 0;
-    [[nodiscard]] virtual bool                            isValid() const                   = 0;
-    [[nodiscard]] virtual Ui::Window::NativeWindowHandle  nativeHandle() const              = 0;
-    [[nodiscard]] virtual Ui::Window::NativeDisplayHandle nativeDisplay() const             = 0;
-    virtual void                                          destroy()                         = 0;
+    [[nodiscard]] virtual bool                            isValid() const                               = 0;
+    [[nodiscard]] virtual Ui::Window::NativeWindowHandle  nativeHandle() const                          = 0;
+    [[nodiscard]] virtual Ui::Window::NativeDisplayHandle nativeDisplay() const                         = 0;
+    virtual void                                          destroy()                                     = 0;
 
     // Title & screen helpers
     virtual void setTitle(const std::string & title)                = 0;

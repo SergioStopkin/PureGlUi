@@ -85,13 +85,11 @@ inline bool hasModernGl()
 inline bool isSoftwareRenderer()
 {
     std::string name = glString(GL_RENDERER, "");
-    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::tolower(c); });
+    std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
     constexpr std::array<std::string_view, 6> MARKERS = {
         "llvmpipe", "softpipe", "swiftshader", "software", "gdi generic", "basic render driver",
     };
-    return std::any_of(MARKERS.begin(), MARKERS.end(), [&name](std::string_view marker) {
-        return name.find(marker) != std::string::npos;
-    });
+    return std::ranges::any_of(MARKERS, [&name](std::string_view marker) { return name.contains(marker); });
 }
 
 // GL vertex attrib pointer offset: the API smuggles a byte offset through a
@@ -195,7 +193,7 @@ inline void forEachShadowLayer(fpx_t offsetX, fpx_t offsetY, fpx_t blurRadius, f
     int           i       = kLayers;
     while (i >= 1) {
         const fpx_t spread = blurRadius * i / kLayers;
-        fn(offsetX + spread * 0.3F, offsetY + spread * 0.3F, spread * 0.5F, opacity / i);
+        fn(offsetX + (spread * 0.3F), offsetY + (spread * 0.3F), spread * 0.5F, opacity / i);
         --i;
     }
 }

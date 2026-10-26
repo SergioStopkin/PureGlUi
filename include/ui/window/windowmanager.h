@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include "common/bit.h"
 #include "common/noncopyable.h"
 #include "common/sanitize.h"
 #include "common/system.h"
@@ -43,6 +42,8 @@
 #include "ui/res/resmanager.h"
 #include "ui/res/store/menuheight.h"
 #include "ui/res/type/changed.h"
+#include "ui/res/type/dialog.h"
+#include "ui/res/type/dialogaction.h"
 #include "ui/type.h"
 #include "ui/window/compositetexture.h"
 #include "ui/window/connector.h"
@@ -52,6 +53,7 @@
 #include "ui/window/displaystextof.h"
 #include "ui/window/event.h"
 #include "ui/window/eventfactory.h"
+#include "ui/window/eventtype.h"
 #include "ui/window/istooltipdelayed.h"
 #include "ui/window/nativewindow.h"
 #include "ui/window/popup/dialogwindow.h"
@@ -67,13 +69,15 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <functional>
+#include <initializer_list>
 #include <iostream>
-#include <list>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -81,6 +85,10 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#ifdef HAVE_X11
+#include "ui/window/platform/x11include.h"
+#endif
 
 namespace Ui::Window {
 
@@ -150,10 +158,10 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     using DialogConnector = Ui::Window::Connector<Ui::Window::Popup::DialogWindow, Ui::Render::Popup::DialogRenderer>;
 
     // Popup window for dropdowns
-    std::unique_ptr<PopupConnector> m_popupWindow {};
+    std::unique_ptr<PopupConnector> m_popupWindow;
 
     // Submenu popup window (child of m_popupWindow)
-    std::unique_ptr<PopupConnector> m_submenuWindow {};
+    std::unique_ptr<PopupConnector> m_submenuWindow;
     id_t                            m_submenuItemId = Ui::INVALID_ID;
 
     // The menu/submenu connectors both own a PopupRenderer; resolve it (nullptr
@@ -169,14 +177,14 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     }
 
     // Dialog pairing (modal): a DialogWindow surface + a DialogRenderer.
-    std::unique_ptr<DialogConnector> m_dialogWindow {};
+    std::unique_ptr<DialogConnector> m_dialogWindow;
     Ui::Res::Type::DialogAction      m_lastDialogResult = Ui::Res::Type::DialogAction::None;
     Ui::Res::Type::dialog_t          m_lastDialogData;
 
     // Tooltip pairing: a PopupWindow beside a toolbar button or a content surface's mark, so it floats
     // over a content surface as a menu does. Takes no input
     using TooltipConnector = Ui::Window::Connector<Ui::Window::Popup::PopupWindow, Ui::Render::Popup::TooltipRenderer>;
-    std::unique_ptr<TooltipConnector> m_tooltipWindow {};
+    std::unique_ptr<TooltipConnector> m_tooltipWindow;
     id_t                   m_spentButton = Ui::INVALID_ID; // a press silenced its tooltip until the pointer leaves it
     Ui::Res::Type::bound_t m_spentBound;                   // its rect, main-window CSS px (spentButtonOf)
     bool                   m_isTooltipShown = false;       // its first frame presented (renderFrame)
@@ -222,7 +230,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     std::atomic<bool> m_isStopRequested { false };
 
     // Platform-specific event handler (compile-time detected)
-    std::unique_ptr<NativeEvent> m_eventHandler {};
+    std::unique_ptr<NativeEvent> m_eventHandler;
 
     // Content-changed subscriber system
     Ui::PubSub::Subscribe   m_subscribe;
@@ -251,10 +259,10 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     static Ui::Res::Type::border_t clampRadii(const Ui::Res::Type::border_t & radii, fpx_t w, fpx_t h)
     {
         const fpx_t maxR = std::min(w, h) / 2;
-        return { std::min(maxR, std::round(radii.topLeft)),
-                 std::min(maxR, std::round(radii.topRight)),
-                 std::min(maxR, std::round(radii.bottomRight)),
-                 std::min(maxR, std::round(radii.bottomLeft)) };
+        return { .topLeft     = std::min(maxR, std::round(radii.topLeft)),
+                 .topRight    = std::min(maxR, std::round(radii.topRight)),
+                 .bottomRight = std::min(maxR, std::round(radii.bottomRight)),
+                 .bottomLeft  = std::min(maxR, std::round(radii.bottomLeft)) };
     }
 
     // A new id per open, never handed back (Ui::IdKind)
@@ -359,7 +367,8 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
             m_spentBound  = button->bound;
         }
         const tooltip_t wanted = tooltipWantedOf(
-        (button != nullptr) ? tooltip_t { tooltipTextOf(hoveredButton), button->bound } : tooltip_t {},
+        (button != nullptr) ? tooltip_t { .text = tooltipTextOf(hoveredButton), .anchor = button->bound }
+                            : tooltip_t {},
         hoveredButton,
         m_spentButton,
         contentTooltip());
@@ -396,8 +405,11 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
         }
         const Ui::Res::Type::bound_t & anchor   = surface->second.tooltipAnchor;
         const Ui::Res::Type::bound_t   viewport = viewportBound();
-        return { surface->second.tooltipText,
-                 { toCss(viewport.x + anchor.x), toCss(viewport.y + anchor.y), toCss(anchor.w), toCss(anchor.h) } };
+        return { .text   = surface->second.tooltipText,
+                 .anchor = { .x = toCss(viewport.x + anchor.x),
+                             .y = toCss(viewport.y + anchor.y),
+                             .w = toCss(anchor.w),
+                             .h = toCss(anchor.h) } };
     }
 
     // Where the pointer is, main-window physical px, from an event of any window before
@@ -466,10 +478,10 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
         // into the main renderer's atlas
         m_main->window().makeCurrent();
         const Ui::Res::Type::bound_t css   = tooltipBoundOf(tooltip.anchor,
-                                                          m_resManager.layout().tooltip,
-                                                          m_main->renderer().tooltipWidthOf(tooltip.text),
-                                                          toCss(m_windowWidth),
-                                                          toCss(m_windowHeight));
+                                                            m_resManager.layout().tooltip,
+                                                            m_main->renderer().tooltipWidthOf(tooltip.text),
+                                                            toCss(m_windowWidth),
+                                                            toCss(m_windowHeight));
         const Ui::Res::Type::bound_t bound = toPhysRound(css);
 
         // Kept only at the size it was made: its window never presents (composited), so it
@@ -483,8 +495,9 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
         if (isKept) {
             // Composited it stays parked offscreen and only its bound moves, as when made
             auto & window = m_tooltipWindow->window();
-            window.moveResize(g_config.isCompositing ? Ui::Res::Type::bound_t { -bound.w, -bound.h, bound.w, bound.h }
-                                                     : bound);
+            window.moveResize(g_config.isCompositing
+                              ? Ui::Res::Type::bound_t { .x = -bound.w, .y = -bound.h, .w = bound.w, .h = bound.h }
+                              : bound);
             window.setPosition(bound.x, bound.y);
             m_tooltipWindow->resize(bound.w, bound.h);
             m_tooltipWindow->renderer().setText(tooltip.text);
@@ -699,20 +712,20 @@ public:
         const fpx_t  right  = toPhys(layout.rightToolbar.width) + margin;
         const fpx_t  top    = toPhys(layout.topMenu.height + layout.workspaceTab.height) + margin;
         const fpx_t  bottom = toPhys(layout.statusBar.height) + margin;
-        return { left,
-                 top,
-                 std::max(1.0F, m_windowWidth - left - right),
-                 std::max(1.0F, m_windowHeight - top - bottom) };
+        return { .x = left,
+                 .y = top,
+                 .w = std::max(1.0F, m_windowWidth - left - right),
+                 .h = std::max(1.0F, m_windowHeight - top - bottom) };
     }
 
     // The rect left for embedded content after the UI chrome (toolbars + docks
     // + menu/tab/status). Content surfaces are sized/positioned to this.
     [[nodiscard]] Ui::Res::Type::bound_t viewportBound() const
     {
-        return { m_uiLeft,
-                 m_uiTop,
-                 std::max(1.0F, m_windowWidth - m_uiLeft - m_uiRight),
-                 std::max(1.0F, m_windowHeight - m_uiTop - m_uiBottom) };
+        return { .x = m_uiLeft,
+                 .y = m_uiTop,
+                 .w = std::max(1.0F, m_windowWidth - m_uiLeft - m_uiRight),
+                 .h = std::max(1.0F, m_windowHeight - m_uiTop - m_uiBottom) };
     }
 
     // ---- Content-surface registry (the host-facing seam) ----
@@ -883,7 +896,7 @@ public:
         if (!b.contains(x, y)) {
             return {};
         }
-        return { it->second.pairing, x - static_cast<int>(b.x), y - static_cast<int>(b.y) };
+        return { .pairing = it->second.pairing, .lx = x - static_cast<int>(b.x), .ly = y - static_cast<int>(b.y) };
     }
 
     // Read the active content surface's framebuffer into its composite cache
@@ -914,7 +927,7 @@ public:
     {
         const Ui::Res::Type::bound_t vp = viewportBound();
         if (g_config.isCompositing) {
-            window.moveResize({ -vp.w, -vp.h, vp.w, vp.h });
+            window.moveResize({ .x = -vp.w, .y = -vp.h, .w = vp.w, .h = vp.h });
             window.setPosition(vp.x, vp.y);
         } else {
             window.moveResize(vp);
@@ -1111,10 +1124,10 @@ public:
         // are the just-validated bound() values so we don't fight the WM
         // on its sizing decision.
         if (sessionW > 0 && sessionH > 0) {
-            m_main->window().moveResize({ static_cast<fpx_t>(m_resManager.sessionWindowX()),
-                                          static_cast<fpx_t>(m_resManager.sessionWindowY()),
-                                          m_windowWidth,
-                                          m_windowHeight });
+            m_main->window().moveResize({ .x = static_cast<fpx_t>(m_resManager.sessionWindowX()),
+                                          .y = static_cast<fpx_t>(m_resManager.sessionWindowY()),
+                                          .w = m_windowWidth,
+                                          .h = m_windowHeight });
         }
 
         // Wire render request to Subscribe render queue
@@ -1153,7 +1166,7 @@ public:
         const auto & dockConfigs = m_resManager.layout().docks;
         for (size_t i = 0; i < dockConfigs.size(); ++i) {
             const id_t id = Ui::idOf(Ui::IdKind::Dock, i);
-            m_docks.try_emplace(id, id, dockConfigs[i], m_resManager);
+            m_docks.try_emplace(id, id, dockConfigs.at(i), m_resManager);
         }
 
         // Session-restored widths might overflow the current window (smaller
@@ -1391,11 +1404,8 @@ public:
             }
         }
         // DESC: highest order first (outermost), packs inward as we walk.
-        auto byOrderDesc = [](const Ui::Render::DockColumn * a, const Ui::Render::DockColumn * b) {
-            return a->order() > b->order();
-        };
-        std::sort(left.begin(), left.end(), byOrderDesc);
-        std::sort(right.begin(), right.end(), byOrderDesc);
+        std::ranges::sort(left, std::ranges::greater {}, &Ui::Render::DockColumn::order);
+        std::ranges::sort(right, std::ranges::greater {}, &Ui::Render::DockColumn::order);
 
         // Left docks: pack rightward from the left toolbar's inner edge.
         // innerEdgeX for a Left dock is its viewport-facing (right) edge.
@@ -1461,14 +1471,15 @@ public:
     /**
      * @brief Apply resource changes to all windows and renderers
      */
-    void apply(Ui::Res::Type::Changed changed)
+    void apply(Ui::Res::Type::changes_t changed)
     {
         // Only what it is made of - its text, button, colours and size - closes it;
         // the next event reopens it
-        const auto tooltipParts = Common::Bit::Or(
-        Common::Bit::Or(Ui::Res::Type::Changed::Locale, Ui::Res::Type::Changed::Button),
-        Common::Bit::Or(Ui::Res::Type::Changed::Theme, Ui::Res::Type::Changed::Layout));
-        if (Common::Bit::And(changed, tooltipParts) != 0) {
+        const Ui::Res::Type::changes_t tooltipParts { Ui::Res::Type::Changed::Locale,
+                                                      Ui::Res::Type::Changed::Button,
+                                                      Ui::Res::Type::Changed::Theme,
+                                                      Ui::Res::Type::Changed::Layout };
+        if (changed.hasAny(tooltipParts)) {
             destroyTooltip();
         }
 
@@ -1484,7 +1495,7 @@ public:
         // layout. A theme switch lands here (layout.json reads theme CSS vars,
         // so it compares unequal) via apply(), which never runs the reload
         // hooks - so "re-project in afterReload" would not even cover it.
-        if (Common::Bit::And(changed, Ui::Res::Type::Changed::Layout) != 0) {
+        if (changed.has(Ui::Res::Type::Changed::Layout)) {
             m_dragElement = Ui::INVALID_ID;
 
             std::unordered_map<std::string, std::vector<Ui::Res::Dock::row_t>> carriedRows;
@@ -1498,7 +1509,7 @@ public:
             const auto & dockConfigs = m_resManager.layout().docks;
             for (size_t i = 0; i < dockConfigs.size(); ++i) {
                 const id_t id = Ui::idOf(Ui::IdKind::Dock, i);
-                m_docks.try_emplace(id, id, dockConfigs[i], m_resManager);
+                m_docks.try_emplace(id, id, dockConfigs.at(i), m_resManager);
             }
             // A dock the reload removed simply has no taker; one it added comes
             // up empty until the host projects into it.
@@ -1523,7 +1534,7 @@ public:
         }
 
         // Window icons live in icon-defaults.json; re-read them when that file changed.
-        if (Common::Bit::And(changed, Ui::Res::Type::Changed::Icon) != 0) {
+        if (changed.has(Ui::Res::Type::Changed::Icon)) {
             applyWindowIcon();
         }
 
@@ -1532,7 +1543,7 @@ public:
         applyMinWindowSize();
 
         // Main window: setBackground() calls makeCurrent() internally
-        if (m_main && Common::Bit::And(changed, Ui::Res::Type::Changed::Theme) != 0) {
+        if (m_main && changed.has(Ui::Res::Type::Changed::Theme)) {
             m_main->window().setBackground(m_resManager.theme().second.bg);
         }
 
@@ -1546,7 +1557,7 @@ public:
             if (entry.window == nullptr) {
                 continue;
             }
-            if (Common::Bit::And(changed, Ui::Res::Type::Changed::Theme) != 0) {
+            if (changed.has(Ui::Res::Type::Changed::Theme)) {
                 entry.window->setBackground(m_resManager.theme().workspace.bg);
             }
             if (entry.pairing != nullptr) {
@@ -1619,7 +1630,7 @@ public:
         const fpx_t relY = bound.y - parentScreenY;
 
         if (!makePopupWindow(
-            { relX, relY, bound.w, bound.h },
+            { .x = relX, .y = relY, .w = bound.w, .h = bound.h },
             radii,
             bgColor,
             false,
@@ -1814,7 +1825,7 @@ public:
         mainWindowScreenPosition(parentScreenX, parentScreenY);
 
         if (!makePopupWindow(
-            { bound.x - parentScreenX, bound.y - parentScreenY, bound.w, bound.h },
+            { .x = bound.x - parentScreenX, .y = bound.y - parentScreenY, .w = bound.w, .h = bound.h },
             radii,
             bgColor,
             false,
@@ -2053,7 +2064,7 @@ public:
             m_popupWindow->window().requestRender();
         }
 
-        const Ui::Res::Type::bound_t submenuBound = { submenuX, submenuY, submenuW, submenuH };
+        const Ui::Res::Type::bound_t submenuBound = { .x = submenuX, .y = submenuY, .w = submenuW, .h = submenuH };
         if (!createSubmenu(submenuBound, submenuRadii, m_resManager.theme().second.bg)) {
             return;
         }
@@ -2102,7 +2113,7 @@ public:
                 if (display != nullptr) {
                     XSync(display, Ui::Window::Platform::X11::False);
                 }
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
                 if (m_main->window().nativeDisplay() != nullptr) {
                     wl_display_roundtrip(m_main->window().nativeDisplay());
                 }
@@ -2397,12 +2408,12 @@ public:
         // draws them in; a frame of their own would present the same picture again,
         // with a main render and swap each (refreshComposite). Not the dialog, which
         // no main frame recaptures
-        const bool isRecaptured = renderMain && g_config.isCompositing;
-        const bool renderPopup  = !isRecaptured && m_popupWindow
-                              && pending.contains(m_popupWindow->window().subscribeId());
+        const bool isRecaptured  = renderMain && g_config.isCompositing;
+        const bool renderPopup   = !isRecaptured && m_popupWindow
+                                && pending.contains(m_popupWindow->window().subscribeId());
         const bool renderSubmenu = !isRecaptured && m_submenuWindow
                                 && pending.contains(m_submenuWindow->window().subscribeId());
-        const bool renderDialog = m_dialogWindow && pending.contains(m_dialogWindow->window().subscribeId());
+        const bool renderDialog  = m_dialogWindow && pending.contains(m_dialogWindow->window().subscribeId());
         // A kept, hidden tooltip is not drawn, or composited it would be drawn in again
         const bool renderTooltip = !isRecaptured && m_tooltipWindow && hasTooltip()
                                 && pending.contains(m_tooltipWindow->window().subscribeId());
@@ -2800,23 +2811,24 @@ public:
             capW = std::max(0, capW);
             capH = std::max(0, capH);
 
-            caps.at(i)    = { static_cast<fpx_t>(capX),
-                              static_cast<fpx_t>(capY),
-                              static_cast<fpx_t>(capW),
-                              static_cast<fpx_t>(capH) };
-            corners.at(i) = { static_cast<fpx_t>(cx),
-                              static_cast<fpx_t>(cy),
-                              static_cast<fpx_t>(radius),
-                              static_cast<fpx_t>(radius) };
+            caps.at(i)    = { .x = static_cast<fpx_t>(capX),
+                              .y = static_cast<fpx_t>(capY),
+                              .w = static_cast<fpx_t>(capW),
+                              .h = static_cast<fpx_t>(capH) };
+            corners.at(i) = { .x = static_cast<fpx_t>(cx),
+                              .y = static_cast<fpx_t>(cy),
+                              .w = static_cast<fpx_t>(radius),
+                              .h = static_cast<fpx_t>(radius) };
 
             // Init buffer with bg color
             auto & buf = outPixels.at(i);
             buf.resize(static_cast<size_t>(radius) * radius * 4);
             for (int j = 0; j < radius * radius; ++j) {
-                buf.at(static_cast<size_t>(j) * 4 + 0) = bgColor.r();
-                buf.at(static_cast<size_t>(j) * 4 + 1) = bgColor.g();
-                buf.at(static_cast<size_t>(j) * 4 + 2) = bgColor.b();
-                buf.at(static_cast<size_t>(j) * 4 + 3) = 255;
+                const size_t pixel = static_cast<size_t>(j) * 4;
+                buf.at(pixel + 0)  = bgColor.r();
+                buf.at(pixel + 1)  = bgColor.g();
+                buf.at(pixel + 2)  = bgColor.b();
+                buf.at(pixel + 3)  = 255;
             }
 
             if (capW <= 0 || capH <= 0) {
@@ -2831,9 +2843,9 @@ public:
             const int rowBytes = capW * 4;
             int       row      = 0;
             while (row < capH / 2) {
-                std::swap_ranges(&regionPixels[row * rowBytes],
-                                 &regionPixels[row * rowBytes + rowBytes],
-                                 &regionPixels[(capH - 1 - row) * rowBytes]);
+                std::swap_ranges(regionPixels.begin() + (row * rowBytes),
+                                 regionPixels.begin() + ((row + 1) * rowBytes),
+                                 regionPixels.begin() + ((capH - 1 - row) * rowBytes));
                 ++row;
             }
 
@@ -2847,12 +2859,12 @@ public:
                     if (dX < 0 || dX >= radius || dY < 0 || dY >= radius) {
                         continue;
                     }
-                    const int srcIdx                     = (py * capW + px) * 4;
-                    const int dstIdx                     = (dY * radius + dX) * 4;
-                    buf[static_cast<size_t>(dstIdx) + 0] = regionPixels[static_cast<size_t>(srcIdx) + 0];
-                    buf[static_cast<size_t>(dstIdx) + 1] = regionPixels[static_cast<size_t>(srcIdx) + 1];
-                    buf[static_cast<size_t>(dstIdx) + 2] = regionPixels[static_cast<size_t>(srcIdx) + 2];
-                    buf[static_cast<size_t>(dstIdx) + 3] = 255;
+                    const size_t srcIdx = ((static_cast<size_t>(py) * capW) + px) * 4;
+                    const size_t dstIdx = ((static_cast<size_t>(dY) * radius) + dX) * 4;
+                    buf.at(dstIdx + 0)  = regionPixels.at(srcIdx + 0);
+                    buf.at(dstIdx + 1)  = regionPixels.at(srcIdx + 1);
+                    buf.at(dstIdx + 2)  = regionPixels.at(srcIdx + 2);
+                    buf.at(dstIdx + 3)  = 255;
                 }
             }
 
@@ -2885,10 +2897,10 @@ public:
             const int                  overlapW = right - left;
             const int                  overlapH = bottom - top;
             const std::vector<uint8_t> overlap  = content->second.pairing->readPixels(
-            { static_cast<fpx_t>(left) - contentBound.x,
-               static_cast<fpx_t>(top) - contentBound.y,
-               static_cast<fpx_t>(overlapW),
-               static_cast<fpx_t>(overlapH) });
+            { .x = static_cast<fpx_t>(left) - contentBound.x,
+              .y = static_cast<fpx_t>(top) - contentBound.y,
+              .w = static_cast<fpx_t>(overlapW),
+              .h = static_cast<fpx_t>(overlapH) });
             if (overlap.size() != static_cast<size_t>(overlapW) * overlapH * 4) {
                 continue;
             }
@@ -2905,10 +2917,10 @@ public:
                     }
                     const size_t srcIdx = ((static_cast<size_t>(py) * overlapW) + px) * 4;
                     const size_t dstIdx = ((static_cast<size_t>(dY) * radius) + dX) * 4;
-                    buf[dstIdx + 0]     = overlap[srcIdx + 0];
-                    buf[dstIdx + 1]     = overlap[srcIdx + 1];
-                    buf[dstIdx + 2]     = overlap[srcIdx + 2];
-                    buf[dstIdx + 3]     = 255;
+                    buf.at(dstIdx + 0)  = overlap.at(srcIdx + 0);
+                    buf.at(dstIdx + 1)  = overlap.at(srcIdx + 1);
+                    buf.at(dstIdx + 2)  = overlap.at(srcIdx + 2);
+                    buf.at(dstIdx + 3)  = 255;
                 }
             }
         }
@@ -3256,11 +3268,11 @@ public:
         reflowDocksAndViewport();
     }
 
-    Ui::Render::element_event_t onMousePress(int                     x,
-                                             int                     y,
-                                             Ui::Window::MouseButton button,
-                                             int                     clickCount,
-                                             Ui::Window::KeyModifier modifiers) override
+    Ui::Render::element_event_t onMousePress(int                         x,
+                                             int                         y,
+                                             Ui::Window::MouseButton     button,
+                                             int                         clickCount,
+                                             Ui::Window::key_modifiers_t modifiers) override
     {
         // A press on anything that declared DragStart takes the pointer before
         // content-surface routing gets a look: grip rects sit flush against
@@ -3382,12 +3394,12 @@ public:
         return it->second.pairing->onMouseMove(x, y);
     }
 
-    Ui::Render::element_event_t onMousePress(int                     x,
-                                             int                     y,
-                                             id_t                    childId,
-                                             Ui::Window::MouseButton button,
-                                             int                     clickCount,
-                                             Ui::Window::KeyModifier modifiers)
+    Ui::Render::element_event_t onMousePress(int                         x,
+                                             int                         y,
+                                             id_t                        childId,
+                                             Ui::Window::MouseButton     button,
+                                             int                         clickCount,
+                                             Ui::Window::key_modifiers_t modifiers)
     {
         Ui::IRenderer * pairing = (childId != Ui::INVALID_ID) ? contentPairing(childId) : nullptr;
         return pairing != nullptr ? pairing->onMousePress(x, y, button, clickCount, modifiers)

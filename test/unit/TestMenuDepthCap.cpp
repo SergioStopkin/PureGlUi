@@ -81,7 +81,7 @@ TEST(MenuDepthCap, BelowCapParsesFully)
 {
     TestSupport::menu_store_fixture_t fx;
     const Ui::Res::Type::menu_t       root = fx.store.parseMenuItem(nestedMenuJson(2),
-                                                              Ui::Res::Store::MenuStore::DROPDOWN_LEVEL);
+                                                                    Ui::Res::Store::MenuStore::DROPDOWN_LEVEL);
     EXPECT_EQ(chainDepth(root), 2);
 }
 

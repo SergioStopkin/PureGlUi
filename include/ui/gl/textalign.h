@@ -41,7 +41,7 @@ startXRight(const Ui::Res::Type::bound_t & box, fpx_t textWidthCss, fpx_t paddin
 // Physical startX for centered text of width `textWidthCss` inside `box`.
 [[nodiscard]] inline fpx_t startXCenter(const Ui::Res::Type::bound_t & box, fpx_t textWidthCss, fpx_t scale)
 {
-    return (box.x + (box.w - textWidthCss) / 2.0F) * scale;
+    return (box.x + ((box.w - textWidthCss) / 2.0F)) * scale;
 }
 
 // Centered, but never starts before `box.x + minPaddingHCss` - prevents long
@@ -51,7 +51,7 @@ startXRight(const Ui::Res::Type::bound_t & box, fpx_t textWidthCss, fpx_t paddin
 [[nodiscard]] inline fpx_t
 startXCenterClamped(const Ui::Res::Type::bound_t & box, fpx_t textWidthCss, fpx_t minPaddingHCss, fpx_t scale)
 {
-    const fpx_t centered = (box.x + (box.w - textWidthCss) / 2.0F) * scale;
+    const fpx_t centered = (box.x + ((box.w - textWidthCss) / 2.0F)) * scale;
     const fpx_t minX     = (box.x + minPaddingHCss) * scale;
     return centered < minX ? minX : centered;
 }

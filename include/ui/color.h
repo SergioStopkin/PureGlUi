@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+#include <ios>
 #include <sstream>
 #include <string>
 
@@ -75,7 +76,7 @@ public:
     // Parse from hex string (#RRGGBB or #RRGGBBAA)
     static Color fromHex(const std::string & hex)
     {
-        if (hex.empty() || hex[0] != '#') {
+        if (!hex.starts_with('#')) {
             return {}; // Return default (magenta)
         }
 
@@ -202,14 +203,15 @@ private:
             return;
         }
 
-        s = d / (1.0F - std::fabs(2.0F * (cmax + cmin) / 2.0F - 1.0F)) * 100.0F;
+        // 2L - 1 with L = (cmax + cmin) / 2
+        s = d / (1.0F - std::fabs(cmax + cmin - 1.0F)) * 100.0F;
 
         if (cmax == rf) {
             h = 60.0F * std::fmod((gf - bf) / d, 6.0F);
         } else if (cmax == gf) {
-            h = 60.0F * ((bf - rf) / d + 2.0F);
+            h = 60.0F * (((bf - rf) / d) + 2.0F);
         } else {
-            h = 60.0F * ((rf - gf) / d + 4.0F);
+            h = 60.0F * (((rf - gf) / d) + 4.0F);
         }
 
         if (h < 0) {
@@ -223,9 +225,9 @@ private:
         s /= 100.0F;
         l /= 100.0F;
 
-        const float c = (1.0F - std::fabs(2.0F * l - 1.0F)) * s;
+        const float c = (1.0F - std::fabs((2.0F * l) - 1.0F)) * s;
         const float x = c * (1.0F - std::fabs(std::fmod(h / 60.0F, 2.0F) - 1.0F));
-        const float m = l - c / 2.0F;
+        const float m = l - (c / 2.0F);
 
         float rf = 0;
         float gf = 0;

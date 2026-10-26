@@ -20,6 +20,7 @@
 #include "ui/interface/ieventos.h"
 #include "ui/interface/iwindow.h"
 #include "ui/window/event.h"
+#include "ui/window/eventtype.h"
 
 #include <algorithm>
 #include <atomic>
@@ -319,18 +320,18 @@ private:
      * when a macOS user presses Cmd+X. The physical Control key also maps to Control for
      * external-keyboard users; both cases set the same flag. Meta is left unused on macOS.
      */
-    static KeyModifier convertNSModifiers(NSEventModifierFlags flags)
+    static key_modifiers_t convertNSModifiers(NSEventModifierFlags flags)
     {
-        KeyModifier mods = KeyModifier::None;
+        key_modifiers_t mods;
 
         if (flags & NSEventModifierFlagShift) {
-            mods = mods | KeyModifier::Shift;
+            mods |= KeyModifier::Shift;
         }
         if (flags & (NSEventModifierFlagControl | NSEventModifierFlagCommand)) {
-            mods = mods | KeyModifier::Control;
+            mods |= KeyModifier::Control;
         }
         if (flags & NSEventModifierFlagOption) { // Alt/Option
-            mods = mods | KeyModifier::Alt;
+            mods |= KeyModifier::Alt;
         }
 
         return mods;

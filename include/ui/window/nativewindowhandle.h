@@ -21,17 +21,17 @@
 // Does NOT include platform window classes to avoid circular dependencies
 // with interface headers (iwindow.h, icontext.h, ieventos.h).
 
-#if defined(_WIN32)
+#ifdef _WIN32
 #include <windows.h>
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 #ifdef __OBJC__
 @class NSView;
 #else
 using NSView = void;
 #endif
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
 #include <wayland-client.h>
-#elif defined(HAVE_X11)
+#elifdef HAVE_X11
 #include "ui/window/platform/x11include.h"
 #endif
 
@@ -41,15 +41,15 @@ using NSView = void;
 
 namespace Ui::Window {
 
-#if defined(_WIN32)
+#ifdef _WIN32
 using NativeWindowHandle = HWND;
-#elif defined(__APPLE__)
+#elifdef __APPLE__
 // NSView*: the native drawable for a content surface, also used by popups
 // (they resolve the parent NSWindow via [view window]).
 using NativeWindowHandle = NSView *;
-#elif defined(HAVE_WAYLAND)
+#elifdef HAVE_WAYLAND
 using NativeWindowHandle = wl_surface *;
-#elif defined(HAVE_X11)
+#elifdef HAVE_X11
 using NativeWindowHandle = ::Window;
 #else
 #error "No supported window system found"

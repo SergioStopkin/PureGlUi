@@ -23,13 +23,14 @@
 #include "ui/interface/iwindow.h"
 #include "ui/window/clickcounter.h"
 #include "ui/window/event.h"
+#include "ui/window/eventtype.h"
 #include "ui/window/platform/x11include.h"
 
-#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstring>
+#include <string>
 #include <utility>
-#include <vector>
 
 // X11 protocol event types (values from X.h). SCREAMING_CASE constexpr so the
 // names don't collide with X.h's ButtonPress/SelectionNotify/... macros - no _
@@ -322,18 +323,18 @@ private:
     /**
      * @brief Convert X11 modifier state to platform-agnostic modifiers
      */
-    static KeyModifier convertX11Modifiers(unsigned int state)
+    static key_modifiers_t convertX11Modifiers(unsigned int state)
     {
-        KeyModifier mods = KeyModifier::None;
+        key_modifiers_t mods;
 
         if (Common::Bit::And(state, ShiftMask) != 0U) {
-            mods = mods | KeyModifier::Shift;
+            mods |= KeyModifier::Shift;
         }
         if (Common::Bit::And(state, ControlMask) != 0U) {
-            mods = mods | KeyModifier::Control;
+            mods |= KeyModifier::Control;
         }
         if (Common::Bit::And(state, Mod1Mask) != 0U) { // Alt
-            mods = mods | KeyModifier::Alt;
+            mods |= KeyModifier::Alt;
         }
 
         return mods;

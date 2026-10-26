@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include "common/bit.h"
 #include "common/fs.h"
 #include "common/json.h"
 #include "common/sanitize.h"
@@ -32,6 +31,7 @@
 #include "ui/res/key/section.h"
 #include "ui/res/key/session.h"
 #include "ui/res/localemanager.h"
+#include "ui/res/persistedsetting.h"
 #include "ui/res/respath.h"
 #include "ui/res/store/dialogstore.h"
 #include "ui/res/store/dockstore.h"
@@ -43,6 +43,8 @@
 #include "ui/res/type/bound.h"
 #include "ui/res/type/button.h"
 #include "ui/res/type/changed.h"
+#include "ui/res/type/dialogtype.h"
+#include "ui/res/type/dialogtypeconfig.h"
 #include "ui/res/type/icondefault.h"
 #include "ui/res/type/input.h"
 #include "ui/res/type/layout.h"
@@ -55,10 +57,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <fstream>
-#include <functional>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -75,20 +77,6 @@ namespace Ui::Res {
 constexpr bool SESSION_DEBUG = false;
 
 class ResManager final {
-    // One persisted user setting exposed to the host. Each setting registers a
-    // (sessionKey, get, set) triple at construction; the host iterates the
-    // registry (persistedSettings()) to store/restore instead of naming every
-    // field. Both menu-driven settings (themeName, displayMode, ambience) and
-    // programmatic ones (themeMode, lastOpenDir) flow through the same path.
-    struct alignas(128) persisted_setting_t final {
-        std::string       section;             // resolved session.json section name (fw or host enum)
-        std::string       sessionKey;          // camelCase key inside the section (empty when isJsonValue)
-        Ui::provider_fn_t get;                 // current value -> string
-        Ui::action_fn_t   set;                 // string -> apply to typed field
-        bool              skipIfEmpty = false; // omit from save when value is empty
-        bool              isJsonValue = false; // value is JSON text and owns the whole section
-    };
-
     // Declared widest-alignment first, then pointer-sized, then scalars: a store
     // aligns to a cache line, so a small member wedged between two of them costs
     // a line of padding each time. Order inside the stores is also a dependency -
@@ -125,25 +113,19 @@ class ResManager final {
     std::vector<persisted_setting_t>   m_persistedSettings;
     // Host hook invoked whenever a persisted setting changes. The fw owns no
     // session concept; a host wires this to its own session save.
-    Ui::task_fn_t m_onPersistChange = [] {};
+    Ui::task_fn_t m_onPersistChange = [] { };
     id_t          m_activeMenuId    = Ui::INVALID_ID;
 
     // Persisted main-window geometry. width/height <= 0 means "not set yet" -
     // WindowManager falls back to layout.windowWidth/Height on first launch.
     // x/y default to 0 (top-left), only meaningful once width/height are set.
-    int                    m_sessionWindowX      = 0;
-    int                    m_sessionWindowY      = 0;
-    int                    m_sessionWindowWidth  = 0;
-    int                    m_sessionWindowHeight = 0;
-    Ui::Res::Type::Changed m_changed             = Ui::Res::Type::Changed::None;
-    bool                   m_isRestoring         = false; // true while deserializeSession applies values
-
-    // Accumulate a Changed flag into the pending reload mask. Sub-store loads
-    // and runtime setters funnel their Changed return through here.
-    void markChanged(Ui::Res::Type::Changed flag)
-    {
-        m_changed = static_cast<Ui::Res::Type::Changed>(Common::Bit::Or(m_changed, flag));
-    }
+    int m_sessionWindowX      = 0;
+    int m_sessionWindowY      = 0;
+    int m_sessionWindowWidth  = 0;
+    int m_sessionWindowHeight = 0;
+    Ui::Res::Type::changes_t
+         m_changed;             // the pending reload mask: sub-store loads and runtime setters |= theirs into it
+    bool m_isRestoring = false; // true while deserializeSession applies values
 
 public:
     explicit ResManager(std::string resDir = "./res")
@@ -171,32 +153,34 @@ public:
         "app.openFile.title");
         for (const auto & filter : Common::Json::array(openFile, appKeyName(AppKey::Filters))) {
             m_openFileFilters.push_back(
-            { Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Name)), "app.filter.name"),
-              Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Spec)), "app.filter.spec") });
+            { .name = Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Name)),
+                                               "app.filter.name"),
+              .spec = Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Spec)),
+                                               "app.filter.spec") });
         }
 
         std::cout << "[ResManager] Loaded app.json: title=" << m_title << " sessionDir=" << m_sessionDir << std::endl;
 
         // Build the persisted-setting registry (raw getters/setters over the
-        // owned fields). The host drives load/save through persistedSettings().
+        // owned fields) that serializeSession/deserializeSession walk.
         registerPersistedSettings();
     }
     void loadAll()
     {
-        m_changed = Ui::Res::Type::Changed::None;
+        m_changed = {};
         m_localeManager.load("en", m_resPath);
-        markChanged(Ui::Res::Type::Changed::Locale);
-        markChanged(m_themeStore.loadCurrent(m_resPath));
-        markChanged(m_layoutStore.load(m_resPath.layoutFile()));
+        m_changed |= Ui::Res::Type::Changed::Locale;
+        m_changed |= m_themeStore.loadCurrent(m_resPath);
+        m_changed |= m_layoutStore.load(m_resPath.layoutFile());
         loadInput(m_resPath.inputFile());
         m_dialogStore.load(m_resPath.dialogFile());
-        markChanged(m_shortcutStore.load(m_resPath.shortcutFile()));
-        markChanged(m_iconStore.load(m_resPath.iconDefaultsFile()));
-        markChanged(m_menuStore.loadButtons(m_resPath.buttonDir()));
+        m_changed |= m_shortcutStore.load(m_resPath.shortcutFile());
+        m_changed |= m_iconStore.load(m_resPath.iconDefaultsFile());
+        m_changed |= m_menuStore.loadButtons(m_resPath.buttonDir());
         // loadMenus enumerates names for any menu item declaring
         // `"submenus": {"auto": "<key>"}` (e.g. theme). Any matching domain config
         // load is the host's job, done separately - the fw only builds menu items.
-        markChanged(m_menuStore.loadMenus(m_resPath.menuDir()));
+        m_changed |= m_menuStore.loadMenus(m_resPath.menuDir());
         loadDocks(m_resPath.dockDir());
         m_menuStore.buildIndexes();
     }
@@ -227,10 +211,8 @@ public:
         const fpx_t  margin    = layout.dialog.margin * 2.0F;
         const fpx_t  sides     = layout.leftToolbar.width + layout.rightToolbar.width + margin;
         const fpx_t  bands     = layout.topMenu.height + layout.workspaceTab.height + layout.statusBar.height + margin;
-        return { 0,
-                 0,
-                 std::max(layout.windowMinWidth, maxDialog.w + sides),
-                 std::max(layout.windowMinHeight, maxDialog.h + bands) };
+        return { .w = std::max(layout.windowMinWidth, maxDialog.w + sides),
+                 .h = std::max(layout.windowMinHeight, maxDialog.h + bands) };
     }
 
     // Resolved icon default for a role from icon-defaults.json. Returns an empty
@@ -310,14 +292,14 @@ public:
     // (`isHandled` reports handler presence). Dialog items stay enabled.
     void disableUnhandledItems(const Ui::predicate_fn_t & isHandled) { m_menuStore.disableUnhandledItems(isHandled); }
 
-    Ui::TabBar &                         tabBar() { return m_tabBar; }
-    const Ui::TabBar &                   tabBar() const { return m_tabBar; }
-    id_t                                 activeMenuId() const { return m_activeMenuId; }
-    void                                 setActiveMenu(id_t id) { m_activeMenuId = id; }
-    void                                 clearActiveMenu() { m_activeMenuId = Ui::INVALID_ID; }
-    const std::string &                  statusText() const { return m_statusText; }
-    void                                 setStatusText(const std::string & text) { m_statusText = text; }
-    [[nodiscard]] Ui::Res::Type::Changed changed() const { return m_changed; }
+    Ui::TabBar &                           tabBar() { return m_tabBar; }
+    const Ui::TabBar &                     tabBar() const { return m_tabBar; }
+    id_t                                   activeMenuId() const { return m_activeMenuId; }
+    void                                   setActiveMenu(id_t id) { m_activeMenuId = id; }
+    void                                   clearActiveMenu() { m_activeMenuId = Ui::INVALID_ID; }
+    const std::string &                    statusText() const { return m_statusText; }
+    void                                   setStatusText(const std::string & text) { m_statusText = text; }
+    [[nodiscard]] Ui::Res::Type::changes_t changed() const { return m_changed; }
 
     [[nodiscard]] const Ui::Res::ResPath & resPath() const { return m_resPath; }
 
@@ -327,13 +309,13 @@ public:
 
     void switchThemeMode()
     {
-        markChanged(m_themeStore.switchThemeMode(m_resPath));
+        m_changed |= m_themeStore.switchThemeMode(m_resPath);
         notifyPersistChange();
     }
 
     void setThemeName(const std::string & name)
     {
-        markChanged(m_themeStore.setThemeName(name, m_resPath));
+        m_changed |= m_themeStore.setThemeName(name, m_resPath);
         notifyPersistChange();
     }
 
@@ -424,18 +406,16 @@ public:
     // caused them, so the conflict is refused here instead.
     [[nodiscard]] bool isSectionOwned(const std::string & section) const
     {
-        return std::any_of(
-        m_persistedSettings.begin(),
-        m_persistedSettings.end(),
-        [&section](const persisted_setting_t & setting) { return setting.section == section && setting.isJsonValue; });
+        return std::ranges::any_of(m_persistedSettings, [&section](const persisted_setting_t & setting) {
+            return setting.section == section && setting.isJsonValue;
+        });
     }
 
     [[nodiscard]] bool hasSectionKeys(const std::string & section) const
     {
-        return std::any_of(
-        m_persistedSettings.begin(),
-        m_persistedSettings.end(),
-        [&section](const persisted_setting_t & setting) { return setting.section == section && !setting.isJsonValue; });
+        return std::ranges::any_of(m_persistedSettings, [&section](const persisted_setting_t & setting) {
+            return setting.section == section && !setting.isJsonValue;
+        });
     }
 
     // Section first, then key: arguments read outer -> inner, like the JSON
@@ -447,8 +427,11 @@ public:
                            Ui::action_fn_t          setter,
                            bool                     skipIfEmpty = false)
     {
-        m_persistedSettings.push_back(
-        { Ui::Res::Key::sectionKeyName(section), std::move(key), std::move(getter), std::move(setter), skipIfEmpty });
+        m_persistedSettings.push_back({ .section     = Ui::Res::Key::sectionKeyName(section),
+                                        .sessionKey  = std::move(key),
+                                        .get         = std::move(getter),
+                                        .set         = std::move(setter),
+                                        .skipIfEmpty = skipIfEmpty });
     }
 
     // Structured variant: the getter returns JSON TEXT, which lands in the file
@@ -472,12 +455,12 @@ public:
                       << "' is unusable, framework-owned, or already registered; ignoring JSON provider" << std::endl;
             return;
         }
-        m_persistedSettings.push_back({ std::move(section),
-                                        /*sessionKey=*/ {},
-                                        std::move(getter),
-                                        std::move(setter),
-                                        /*skipIfEmpty=*/true,
-                                        /*isJsonValue=*/true });
+        m_persistedSettings.push_back({ .section     = std::move(section),
+                                        .sessionKey  = {},
+                                        .get         = std::move(getter),
+                                        .set         = std::move(setter),
+                                        .skipIfEmpty = true,
+                                        .isJsonValue = true });
     }
 
     void registerPersistedSettings()
@@ -748,7 +731,7 @@ public:
         }
         // The persisted setters store the raw theme name/mode; reload the
         // theme file now for the restored pair.
-        markChanged(m_themeStore.loadCurrent(m_resPath));
+        m_changed |= m_themeStore.loadCurrent(m_resPath);
 
         m_sessionActiveFile.clear();
         m_sessionOpenFiles.clear();
@@ -808,8 +791,8 @@ public:
             using Ui::Res::Key::DockKey;
             Ui::Res::Dock::dock_config_t cfg;
             cfg.name   = Common::Sanitize::string(Common::Json::string(j, dockKeyName(DockKey::Name)),
-                                                "dock.name",
-                                                Store::DockStore::MAX_DOCK_NAME_LENGTH);
+                                                  "dock.name",
+                                                  Store::DockStore::MAX_DOCK_NAME_LENGTH);
             cfg.anchor = Ui::Res::Dock::dockAnchorFromName(
             Common::Json::string(j, dockKeyName(DockKey::Anchor), "left"));
             cfg.order        = Common::Json::number(j, dockKeyName(DockKey::Order), 1);
@@ -822,7 +805,7 @@ public:
         }
 
         // Dock definitions live in layout_t; commit them through LayoutStore.
-        markChanged(m_layoutStore.setDocks(std::move(docks)));
+        m_changed |= m_layoutStore.setDocks(std::move(docks));
     }
 };
 

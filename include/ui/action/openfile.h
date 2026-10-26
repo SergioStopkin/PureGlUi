@@ -22,6 +22,7 @@
 #include "ui/io/filedialog.h"
 #include "ui/res/key/iconrole.h"
 #include "ui/res/type/dialog.h"
+#include "ui/res/type/dialogtype.h"
 
 #include <filesystem>
 #include <string>

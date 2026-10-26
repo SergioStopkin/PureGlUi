@@ -24,6 +24,7 @@
 #include "common/hash.h"
 #include "ui/res/type/border.h"
 #include "ui/res/type/font.h"
+#include "ui/res/type/fontweight.h"
 
 #include <functional>
 #include <gtest/gtest.h>

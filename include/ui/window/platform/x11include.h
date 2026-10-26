@@ -32,6 +32,11 @@
 
 #ifdef __linux__
 
+// The exports tell include-cleaner that including this header is including X11 itself.
+// X.h (Atom, Window, the masks) and shapeconst.h are named too: an export covers the
+// headers listed here, not the ones they pull in
+// IWYU pragma: begin_exports
+#include <X11/X.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -40,6 +45,10 @@
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xrender.h>
 #include <X11/extensions/shape.h>
+#include <X11/extensions/shapeconst.h>
+// IWYU pragma: end_exports
+
+#include <cstdint>
 
 // X11 macro    Defined as    Clashes with
 // ---------    ----------    ------------

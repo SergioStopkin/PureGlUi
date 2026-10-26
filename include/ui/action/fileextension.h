@@ -34,7 +34,7 @@ inline std::string fileExtension(const std::string & file)
     if (!extension.empty() && extension.front() == '.') {
         extension.erase(0, 1);
     }
-    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) {
+    std::ranges::transform(extension, extension.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
     });
     return extension;

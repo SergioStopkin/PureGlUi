@@ -59,7 +59,7 @@ protected:
         resManager.loadAll();
         // Docks come from the layout, and only a resource apply builds them - the
         // rest of that path needs no window
-        windowManager.apply(Ui::Res::Type::Changed::Layout);
+        windowManager.apply(Ui::Res::Type::changes_t(Ui::Res::Type::Changed::Layout));
         // No window is ever created: this only stores the size the geometry
         // below is derived from
         windowManager.onMainWindowResize(WINDOW_W, WINDOW_H);

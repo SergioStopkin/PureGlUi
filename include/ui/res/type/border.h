@@ -33,7 +33,10 @@ struct alignas(16) border_t final {
 
     [[nodiscard]] border_t scaled(fpx_t factor) const
     {
-        return { topLeft * factor, topRight * factor, bottomRight * factor, bottomLeft * factor };
+        return { .topLeft     = topLeft * factor,
+                 .topRight    = topRight * factor,
+                 .bottomRight = bottomRight * factor,
+                 .bottomLeft  = bottomLeft * factor };
     }
 
     [[nodiscard]] bool anyNonZero() const

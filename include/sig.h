@@ -41,16 +41,16 @@ inline void g_app_init(std::function<void()> stopCallback) noexcept { g_stop = s
     switch (sig) {
     case SIGINT: return "SIGINT";
     case SIGTERM: return "SIGTERM";
-#if defined(SIGHUP)
+#ifdef SIGHUP
     case SIGHUP: return "SIGHUP";
 #endif
-#if defined(SIGQUIT)
+#ifdef SIGQUIT
     case SIGQUIT: return "SIGQUIT";
 #endif
-#if defined(SIGABRT)
+#ifdef SIGABRT
     case SIGABRT: return "SIGABRT";
 #endif
-#if defined(SIGSEGV)
+#ifdef SIGSEGV
     case SIGSEGV: return "SIGSEGV";
 #endif
     default: return "UNKNOWN";

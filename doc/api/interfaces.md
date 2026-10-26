@@ -115,8 +115,8 @@ Methods:
 - `bool render()` (pure) - render the current frame; returns true if a frame was
   rendered.
 - `void resize(fpx_t width, fpx_t height)` (pure) - handle window resize.
-- `void apply(Ui::Res::Type::Changed changed)` (pure) - apply resource changes
-  (theme, layout, etc.).
+- `void apply(Ui::Res::Type::changes_t changed)` (pure) - apply resource changes
+  (theme, layout, etc.), the set of parts a reload or a runtime setter changed.
 - `void refresh()` (virtual, default no-op) - re-present the last rendered frame
   without clearing or re-drawing. Used after the parent window swaps buffers so
   this window's content stays visible (fullscreen/unredirected compositing). A
@@ -185,7 +185,7 @@ Free function (same header):
   click path (submenus open on hover); `ClosePopup` is gated by `isPopupOpen()`;
   `CopyText` is skipped on empty `arg`.
 
-Implemented by: `Ui::Shell` (privately - forwarding to `WindowManager` + the
+Implemented by: `Ui::Shell` (publicly - forwarding to `WindowManager` + the
 action registry + host tab hooks), and by test recording doubles.
 
 Called by: `Ui::routeIntent()` only, invoked from `Ui::Shell::execute()`.

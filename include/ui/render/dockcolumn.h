@@ -146,10 +146,7 @@ public:
             // cursor moves left grows a right dock. Floor at 0 (just the
             // grip remains visible); ceiling is enforced by WindowManager
             // via clampTransientWidth() based on viewport space.
-            fpx_t w = m_grip.valueAt(cssX);
-            if (w < 0.0F) {
-                w = 0.0F;
-            }
+            const fpx_t w          = std::max(m_grip.valueAt(cssX), 0.0F);
             const fpx_t widthDelta = w - m_grip.valueAtGrab;
             std::cout << "[DockColumn::drag] name=\"" << m_config.name
                       << "\" anchor=" << (m_config.anchor == Ui::Res::Dock::DockAnchor::Left ? "L" : "R")
@@ -298,7 +295,7 @@ public:
             return std::nullopt;
         }
         m_sliderMetrics   = sliderMetrics(sliderBound(rowsRect(), *index), sliderThumbLength());
-        const fpx_t ratio = m_rows[*index].ratio;
+        const fpx_t ratio = m_rows.at(*index).ratio;
         if (thumb_track_t::isOnThumb(m_sliderMetrics, ratio, cssX)) {
             m_sliderDrag.begin(m_sliderMetrics, cssX, ratio);
             return std::nullopt;
@@ -356,15 +353,15 @@ public:
     // Position the dock. innerEdgeX is the CSS x-coordinate of the viewport-
     // facing edge: for Left anchor it's the right edge of the dock; for
     // Right anchor it's the left edge. y/h are the CSS vertical span. All
-    // values stay in CSS because UiRenderer's draw ops (BGOp / ImageOp) are
+    // values stay in CSS because UiRenderer's draw ops (bg_op_t / image_op_t) are
     // submitted in CSS - endFrame scales by g_scale on the way to GL.
     void setLayout(fpx_t y, fpx_t h, fpx_t innerEdgeX)
     {
         const fpx_t w = currentWidth();
         if (m_config.anchor == Ui::Res::Dock::DockAnchor::Left) {
-            m_outer = { innerEdgeX - w, y, w, h };
+            m_outer = { .x = innerEdgeX - w, .y = y, .w = w, .h = h };
         } else {
-            m_outer = { innerEdgeX, y, w, h };
+            m_outer = { .x = innerEdgeX, .y = y, .w = w, .h = h };
         }
         // A dock that just grew shows more rows, so the offset it was holding can
         // now be past the end
@@ -381,9 +378,9 @@ public:
         const fpx_t gripW    = m_resManager.layout().dockDefaults.gripWidth;
         const fpx_t contentW = m_outer.w > gripW ? m_outer.w - gripW : 0.0F;
         if (m_config.anchor == Ui::Res::Dock::DockAnchor::Left) {
-            return { m_outer.x, m_outer.y, contentW, m_outer.h };
+            return { .x = m_outer.x, .y = m_outer.y, .w = contentW, .h = m_outer.h };
         }
-        return { m_outer.x + gripW, m_outer.y, contentW, m_outer.h };
+        return { .x = m_outer.x + gripW, .y = m_outer.y, .w = contentW, .h = m_outer.h };
     }
 
     // Resize/collapse grip on the viewport-facing edge.
@@ -391,9 +388,9 @@ public:
     {
         const fpx_t gripW = m_resManager.layout().dockDefaults.gripWidth;
         if (m_config.anchor == Ui::Res::Dock::DockAnchor::Left) {
-            return { m_outer.x + m_outer.w - gripW, m_outer.y, gripW, m_outer.h };
+            return { .x = m_outer.x + m_outer.w - gripW, .y = m_outer.y, .w = gripW, .h = m_outer.h };
         }
-        return { m_outer.x, m_outer.y, gripW, m_outer.h };
+        return { .x = m_outer.x, .y = m_outer.y, .w = gripW, .h = m_outer.h };
     }
 
     // Emit ops for: content area background (only when expanded), grip strip
@@ -419,17 +416,23 @@ public:
         if (contentRect.w > 0.0F) {
             out.appendBg(contentRect, theme.dock.background, parentBg);
         }
-        const Ui::Res::Type::color_pair_t & gripColors = m_isDragging    ? theme.dock.gripActive
-                                                       : m_isHoveredGrip ? theme.dock.gripHover
-                                                                         : theme.dock.grip;
+        const Ui::Res::Type::color_pair_t & gripColors = [&]() -> const Ui::Res::Type::color_pair_t & {
+            if (m_isDragging) {
+                return theme.dock.gripActive;
+            }
+            if (m_isHoveredGrip) {
+                return theme.dock.gripHover;
+            }
+            return theme.dock.grip;
+        }();
         // Round only the corners on the viewport-facing edge so the seam
         // with the dock content stays sharp. Left anchor -> grip on the
         // right side of outer -> top/bottom-right are the viewport-facing
         // corners; mirror for right anchor
         const fpx_t                   r          = m_resManager.layout().dockDefaults.gripRadius;
         const Ui::Res::Type::border_t gripRadius = (m_config.anchor == Ui::Res::Dock::DockAnchor::Left)
-                                                 ? Ui::Res::Type::border_t { 0, r, r, 0 }
-                                                 : Ui::Res::Type::border_t { r, 0, 0, r };
+                                                 ? Ui::Res::Type::border_t { .topRight = r, .bottomRight = r }
+                                                 : Ui::Res::Type::border_t { .topLeft = r, .bottomLeft = r };
         out.appendBg(gripRect, gripColors, parentBg, gripRadius);
 
         // Glyph width matches the grip strip (the configurable dock-edge
@@ -447,8 +450,8 @@ public:
 
         const fpx_t                  glyphW = gripRect.w;
         const fpx_t                  glyphH = (svgW > 0.0F) ? glyphW * (svgH / svgW) : glyphW;
-        const fpx_t                  glyphY = gripRect.y + (gripRect.h - glyphH) / 2.0F;
-        const Ui::Res::Type::bound_t glyph  = { gripRect.x, glyphY, glyphW, glyphH };
+        const fpx_t                  glyphY = gripRect.y + ((gripRect.h - glyphH) / 2.0F);
+        const Ui::Res::Type::bound_t glyph  = { .x = gripRect.x, .y = glyphY, .w = glyphW, .h = glyphH };
         if constexpr (DOCK_DEBUG) {
             std::cout << "[DockColumn::render] glyph=(" << glyph.x << "," << glyph.y << "," << glyph.w << "," << glyph.h
                       << ") svgIntrinsic=(" << svgW << "x" << svgH << ") tint=" << gripColors.fg.toHex() << std::endl;
@@ -512,31 +515,32 @@ private:
 
         const std::size_t last = lastVisibleRow();
         for (std::size_t i = m_firstRow; i < last; ++i) {
+            const Ui::Res::Dock::row_t & row = m_rows.at(i);
             // Renders but never reports
-            if (m_rows[i].id == INVALID_ID) {
+            if (row.id == INVALID_ID) {
                 continue;
             }
             if constexpr (DOCK_DEBUG) {
                 const Ui::Res::Type::bound_t sb = sliderBound(contentRect, i);
-                std::cout << "[DockColumn::elements] row=" << i << " id=" << m_rows[i].id
-                          << " kind=" << static_cast<int>(m_rows[i].kind) << " ratio=" << m_rows[i].ratio
-                          << " sliderBound=(" << sb.x << "," << sb.y << " " << sb.w << "x" << sb.h << ")" << std::endl;
+                std::cout << "[DockColumn::elements] row=" << i << " id=" << row.id
+                          << " kind=" << static_cast<int>(row.kind) << " ratio=" << row.ratio << " sliderBound=("
+                          << sb.x << "," << sb.y << " " << sb.w << "x" << sb.h << ")" << std::endl;
             }
             // The host's row id is the element id: it carries a host kind, so it
             // cannot land on a framework element's (Ui::isHostId)
-            layout.addElement(UiElementType::DockRow, rowBound(contentRect, i), m_rows[i].id);
+            layout.addElement(UiElementType::DockRow, rowBound(contentRect, i), row.id);
             if (hasExpander(contentRect, i)) {
-                layout.addElement(UiElementType::DockExpander, expanderBound(contentRect, i), m_rows[i].id);
+                layout.addElement(UiElementType::DockExpander, expanderBound(contentRect, i), row.id);
             }
             // Over its row, so the slider takes the press instead of selecting.
             // The HIT bound, not the track's: what is drawn is taller than the bar
             if (hasSlider(contentRect, i)) {
-                layout.addElement(UiElementType::DockSlider, sliderHitBound(contentRect, i), m_rows[i].id);
+                layout.addElement(UiElementType::DockSlider, sliderHitBound(contentRect, i), row.id);
             }
             // Over its row too, but only the value column: a click on the choice
             // opens the row's menu, a click on the label still selects the row
-            if (m_rows[i].kind == Ui::Res::Dock::RowKind::Menu) {
-                layout.addElement(UiElementType::DockMenu, menuBound(contentRect, i), m_rows[i].id);
+            if (row.kind == Ui::Res::Dock::RowKind::Menu) {
+                layout.addElement(UiElementType::DockMenu, menuBound(contentRect, i), row.id);
             }
         }
     }
@@ -557,7 +561,7 @@ private:
     // place so a narrow dock cannot draw what does not answer, or the reverse
     [[nodiscard]] bool hasExpander(const Ui::Res::Type::bound_t & contentRect, std::size_t index) const
     {
-        return m_rows[index].hasChildren
+        return m_rows.at(index).hasChildren
             && isInsideRow(expanderBound(contentRect, index), rowBound(contentRect, index));
     }
 
@@ -565,7 +569,7 @@ private:
     // thumb past both ends of it
     [[nodiscard]] bool hasSlider(const Ui::Res::Type::bound_t & contentRect, std::size_t index) const
     {
-        if (m_rows[index].kind != Ui::Res::Dock::RowKind::Slider) {
+        if (m_rows.at(index).kind != Ui::Res::Dock::RowKind::Slider) {
             return false;
         }
         const Ui::Res::Type::bound_t track = sliderBound(contentRect, index);
@@ -598,7 +602,7 @@ private:
     bool setFirstRow(int row)
     {
         const auto next = std::clamp(row, 0, static_cast<int>(maxFirstRow()));
-        if (next == static_cast<int>(m_firstRow)) {
+        if (std::cmp_equal(next, m_firstRow)) {
             return false;
         }
         m_firstRow = static_cast<std::size_t>(next);
@@ -664,7 +668,7 @@ private:
     {
         const fpx_t rowH = rowHeight();
         const auto  slot = static_cast<fpx_t>(index - m_firstRow);
-        return { contentRect.x, contentRect.y + (rowH * slot), contentRect.w, rowH };
+        return { .x = contentRect.x, .y = contentRect.y + (rowH * slot), .w = contentRect.w, .h = rowH };
     }
 
     // Leading square where the expander sits, inset by the row's indent
@@ -678,7 +682,7 @@ private:
         const fpx_t                  padH = m_resManager.popup().itemPaddingH;
         const fpx_t                  w    = (row.w / 2.0F) - (padH * 2.0F);
         const fpx_t                  h    = sliderHeight();
-        return { row.x + row.w - w - padH, row.y + ((row.h - h) / 2.0F), w, h };
+        return { .x = row.x + row.w - w - padH, .y = row.y + ((row.h - h) / 2.0F), .w = w, .h = h };
     }
 
     // Thin relative to the row, so the label still reads as the dominant thing
@@ -691,7 +695,7 @@ private:
         const Ui::Res::Type::bound_t row  = rowBound(contentRect, index);
         const fpx_t                  padH = m_resManager.popup().itemPaddingH;
         const fpx_t split = row.x + padH + ((row.w - (padH * 2.0F)) * m_resManager.layout().dockDefaults.rowKeyRatio);
-        return { split, row.y, row.x + row.w - split, row.h };
+        return { .x = split, .y = row.y, .w = row.x + row.w - split, .h = row.h };
     }
 
     // The dropdown chevron at the row's far edge, sized like the expander so the two
@@ -700,7 +704,7 @@ private:
     {
         const fpx_t size = expanderSize();
         const fpx_t padH = m_resManager.popup().itemPaddingH;
-        return { row.x + row.w - padH - size, row.y + ((row.h - size) / 2.0F), size, size };
+        return { .x = row.x + row.w - padH - size, .y = row.y + ((row.h - size) / 2.0F), .w = size, .h = size };
     }
 
     // The thumb length the pointer maths uses, which is the HOVER one in both
@@ -711,7 +715,7 @@ private:
     [[nodiscard]] std::optional<std::size_t> sliderIndex(id_t rowId) const
     {
         for (std::size_t i = 0; i < m_rows.size(); ++i) {
-            if (m_rows[i].id == rowId && m_rows[i].kind == Ui::Res::Dock::RowKind::Slider) {
+            if (m_rows.at(i).id == rowId && m_rows.at(i).kind == Ui::Res::Dock::RowKind::Slider) {
                 return i;
             }
         }
@@ -735,7 +739,7 @@ private:
     {
         const Ui::Res::Type::bound_t track = sliderBound(contentRect, index);
         const fpx_t                  h     = std::max(track.h, m_resManager.layout().sliderThumbHoverH);
-        return { track.x, track.y + ((track.h - h) / 2.0F), track.w, h };
+        return { .x = track.x, .y = track.y + ((track.h - h) / 2.0F), .w = track.w, .h = h };
     }
 
     /**
@@ -758,8 +762,8 @@ private:
         const fpx_t                  w      = isHot ? layout.sliderThumbHoverW : layout.sliderThumbW;
         const fpx_t                  h      = isHot ? layout.sliderThumbHoverH : layout.sliderThumbH;
         const Ui::Res::Type::bound_t span   = thumb_track_t::thumbBound(sliderMetrics(track, sliderThumbLength()),
-                                                                      fraction);
-        return { span.x + ((span.w - w) / 2.0F), track.y + ((track.h - h) / 2.0F), w, h };
+                                                                        fraction);
+        return { .x = span.x + ((span.w - w) / 2.0F), .y = track.y + ((track.h - h) / 2.0F), .w = w, .h = h };
     }
 
     // Which slider thumb the pointer is on, INVALID_ID for none. Walked here
@@ -775,7 +779,7 @@ private:
             if (!hasSlider(contentRect, i)) {
                 continue;
             }
-            if (sliderThumbBound(sliderBound(contentRect, i), m_rows[i].ratio, true).contains(cssX, cssY)) {
+            if (sliderThumbBound(sliderBound(contentRect, i), m_rows.at(i).ratio, true).contains(cssX, cssY)) {
                 return i;
             }
         }
@@ -788,8 +792,8 @@ private:
         const Ui::Res::Type::bound_t row  = rowBound(contentRect, index);
         const fpx_t                  size = expanderSize();
         const fpx_t                  x    = row.x + m_resManager.popup().itemPaddingH
-                      + (indentStep() * static_cast<fpx_t>(m_rows[index].depth));
-        return { x, row.y + ((row.h - size) / 2.0F), size, size };
+                                          + (indentStep() * static_cast<fpx_t>(m_rows.at(index).depth));
+        return { .x = x, .y = row.y + ((row.h - size) / 2.0F), .w = size, .h = size };
     }
 
     // Rows fill the content area top-down, starting at the scroll offset
@@ -808,7 +812,7 @@ private:
         const fpx_t gap = out.textWidth(out.itemFont(), " ");
 
         for (std::size_t i = m_firstRow; i < last; ++i) {
-            const Ui::Res::Dock::row_t & row   = m_rows[i];
+            const Ui::Res::Dock::row_t & row   = m_rows.at(i);
             const Ui::Res::Type::bound_t bound = rowBound(contentRect, i);
 
             // Selected rows take the menu's active block; a dock row and a menu
@@ -860,12 +864,15 @@ private:
             // A row with no value has no second column to line up with, so it
             // keeps the whole width - a tree name cut at the halfway mark for an
             // empty right half is just a name nobody can read
-            const fpx_t                  labelX     = bound.x + indent + expanderSize() + gap;
-            const fpx_t                  labelRight = row.value.empty()
-                                                    ? bound.x + bound.w - padH
-                                                    : bound.x + padH
+            const fpx_t labelX     = bound.x + indent + expanderSize() + gap;
+            const fpx_t labelRight = row.value.empty()
+                                   ? bound.x + bound.w - padH
+                                   : bound.x + padH
                                      + ((bound.w - (padH * 2.0F)) * m_resManager.layout().dockDefaults.rowKeyRatio);
-            const Ui::Res::Type::bound_t labelBound { labelX, bound.y, labelRight - labelX, bound.h };
+            const Ui::Res::Type::bound_t labelBound { .x = labelX,
+                                                      .y = bound.y,
+                                                      .w = labelRight - labelX,
+                                                      .h = bound.h };
             const std::string            label = out.truncate(font, row.label, labelBound.w);
             out.appendText(labelBound, label, font, theme.dock.background.fg);
 
@@ -903,9 +910,12 @@ private:
 
         const Ui::Res::Type::border_t radius = m_scrollBar.radius();
         const Ui::Color &             fg     = theme.dock.background.fg;
-        out.appendBg(m_scrollBar.track(), { fg, m_scrollBar.trackColor() }, theme.dock.background.bg, radius);
+        out.appendBg(m_scrollBar.track(),
+                     { .fg = fg, .bg = m_scrollBar.trackColor() },
+                     theme.dock.background.bg,
+                     radius);
         out.appendBg(m_scrollBar.thumb(scrollValue()),
-                     { fg, m_scrollBar.thumbColor() },
+                     { .fg = fg, .bg = m_scrollBar.thumbColor() },
                      m_scrollBar.trackColor(),
                      radius);
     }
@@ -932,7 +942,7 @@ private:
         // the thumb are the same idea - where the value is - and colouring them
         // apart would read as two indicators on one bar.
         if (fraction > 0.0F) {
-            out.appendBg({ track.x, track.y, track.w * fraction, track.h },
+            out.appendBg({ .x = track.x, .y = track.y, .w = track.w * fraction, .h = track.h },
                          theme.dock.sliderThumb,
                          theme.dock.background.bg,
                          trackRadius);

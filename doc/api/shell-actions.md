@@ -7,7 +7,7 @@ and how the demo app (and a real host) build on top of the same `Shell`.
 
 ## Ui::Shell
 
-Header: `include/ui/shell.h`. Namespace `Ui`. `class Shell final : private Common::NonCopyable, private Ui::IChromeCommands`.
+Header: `include/ui/shell.h`. Namespace `Ui`. `class Shell final : public Ui::IChromeCommands, private Common::NonCopyable`.
 
 Domain-blind coordinator. It owns four members and wires them together:
 
@@ -16,8 +16,9 @@ Domain-blind coordinator. It owns four members and wires them together:
 - `Ui::Render::Context m_context` - intents-out: maps clicks/keys to `Ui::intent_t` (constructed with `m_resManager`).
 - `Ui::Action::Registry m_actions` - the opaque `actionKey -> Ui::action_fn_t` dispatch table.
 
-Shell privately implements `Ui::IChromeCommands` (the intents-in seam). It does
-not expose that interface; it is the execution target for its own intents.
+Shell publicly implements `Ui::IChromeCommands` (the intents-in seam), the
+execution target for its own intents. An action can call a command directly, as
+`CycleTab` calls `setActiveTab`.
 
 ### How Shell fits the whole
 

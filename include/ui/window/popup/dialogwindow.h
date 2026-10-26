@@ -98,10 +98,10 @@ private:
     // pixels: sub-pixel positions misalign the composite texture on XWayland.
     static Ui::Res::Type::bound_t centeredPosition(const Ui::Res::Type::bound_t & area, fpx_t dialogW, fpx_t dialogH)
     {
-        return { std::round(area.x + (area.w - dialogW) / 2.0F),
-                 std::round(area.y + (area.h - dialogH) / 2.0F),
-                 dialogW,
-                 dialogH };
+        return { .x = std::round(area.x + ((area.w - dialogW) / 2.0F)),
+                 .y = std::round(area.y + ((area.h - dialogH) / 2.0F)),
+                 .w = dialogW,
+                 .h = dialogH };
     }
 };
 

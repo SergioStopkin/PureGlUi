@@ -22,6 +22,7 @@
 #include "ui/interface/iwindow.h"
 #include "ui/window/clickcounter.h"
 #include "ui/window/event.h"
+#include "ui/window/eventtype.h"
 #include "ui/window/platform/win32window.h"
 
 #include <algorithm>
@@ -255,7 +256,7 @@ private:
             // get routed to UiRenderer::onScroll (a no-op), and zoom ticks
             // are silently dropped. Coords are signed short (multi-monitor
             // setups can produce negative values).
-            POINT pt = { static_cast<short>(LOWORD(msg.lParam)), static_cast<short>(HIWORD(msg.lParam)) };
+            POINT pt = { .x = static_cast<short>(LOWORD(msg.lParam)), .y = static_cast<short>(HIWORD(msg.lParam)) };
             ScreenToClient(msg.hwnd, &pt);
             event.mouse.x = pt.x;
             event.mouse.y = pt.y;
@@ -337,18 +338,18 @@ private:
     /**
      * @brief Convert Win32 modifier state to platform-agnostic modifiers
      */
-    static KeyModifier convertWin32Modifiers()
+    static key_modifiers_t convertWin32Modifiers()
     {
-        KeyModifier mods = KeyModifier::None;
+        key_modifiers_t mods;
 
         if (GetKeyState(VK_SHIFT) & 0x8000) {
-            mods = mods | KeyModifier::Shift;
+            mods |= KeyModifier::Shift;
         }
         if (GetKeyState(VK_CONTROL) & 0x8000) {
-            mods = mods | KeyModifier::Control;
+            mods |= KeyModifier::Control;
         }
         if (GetKeyState(VK_MENU) & 0x8000) { // Alt
-            mods = mods | KeyModifier::Alt;
+            mods |= KeyModifier::Alt;
         }
 
         return mods;

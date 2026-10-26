@@ -22,12 +22,17 @@
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
 #include "ui/render/uilayout.h"
+#include "ui/res/type/fontweight.h"
 #include "ui/type.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <set>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -175,7 +180,7 @@ public:
                                              int y,
                                              Ui::Window::MouseButton /*button*/,
                                              int /*clickCount*/,
-                                             Ui::Window::KeyModifier /*modifiers*/) override
+                                             Ui::Window::key_modifiers_t /*modifiers*/) override
     {
         const auto cssX = toCss(x);
         const auto cssY = toCss(y);
@@ -185,8 +190,7 @@ public:
         result.y = cssY;
 
         for (auto & el : m_popupElements) {
-            if (!result.changed && el.bound.contains(cssX, cssY)
-                && Ui::Render::acceptsEvent(el.accepts, Ui::Render::EventKind::LeftClick)
+            if (!result.changed && el.bound.contains(cssX, cssY) && el.accepts.has(Ui::Render::EventKind::LeftClick)
                 && el.state != Ui::Render::UiElementState::Disabled) {
                 el.state       = Ui::Render::UiElementState::Active;
                 result.type    = el.type;
@@ -275,10 +279,10 @@ private:
                 containerBorder.bottomRight = 0;
             }
         }
-        m_rounded.draw({ 0, 0, popupCssW, popupCssH }, containerBorder, { theme.dropdown.bg, bgColor });
+        m_rounded.draw({ .w = popupCssW, .h = popupCssH }, containerBorder, { .fg = theme.dropdown.bg, .bg = bgColor });
 
         for (size_t i = 0; i < m_popupElements.size(); ++i) {
-            const auto &                      el = m_popupElements[i];
+            const auto &                      el = m_popupElements.at(i);
             const Ui::Res::Type::color_pair_t cp = resolvePopupColors(el, theme);
 
             if (cp.bg.a() == 0) {
@@ -307,7 +311,7 @@ private:
                     itemRadius.bottomRight = containerBorder.bottomRight;
                 }
             }
-            m_rounded.draw(itemBound, itemRadius, { cp.bg, bgColor });
+            m_rounded.draw(itemBound, itemRadius, { .fg = cp.bg, .bg = bgColor });
 
             // Theme preview swatch: split-color rounded shape (dark | light bg-main)
             // shown next to each theme submenu entry. Positioned within el.bound so
@@ -318,10 +322,10 @@ private:
                     const Ui::Res::Type::theme_preview_t & themePreview = m_resManager.layout().themePreview;
                     const auto                   previewColors = m_resManager.themePreviewColors(menuItem.label);
                     const Ui::Res::Type::bound_t previewBound {
-                        el.bound.x + el.bound.w - themePreview.right - themePreview.width,
-                        el.bound.y + (el.bound.h - themePreview.height) / 2.0F,
-                        themePreview.width,
-                        themePreview.height,
+                        .x = el.bound.x + el.bound.w - themePreview.right - themePreview.width,
+                        .y = el.bound.y + ((el.bound.h - themePreview.height) / 2.0F),
+                        .w = themePreview.width,
+                        .h = themePreview.height,
                     };
                     m_rounded.drawSplit(previewBound,
                                         themePreview.border,
@@ -393,13 +397,14 @@ private:
                     return;
                 }
                 const fpx_t iconX = (place == Ui::Res::Type::IconPlace::Right ? el.bound.x + el.bound.w - pH - iconSz
-                                                                                     : el.bound.x + pH)
+                                                                              : el.bound.x + pH)
                                   * g_config.scale;
-                const fpx_t iconY = (el.bound.y + (el.bound.h - iconSz) / 2.0F) * g_config.scale;
+                const fpx_t iconY = (el.bound.y + ((el.bound.h - iconSz) / 2.0F)) * g_config.scale;
                 beginSvgDraw();
-                m_svgRenderer.drawTinted(iconKey,
-                                                { iconX, iconY, iconSz * g_config.scale, iconSz * g_config.scale },
-                                         cp.fg);
+                m_svgRenderer.drawTinted(
+                iconKey,
+                { .x = iconX, .y = iconY, .w = iconSz * g_config.scale, .h = iconSz * g_config.scale },
+                cp.fg);
                 endSvgDraw();
             };
 
@@ -415,24 +420,24 @@ private:
                     const Ui::Res::Type::theme_preview_t & themePreview = m_resManager.layout().themePreview;
                     const auto                   previewColors = m_resManager.themePreviewColors(menuItem.label);
                     const Ui::Res::Type::bound_t previewBound {
-                        el.bound.x + el.bound.w - themePreview.right - themePreview.width,
-                        el.bound.y + (el.bound.h - themePreview.height) / 2.0F,
-                        themePreview.width,
-                        themePreview.height,
+                        .x = el.bound.x + el.bound.w - themePreview.right - themePreview.width,
+                        .y = el.bound.y + ((el.bound.h - themePreview.height) / 2.0F),
+                        .w = themePreview.width,
+                        .h = themePreview.height,
                     };
                     const auto baseline   = shortcutFontRec->metrics.baselineCap(previewBound.y,
-                                                                               previewBound.h,
-                                                                               g_config.scale);
+                                                                                 previewBound.h,
+                                                                                 g_config.scale);
                     auto       drawLetter = [&](std::string_view glyph, fpx_t halfCenterCss, const Ui::Color & color) {
                         const auto  letterWidth = fontRenderer.textWidth(m_popupScFont, glyph);
-                        const fpx_t startX      = (halfCenterCss - letterWidth / 2.0F) * g_config.scale;
+                        const fpx_t startX      = (halfCenterCss - (letterWidth / 2.0F)) * g_config.scale;
                         auto verts = Ui::Gl::FontRenderer::buildTextVerts(*shortcutFontRec, glyph, startX, baseline);
                         if (!verts.empty()) {
                             drawTextVerts(verts, color, *shortcutFontRec);
                         }
                     };
-                    drawLetter("Drk", previewBound.x + previewBound.w * 0.25F, previewColors.first.fg);
-                    drawLetter("Lgt", previewBound.x + previewBound.w * 0.75F, previewColors.second.fg);
+                    drawLetter("Drk", previewBound.x + (previewBound.w * 0.25F), previewColors.first.fg);
+                    drawLetter("Lgt", previewBound.x + (previewBound.w * 0.75F), previewColors.second.fg);
                 }
             }
 
@@ -468,10 +473,10 @@ private:
                 return theme.menuItemHover;
             }
             if (el.state == Ui::Render::UiElementState::Disabled) {
-                return { theme.menuItemDisabledColor, theme.menuItem.bg };
+                return { .fg = theme.menuItemDisabledColor, .bg = theme.menuItem.bg };
             }
             return theme.menuItem;
-        case Ui::Render::UiElementType::Separator: return { {}, theme.separatorColor };
+        case Ui::Render::UiElementType::Separator: return { .fg = {}, .bg = theme.separatorColor };
         default: return {};
         }
     }
@@ -485,7 +490,7 @@ private:
         bool submenuOpened = false;
 
         for (size_t i = 0; i < m_popupElements.size(); ++i) {
-            auto & el = m_popupElements[i];
+            auto & el = m_popupElements.at(i);
             if (el.state == Ui::Render::UiElementState::Active || el.state == Ui::Render::UiElementState::Disabled) {
                 continue;
             }

@@ -24,7 +24,7 @@
 #include "ui/res/type/changed.h"
 
 #include <cstdint>
-#include <memory>
+#include <string>
 #include <vector>
 
 namespace Ui {
@@ -56,7 +56,7 @@ public:
     /**
      * @brief Apply resource changes (theme, layout, etc.)
      */
-    virtual void apply(Ui::Res::Type::Changed changed) = 0;
+    virtual void apply(Ui::Res::Type::changes_t changed) = 0;
 
     /**
      * @brief Re-present the last rendered frame without clearing or re-drawing

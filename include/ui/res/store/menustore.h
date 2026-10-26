@@ -36,12 +36,16 @@
 #include "ui/res/type/bound.h"
 #include "ui/res/type/button.h"
 #include "ui/res/type/changed.h"
+#include "ui/res/type/dialogtype.h"
 #include "ui/res/type/menu.h"
 #include "ui/type.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <exception>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -100,7 +104,7 @@ class MenuStore final : private Common::NonCopyable {
     // accessors below can call it.
     template <typename Map>
     [[nodiscard]] static std::remove_cvref_t<std::unwrap_ref_decay_t<typename Map::mapped_type>>
-    lookup(const Map & map, const typename Map::key_type & key)
+    lookup(const Map & map, const Map::key_type & key)
     {
         if (!map.contains(key)) {
             return {};
@@ -130,7 +134,7 @@ public:
     [[nodiscard]] const Ui::Res::Type::button_t * findButton(id_t id) const
     {
         const id_t serial = Ui::serialOf(id);
-        return (Ui::kindOf(id) == Ui::IdKind::ToolbarButton && serial < m_buttons.size()) ? &m_buttons[serial]
+        return (Ui::kindOf(id) == Ui::IdKind::ToolbarButton && serial < m_buttons.size()) ? &m_buttons.at(serial)
                                                                                           : nullptr;
     }
 
@@ -230,9 +234,9 @@ public:
         using Ui::Res::Key::MenuKey;
         Ui::Res::Type::menu_t item;
         item.label             = Common::Sanitize::string(Common::Json::string(itemJson, menuKeyName(MenuKey::Label)),
-                                              "menu.label");
+                                                          "menu.label");
         item.actionKey         = Common::Sanitize::string(Common::Json::string(itemJson, menuKeyName(MenuKey::Action)),
-                                                  "menu.action");
+                                                          "menu.action");
         item.showsThemePreview = (item.actionKey == "SwitchTheme");
         item.shortcut = Common::Sanitize::string(Common::Json::string(itemJson, menuKeyName(MenuKey::Shortcut)),
                                                  "menu.shortcut");
@@ -249,7 +253,7 @@ public:
         //             actionKey. Unknown subdir or missing action leaves the
         //             submenu empty - intentional signal for misconfig.
         if (itemJson.contains(menuKeyName(MenuKey::Submenus))) {
-            const auto & subs = itemJson[menuKeyName(MenuKey::Submenus)];
+            const auto & subs = itemJson.at(menuKeyName(MenuKey::Submenus));
             if (subs.is_array()) {
                 // Depth cap from layout.json, counted with the menu bar as level 1
                 // (so the default 3 is bar -> dropdown -> submenu). That is what
@@ -297,7 +301,7 @@ public:
                 item.dialog.icon = m_iconStore.iconDefault(item.dialog.icon).icon;
             }
             item.dialog.file  = Common::Sanitize::filePath(Common::Json::string(dialogJson, menuKeyName(MenuKey::File)),
-                                                          "dialog.file");
+                                                           "dialog.file");
             item.dialog.width = Ui::Convert::parseCssNumber(
             Common::Json::string(dialogJson, menuKeyName(MenuKey::Width)));
             item.dialog.height = Ui::Convert::parseCssNumber(
@@ -356,13 +360,13 @@ public:
 
                 Ui::Res::Type::menu_t menu;
                 menu.label     = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Label)),
-                                                      "menu.label");
+                                                          "menu.label");
                 menu.order     = Common::Json::number(j, menuKeyName(MenuKey::Order), int16_t {});
                 menu.visible   = Common::Json::boolean(j, menuKeyName(MenuKey::Visible), true);
                 menu.icon      = Common::Sanitize::filePath(Common::Json::string(j, menuKeyName(MenuKey::Icon)),
-                                                       "menu.icon");
+                                                            "menu.icon");
                 menu.tooltip   = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Tooltip)),
-                                                        "menu.tooltip");
+                                                          "menu.tooltip");
                 menu.actionKey = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Action)),
                                                           "menu.action");
 
@@ -418,9 +422,7 @@ public:
             }
         }
 
-        std::sort(m_menus.begin(), m_menus.end(), [](const Ui::Res::Type::menu_t & a, const Ui::Res::Type::menu_t & b) {
-            return a.order < b.order;
-        });
+        std::ranges::sort(m_menus, {}, &Ui::Res::Type::menu_t::order);
 
         // Auto-generate unique IDs (after sort so IDs are deterministic).
         // Each node also gets an authored hierarchical key built from labels
@@ -478,13 +480,13 @@ public:
 
                 Ui::Res::Type::button_t btn;
                 btn.label     = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Label)),
-                                                     "button.label");
+                                                         "button.label");
                 btn.actionKey = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Action)),
                                                          "button.action");
                 btn.icon      = Common::Sanitize::filePath(Common::Json::string(j, menuKeyName(MenuKey::Icon)),
-                                                      "button.icon");
+                                                           "button.icon");
                 btn.tooltip   = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Tooltip)),
-                                                       "button.tooltip");
+                                                         "button.tooltip");
                 btn.anchor    = Ui::Res::Dock::dockAnchorFromName(
                 Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Anchor)), "button.anchor"));
                 btn.order   = Common::Json::number(j, menuKeyName(MenuKey::Order), int16_t {});
@@ -494,10 +496,7 @@ public:
             }
         }
 
-        std::sort(
-        m_buttons.begin(),
-        m_buttons.end(),
-        [](const Ui::Res::Type::button_t & a, const Ui::Res::Type::button_t & b) { return a.order < b.order; });
+        std::ranges::sort(m_buttons, {}, &Ui::Res::Type::button_t::order);
 
         // Auto-generate unique IDs (after sort so IDs are deterministic)
         {
@@ -544,13 +543,15 @@ public:
                 continue;
             }
             std::string key = display;
-            std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
+            std::ranges::transform(key, key.begin(), [](unsigned char ch) {
                 return static_cast<char>(std::tolower(ch));
             });
-            entries.push_back({ Common::Json::number(j, menuKeyName(MenuKey::Order), 0), std::move(key), display });
+            entries.push_back({ .order   = Common::Json::number(j, menuKeyName(MenuKey::Order), 0),
+                                .key     = std::move(key),
+                                .display = display });
         }
 
-        std::sort(entries.begin(), entries.end(), [](const submenu_entry_t & a, const submenu_entry_t & b) {
+        std::ranges::sort(entries, [](const submenu_entry_t & a, const submenu_entry_t & b) {
             if (a.order != b.order) {
                 return a.order < b.order;
             }

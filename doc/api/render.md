@@ -8,7 +8,7 @@ Layering, top to bottom:
 - They emit primitives through `Ui::IRender` (fillRect/drawText/drawImage/drawTriangle/measure/createFont). `UiRenderer` holds the sink as an injected `std::unique_ptr<Ui::IRender>`, so it is decoupled from GL: `Ui::Gl::GlRender` in the app, a fake sink in headless tests.
 - `Ui::Render::Context` never draws; it maps clicks/keys to `Ui::intent_t` (intents-out; see [vocabulary.md](vocabulary.md)).
 
-Interaction is capability-driven rather than type-driven. An element declares which events it accepts (`EventKind`, a bitmask) and a `(type, event)` table says what each raises (`binding_t`) and what must repaint afterwards (`RenderScope`). Adding an interactive element is therefore declaring a mask and a row, not editing hit-test, hover and dispatch switches - see [Input model](#input-model-uirender).
+Interaction is capability-driven rather than type-driven. An element declares which events it accepts (`event_kinds_t`, a set of `EventKind`) and a `(type, event)` table says what each raises (`binding_t`) and what must repaint afterwards (`RenderScope`). Adding an interactive element is therefore declaring a mask and a row, not editing hit-test, hover and dispatch switches - see [Input model](#input-model-uirender).
 
 House rule for rounded shapes: every rounded rectangle, pill, split-fill, or corner-rounded surface MUST go through `Ui::Gl::Rounded`. Do not write a parallel SDF/scissor/stencil path anywhere else - if `Rounded` lacks a mode you need, extend `Rounded`. The only exception is a host content surface, which renders its own content.
 
@@ -22,7 +22,7 @@ All chrome geometry is in CSS pixels; the GL backend scales to physical pixels v
 
 `ui/render/uielement.h` - `enum class UiElementType : unsigned char`. The kinds of element `UiLayout` produces: `MenuButton`, `ToolbarButton`, `MenuItem`, `Separator`, `Text`, `Image`, `Tab`, `TabClose`, `TabArrow`, plus the dock elements `DockRow`, `DockExpander`, `DockGrip`, `DockSlider`, `DockScrollbar`. Free helper `int toInt(UiElementType)`.
 
-Also here: `constexpr EventKind defaultAccepts(UiElementType)` - the event mask a fresh element of this type is stamped with by `UiLayout::addElement`. A caller needing something different overrides `accepts` on the returned element, which is how an element stops being a switch case. The values reproduce behaviour that used to be spread across `UiLayout::hitTest`, `UiRenderer::updateHover` and `PopupRenderer::onMousePress`; `Text` is the notable one - clickable (the status bar copies itself) but deliberately not hoverable, which used to be a `type != Text` test. `DockGrip`, `DockSlider` and `DockScrollbar` are `ANY_DRAG` (drag-only); `Separator` and `Image` accept nothing.
+Also here: `constexpr event_kinds_t defaultAccepts(UiElementType)` - the event mask a fresh element of this type is stamped with by `UiLayout::addElement`. A caller needing something different overrides `accepts` on the returned element, which is how an element stops being a switch case. The values reproduce behaviour that used to be spread across `UiLayout::hitTest`, `UiRenderer::updateHover` and `PopupRenderer::onMousePress`; `Text` is the notable one - clickable (the status bar copies itself) but deliberately not hoverable, which used to be a `type != Text` test. `DockGrip`, `DockSlider` and `DockScrollbar` are `ANY_DRAG` (drag-only); `Separator` and `Image` accept nothing.
 
 ### UiElementState
 
@@ -36,7 +36,7 @@ Also here: `constexpr EventKind defaultAccepts(UiElementType)` - the event mask 
 - `UiElementState state` (default `None`)
 - `id_t id` (default `INVALID_ID`)
 - `Ui::Res::Type::bound_t bound`
-- `EventKind accepts` (default `None`) - the capability mask; anything outside it never reaches this element
+- `event_kinds_t accepts` (default empty) - the capability mask; anything outside it never reaches this element
 
 Content (text, icons, shortcuts) and appearance (colors, fonts) are NOT stored here - renderers resolve them from `ResManager` at render time by `type` + `id`.
 
@@ -69,14 +69,14 @@ Constructor:
 
 - `UiRenderer(std::unique_ptr<Ui::IRender> render, fpx_t width, fpx_t height, const Ui::Res::ResManager & resManager)` - `render` is the injected draw sink (GL in the app, fake in tests); `width`/`height` are the initial physical size.
 
-Public op struct types (batched draw ops, all `alignas`): `BGOp` (rect + radius + optional shadow + `color_pair_t`), `TextOp` (text/font/color/pos/centered/minPadH), `ImageOp` (src/pos/radius/tint + isSvg/tinted/hovered/active flags), `progress_t` (tab loading-bar geometry).
+The batched draw ops, one header each in `ui/render/`: `bg_op_t` (`bgop.h` - rect + radius + optional shadow + `color_pair_t`), `text_op_t` (`textop.h` - text/font/color/pos/align/minPadH), `image_op_t` (`imageop.h` - src/pos/radius/tint + isSvg/tinted/hovered/active/isFilled flags), `progress_op_t` (`progressop.h` - tab loading-bar geometry).
 
 `Ui::IRenderer` overrides:
 
 - `bool render()` - render at the cached size (delegates to `Render`).
 - `void resize(fpx_t w, fpx_t h)` - cache the new physical size; layout rebuilds on the next `setContent()`.
 - `void cleanup()` - reset the layout.
-- `void apply(Changed)` - no-op (content rebuild is driven externally via `setContent()` to avoid duplicate SVG loads).
+- `void apply(changes_t)` - no-op (content rebuild is driven externally via `setContent()` to avoid duplicate SVG loads).
 
 Other methods:
 
@@ -137,7 +137,7 @@ What replaces asking "what type is this element?" in four separate switches. An 
 
 `ui/render/eventkind.h` - `enum class EventKind : uint16_t`. What can happen to an element, and simultaneously the per-element capability mask: `None`, `LeftClick`, `RightClick`, `MiddleClick`, `DoubleClick`, `Hover`, `DragStart` (press that begins a capture), `Drag` (motion while captured), `DragEnd` (release that ends one), `Scroll`.
 
-Combine and test with `Common::Bit` exactly as `Res::Type::Changed` does - no bitwise operators are defined for it. Two composites are provided so a mask need not spell out constants: `ANY_CLICK` (all four click flavours) and `ANY_DRAG` (the three drag phases). `constexpr bool acceptsEvent(EventKind mask, EventKind event)` is the test.
+A mask is its set, `event_kinds_t` (`Common::flags_t<EventKind>`, see [common.md](common.md)): an element's `accepts`, tested with `accepts.has(event)`, and what `defaultAccepts(type)` returns. Two composites are provided so a mask need not spell out constants: `ANY_CLICK` (all four click flavours) and `ANY_DRAG` (the three drag phases). A delivered event (`element_event_t::event`) stays a single `EventKind`.
 
 ### element_event_t
 
@@ -256,9 +256,9 @@ Software-rounded corner support (popup/dialog corners composited over parent pix
 - `void setCornerPixels(std::array<std::vector<uint8_t>,4> pixels, const Ui::Res::Type::border_t & radii)`
 - `bool hasCornerPixels() const`
 
-`Ui::IRenderer` boilerplate: `void resize(fpx_t,fpx_t)` (caches size), `void apply(Changed)` (no-op), `void cleanup()` (make current + `Rounded::cleanup`), `element_event_t onScroll(int,int,fpx_t)` (`{}`).
+`Ui::IRenderer` boilerplate: `void resize(fpx_t,fpx_t)` (caches size), `void apply(changes_t)` (no-op), `void cleanup()` (make current + `Rounded::cleanup`), `element_event_t onScroll(int,int,fpx_t)` (`{}`).
 
-Protected helpers for subclasses: `bool beginRender(const Ui::Color & background)` (clear/viewport/blend + corner underlay, an opaque window clearing to `background`; returns true when premultiplied alpha is active), `void drawTextVerts(const std::vector<float> &, const Ui::Color &, FontRenderer::font_rec_t &) const`, `void beginSvgDraw()`, `static void endSvgDraw()`. Protected members: `m_resManager`, `m_makeCurrent`, `m_width`/`m_height`, `m_fontRenderer`, `m_svgRenderer`, `m_rounded`.
+Protected helpers for subclasses: `bool beginRender(const Ui::Color & background)` (clear/viewport/blend + corner underlay, an opaque window clearing to `background`; returns true when premultiplied alpha is active), `void drawTextVerts(const std::vector<float> &, const Ui::Color &, Ui::Gl::font_rec_t &) const`, `void beginSvgDraw()`, `static void endSvgDraw()`. Protected members: `m_resManager`, `m_makeCurrent`, `m_width`/`m_height`, `m_fontRenderer`, `m_svgRenderer`, `m_rounded`.
 
 ### PopupRenderer
 
@@ -289,7 +289,7 @@ Protected helpers for subclasses: `bool beginRender(const Ui::Color & background
 
 `ui/render/popup/dialogrenderer.h` - `class DialogRenderer final : public PopupRendererBase`. Renderer for modal dialog windows: centered dialog with title bar (optional icon + close X), a scrollable word-wrapped content area, an optional link line, and a centered button row.
 
-Also defined here: `struct alignas(64) dialog_button_t final` - `{ bound_t bound; std::string label; UiElementState state; bool primary; Ui::Res::Type::DialogAction action; }` with defaulted `operator==`.
+Its buttons are `ui/render/popup/dialogbutton.h`'s `struct alignas(64) dialog_button_t final` - `{ bound_t bound; std::string label; UiElementState state; bool primary; Ui::Res::Type::DialogAction action; }` with defaulted `operator==`.
 
 - `DialogRenderer(Ui::task_fn_t makeCurrent, const Ui::Res::ResManager &, const Ui::Res::Type::dialog_t & dialog)` - caches the dialog + close-icon SVG keys and builds the button row from the dialog-type config.
 - `using DialogCloseFn = std::function<void(Ui::Res::Type::DialogAction)>`; `void setCloseCallback(DialogCloseFn)` - invoked with the chosen action when the dialog resolves.
@@ -351,7 +351,7 @@ Two output modes controlled by `bgColor.a`: opaque composite (`a > 0`, blends fg
 
 `ui/gl/svgrenderer.h` - `class SvgRenderer : private Common::NonCopyable`. Header-only SVG rendering via librsvg + Cairo, with OpenGL texture caching. Loads/caches SVG documents process-wide, renders to a size-keyed texture cache, and draws textured quads. Supports tinting, scaling, and layered soft shadows.
 
-Types: `struct cache_key_t { std::string svgId; int width; int height; }` (with `std::hash` specialization) and, in `ui/gl/svgtexture.h`, `struct svg_texture_t { GLuint textureId; int width; int height; bool valid; }`.
+Types: in `ui/gl/cachekey.h`, `struct cache_key_t { std::string svgId; int width; int height; }` (with `std::hash` specialization); in `ui/gl/contentbounds.h`, `struct content_bounds_t { u0, v0, u1, v1 }` (an SVG's content box as fractions of its intrinsic size); and, in `ui/gl/svgtexture.h`, `struct svg_texture_t { GLuint textureId; int width; int height; bool valid; }`.
 
 Frame + config:
 
@@ -382,7 +382,7 @@ Cache management: `void removeTexture(const std::string &, int w, int h)`, `void
 
 `ui/gl/fontrenderer.h` - `class FontRenderer final : private Common::NonCopyable`. FreeType-based font loading with an OpenGL texture-atlas glyph cache and a text shader. Handles font resolution (res font dir scan + system fallbacks + per-codepoint fontconfig fallback + a synthesized "tofu" glyph), atlas packing, and text vertex generation with sRGB-correct blending. `constexpr bool FONT_DEBUG` / `LOG_TEXT_LAYOUT` gate diagnostics.
 
-Nested types: `struct glyph_bitmap_t` (per-glyph size/offset/advance + atlas UVs + grayscale buffer) and `struct font_rec_t` (cache key `font_t`, resolved file path, `font_metrics_t`, FreeType faces, glyph map, 1024x1024 atlas + GL texture, and the text shader program/VAO/VBO/uniforms).
+Its records, one header each in `ui/gl/`: `glyph_bitmap_t` (`glyphbitmap.h` - per-glyph size/offset/advance + atlas UVs + grayscale buffer) and `font_rec_t` (`fontrec.h` - cache key `font_t`, resolved file path, `font_metrics_t`, FreeType faces, glyph map, 1024x1024 atlas + GL texture, and the text shader program/VAO/VBO/uniforms).
 
 - `FontRenderer(Ui::task_fn_t makeCurrent, std::string fontDir)` - `makeCurrent` is used before GL teardown. Ref-counted so the last live instance calls `FcFini()`.
 - `static std::atomic<int> & fcRefCount()`, `static FT_Library & ftLibrary()` - shared process-lifetime handles.
