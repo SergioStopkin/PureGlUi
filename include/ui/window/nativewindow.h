@@ -17,8 +17,6 @@
 
 #pragma once
 
-#include "ui/window/nativewindowhandle.h"
-
 // Include platform-specific window based on build target (compile-time)
 #ifdef _WIN32
 #include "ui/window/platform/win32window.h"

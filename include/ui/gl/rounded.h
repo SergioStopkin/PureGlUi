@@ -21,13 +21,13 @@
 #include "ui/color.h"
 #include "ui/const.h"
 #include "ui/gl/glutil.h"
+#include "ui/gl/localglew.h"
 #include "ui/res/type/border.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/colorpair.h"
 #include "ui/type.h"
 
 #include <array>
-#include <cmath>
 #include <cstdint>
 #include <vector>
 

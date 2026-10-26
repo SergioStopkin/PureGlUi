@@ -29,6 +29,8 @@
 #endif
 
 #ifdef WINDOWS
+#include "common/unicode.h"
+
 #include <windows.h>
 #elifdef APPLE
 #include <TargetConditionals.h>
@@ -38,8 +40,6 @@
 #include <sys/sysctl.h>
 #include <sys/types.h>
 #endif
-
-#include "common/unicode.h"
 
 #include <cstdint>
 #include <cstdlib>

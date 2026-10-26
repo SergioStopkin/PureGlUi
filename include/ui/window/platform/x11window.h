@@ -23,10 +23,15 @@
 #include "common/system.h"
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
+#include "ui/pubsub/subscribe.h"
+#include "ui/type.h"
 #include "ui/window/display.h"
 #include "ui/window/eglcontext.h"
+#include "ui/window/nativedisplayhandle.h"
+#include "ui/window/nativewindowhandle.h"
 #include "ui/window/platform/x11include.h"
 #include "ui/window/platform/x11visualparams.h"
+#include "ui/window/pointershape.h"
 #include "ui/window/windowbase.h"
 
 #include <algorithm>

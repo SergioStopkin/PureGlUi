@@ -18,8 +18,13 @@
 #pragma once
 
 #include "ui/config.h"
+#include "ui/pubsub/subscribe.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/border.h"
+#include "ui/res/type/bound.h"
 #include "ui/res/type/dialog.h"
+#include "ui/type.h"
+#include "ui/window/nativewindow.h"
 #include "ui/window/popup/popupwindow.h"
 
 #include <cmath>

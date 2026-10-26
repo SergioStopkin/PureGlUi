@@ -18,10 +18,16 @@
 #pragma once
 
 #include "common/bytes.h"
+#include "ui/color.h"
 #include "ui/config.h"
+#include "ui/gl/localglew.h"
+#include "ui/pubsub/subscribe.h"
 #include "ui/res/type/border.h"
+#include "ui/type.h"
 #include "ui/window/eglcontext.h"
+#include "ui/window/nativedisplayhandle.h"
 #include "ui/window/nativewindow.h"
+#include "ui/window/nativewindowhandle.h"
 
 #include <algorithm>
 #include <array>

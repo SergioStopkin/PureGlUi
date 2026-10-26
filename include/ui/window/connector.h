@@ -23,6 +23,8 @@
 #include "ui/res/type/bound.h"
 #include "ui/res/type/changed.h"
 #include "ui/type.h"
+#include "ui/window/keymodifier.h"
+#include "ui/window/mousebutton.h"
 
 #include <concepts>
 #include <cstdint>

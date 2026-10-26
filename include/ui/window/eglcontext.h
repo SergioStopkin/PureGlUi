@@ -20,8 +20,10 @@
 #include "common/bit.h"
 #include "common/noncopyable.h"
 #include "ui/interface/icontext.h"
+#include "ui/type.h"
 #include "ui/window/configattempt.h"
 #include "ui/window/nativedisplayhandle.h"
+#include "ui/window/nativewindowhandle.h"
 
 #include <array>
 #include <cstddef>

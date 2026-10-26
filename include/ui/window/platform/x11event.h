@@ -24,6 +24,9 @@
 #include "ui/window/clickcounter.h"
 #include "ui/window/event.h"
 #include "ui/window/eventtype.h"
+#include "ui/window/keymodifier.h"
+#include "ui/window/mousebutton.h"
+#include "ui/window/nativewindowhandle.h"
 #include "ui/window/platform/x11include.h"
 
 #include <array>

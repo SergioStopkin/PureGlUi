@@ -17,8 +17,6 @@
 
 #pragma once
 
-#include "ui/interface/ieventos.h"
-
 #include <memory>
 
 // Include platform-specific event handler based on build target (compile-time)

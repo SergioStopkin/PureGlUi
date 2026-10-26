@@ -43,12 +43,6 @@ namespace Ui::Window {
 template <typename Derived>
 class WindowBase : public Ui::IWindow, private Common::NonCopyable {
 public:
-    explicit WindowBase(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID)
-        : m_subscribe(subscribe)
-        , m_subscribeId(subscribeId)
-    {
-    }
-
     ~WindowBase() override
     {
         if (m_subscribeId != Ui::INVALID_ID) {
@@ -146,8 +140,8 @@ public:
 
 protected:
     // CRTP helper to access derived class
-    Derived &       derived() { return static_cast<Derived &>(*this); }
-    const Derived & derived() const { return static_cast<const Derived &>(*this); }
+    [[nodiscard]] Derived &       derived() { return static_cast<Derived &>(*this); }
+    [[nodiscard]] const Derived & derived() const { return static_cast<const Derived &>(*this); }
 
     // -------- Common members --------
 
@@ -171,6 +165,17 @@ protected:
     // True when the GL context runs on a real GPU. Platform create() flips it
     // false on software-renderer fallback (currently only Platform::MacOsWindow).
     bool m_isHardwareGl = true;
+
+private:
+    // Only Derived builds its base: a WindowBase<A> under some B would cast *this
+    // to the wrong type in derived()
+    explicit WindowBase(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID)
+        : m_subscribe(subscribe)
+        , m_subscribeId(subscribeId)
+    {
+    }
+
+    friend Derived;
 };
 
 } // namespace Ui::Window
