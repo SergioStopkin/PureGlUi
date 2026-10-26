@@ -40,7 +40,10 @@ jobs:
         run:  ./build.sh dev
 
       - name: Run with ASAN
-        run:  xvfb-run -a timeout --preserve-status -k 5 --signal=INT 3 ./run.sh dev
+        # The app stops itself through SIGINT once its first frame is drawn: no delay to
+        # guess on a slow runner, and no timeout(1), whose uutils -k ends the run early
+        timeout-minutes: 1
+        run:  xvfb-run -a env PUREGLUI_STOP_AFTER_FRAME=1 ./run.sh dev
 
       - name: Clang Tidy
         run:  ./clang-tidy.sh

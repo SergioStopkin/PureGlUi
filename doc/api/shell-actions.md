@@ -93,6 +93,11 @@ purpose rather than spine position because the first two run on both paths:
   comes at the display's pace and no faster, and an idle loop polls once a refresh.
   The sleep is `Common::Time::sleepUntil`'s, since a plain one on Windows wakes on the
   15.6 ms timer tick and at 64 Hz paced frames at one or two ticks.
+  With `PUREGLUI_STOP_AFTER_FRAME` set (any value), the loop raises SIGINT on itself
+  at the end of its first pass, which draws the frame `initialize()` asked for -
+  in its render step or in an event's own (a resize draws at once): the same
+  handler and shutdown as Ctrl+C, with no clock to guess. CI's ASan step (both repos) runs the app this way, under `xvfb-run`, so the
+  run ends the same however slow the machine.
 - `requestStop()` / `shutdown()` stop the loop and tear down the window manager.
 
 ### The load cycle

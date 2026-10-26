@@ -62,6 +62,7 @@
 #include <functional>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -893,6 +894,11 @@ public:
     // purely on WindowManager primitives, so it runs with or without content.
     void run()
     {
+        // A smoke run (CI's ASan step) stops itself after its first pass, through SIGINT so the
+        // signal path is tested too: no clock to guess, however slow the machine. That pass
+        // draws the frame initialize() asked for, in the render below or in an event's own
+        // (a resize draws at once), so its end is the first frame's, whichever drew it
+        bool isStopAfterFrame = !Common::System::environmentVariable(STOP_AFTER_FRAME_VARIABLE).empty();
         while (m_windowManager.isRunning()) {
             const auto passStart = Common::Time::now();
             if (m_frameTasks) {
@@ -929,6 +935,11 @@ public:
                 m_windowManager.drainDeferred();
             }
 
+            if (isStopAfterFrame) {
+                isStopAfterFrame = false;
+                (void)std::raise(SIGINT);
+            }
+
             // Idle until one refresh of the display after this pass began: a frame the host
             // asks for between passes (an animation) comes at the display's pace, never
             // faster than it can show one, and an idle loop polls no more often
@@ -940,6 +951,9 @@ public:
     }
 
 private:
+    // Set, the run stops itself after its first frame (see run)
+    static constexpr std::string_view STOP_AFTER_FRAME_VARIABLE = "PUREGLUI_STOP_AFTER_FRAME";
+
     Ui::Res::ResManager       m_resManager;
     Ui::Window::WindowManager m_windowManager { m_resManager };
     Ui::Render::Context       m_context { m_resManager };

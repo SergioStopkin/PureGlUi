@@ -30,6 +30,10 @@ if [[ $# -eq 0 ]]; then
     PrintUsageAndExit
 elif [[ $1 == "dev" ]]; then
     export LSAN_OPTIONS=suppressions=.asan.supp
+    # Mesa's software driver keeps its runtime-generated x86 code in a heap only a static of
+    # its own points at, and eglTerminate unloads the driver, so the leak check finds the heap
+    # orphaned. Its generic C path makes none; the generated code is uninstrumented anyway
+    export GALLIUM_NOSSE=1
     shift  # Remove first argument (dev)
     if [[ "$OS" == "Windows_NT" ]]; then
         ./mesa-windows.sh $BUILD_DIR_DEV/src/Release

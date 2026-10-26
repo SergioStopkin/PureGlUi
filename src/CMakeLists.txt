@@ -26,7 +26,11 @@ endif()
 # INTERFACE target. jemalloc is an app-level allocator choice, so it stays here rather than in the fw contract.
 target_link_libraries(${TARGET_SRC} PRIVATE ui)
 
-if(USE_JEMALLOC AND JEMALLOC_FOUND)
+# Not under ASan, which replaces malloc itself: jemalloc would only load beside it, unseen
+if(USE_JEMALLOC
+   AND JEMALLOC_FOUND
+   AND NOT ASAN
+)
     target_link_libraries(${TARGET_SRC} PRIVATE ${JEMALLOC_LIBRARIES})
 endif()
 
