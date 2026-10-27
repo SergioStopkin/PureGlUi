@@ -36,12 +36,17 @@ find $BUILD_DIR_COV/$COV_SOURCE_DIR -name "*.gcda" -exec cp "{}" $COV_RESULT_DIR
 # a header-only library, where one-line inline accessors and implicit destructors
 # of function-local types get a function record with no line record to derive an
 # end line from. Do not "simplify" the duplicates away.
+#
+# 2.4 adds three more of the same kind: format, clang placing a static initializer
+# (__cxx_global_var_init) on line 0; unsupported, lcov taking llvm-cov's gcov for an
+# old GCC that cannot exclude function end lines; and genhtml's category, a class
+# template's own line, which carries its implicit members' data and no code
 LCOV_MAJOR=$(lcov --version 2>/dev/null | grep -oE 'version [0-9]+' | grep -oE '[0-9]+')
 LCOV_IGNORE=""
 GENHTML_IGNORE=""
 if [[ -n "$LCOV_MAJOR" && "$LCOV_MAJOR" -ge 2 ]]; then
-    LCOV_IGNORE="--ignore-errors inconsistent,inconsistent,unused,unused"
-    GENHTML_IGNORE="--ignore-errors inconsistent,inconsistent"
+    LCOV_IGNORE="--ignore-errors inconsistent,inconsistent,unused,unused,format,format,unsupported,unsupported"
+    GENHTML_IGNORE="--ignore-errors inconsistent,inconsistent,category,category"
 fi
 
 lcov -q $LCOV_IGNORE -c --external --gcov-tool "$PWD/llvm-gcov.sh" -d $COV_RESULT_DIR -o $COV_RESULT_DIR/coverage.info
@@ -51,25 +56,16 @@ lcov -q $LCOV_IGNORE -r $COV_RESULT_DIR/coverage.info "*/interface/*" -o $COV_RE
 lcov -q $LCOV_IGNORE -r $COV_RESULT_DIR/coverage.info "/*/$COV_SOURCE_DIR/*" -o $COV_RESULT_DIR/coverage.info
 
 RESULT=$(genhtml $GENHTML_IGNORE -t "Unit Tests Coverage" --num-spaces 4 $COV_RESULT_DIR/coverage.info -o $COV_RESULT_DIR)
-IS_FOUND=0
-
-for item in $RESULT
-do
-    if [[ $IS_FOUND == 1 ]]; then
-        COVERAGE=$item
-        break
-    fi
-    if [[ $item == "lines......:" ]]; then
-        IS_FOUND=1
-    fi
-done
+# The figure after "lines" and its dots, as many as the lcov version prints
+COVERAGE=`grep -oE 'lines\.+: [0-9.]+%' <<< "$RESULT" | grep -oE '[0-9.]+%'`
 
 echo
 
 STATUS=0
 
 if [[ -z "$COVERAGE" ]]; then
-    echo "Coverage: no line figure parsed - empty tracefile (see the lcov/geninfo errors above)"
+    echo "$RESULT"
+    echo "Coverage: no line figure in genhtml's summary above"
     exit 1
 fi
 
