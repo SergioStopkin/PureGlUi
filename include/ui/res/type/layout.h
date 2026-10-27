@@ -19,9 +19,11 @@
 
 #include "ui/res/dock/config.h"
 #include "ui/res/dock/layout.h"
+#include "ui/res/type/border.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/region.h"
 #include "ui/res/type/themepreview.h"
+#include "ui/type.h"
 
 #include <string>
 #include <vector>

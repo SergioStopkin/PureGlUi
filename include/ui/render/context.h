@@ -18,11 +18,13 @@
 #pragma once
 
 #include "common/noncopyable.h"
-#include "ui/intent.h"
+#include "ui/intentkind.h"
 #include "ui/render/binding.h"
 #include "ui/render/elementevent.h"
 #include "ui/render/renderscope.h"
+#include "ui/render/uielement.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/menu.h"
 #include "ui/result.h"
 #include "ui/type.h"
 

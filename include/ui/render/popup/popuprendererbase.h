@@ -24,9 +24,14 @@
 #include "ui/gl/fontrec.h"
 #include "ui/gl/fontrenderer.h"
 #include "ui/gl/glutil.h"
+#include "ui/gl/localglew.h"
 #include "ui/gl/rounded.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/interface/irenderer.h"
+#include "ui/render/elementevent.h"
+#include "ui/res/resmanager.h"
+#include "ui/res/type/border.h"
+#include "ui/res/type/changed.h"
 #include "ui/type.h"
 
 #include <array>

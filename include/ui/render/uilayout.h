@@ -18,8 +18,6 @@
 #pragma once
 
 #include "common/unicode.h"
-#include "ui/convert.h"
-#include "ui/gl/fontrenderer.h"
 #include "ui/idkind.h"
 #include "ui/interface/irender.h"
 #include "ui/render/eventkind.h"
@@ -27,8 +25,16 @@
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
 #include "ui/res/dock/anchor.h"
+#include "ui/res/localemanager.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/bound.h"
+#include "ui/res/type/button.h"
 #include "ui/res/type/fontweight.h"
+#include "ui/res/type/iconplace.h"
+#include "ui/res/type/layout.h"
+#include "ui/res/type/menu.h"
+#include "ui/res/type/theme.h"
+#include "ui/tab.h"
 #include "ui/tabbar.h"
 #include "ui/type.h"
 

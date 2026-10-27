@@ -18,9 +18,9 @@
 #pragma once
 
 #include "ui/interface/iwindow.h"
-#include "ui/type.h"
 #include "ui/window/event.h"
 #include "ui/window/nativewindowhandle.h"
+#include "ui/window/pointershape.h"
 
 #include <cstdint>
 #include <string>

@@ -22,16 +22,22 @@
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
+#include "ui/gl/svgrenderer.h"
 #include "ui/gl/textalign.h"
+#include "ui/render/elementevent.h"
+#include "ui/render/eventkind.h"
 #include "ui/render/popup/dialogbutton.h"
 #include "ui/render/popup/popuprendererbase.h"
 #include "ui/render/scrollbar.h"
 #include "ui/render/uielementstate.h"
+#include "ui/res/resmanager.h"
 #include "ui/res/type/border.h"
 #include "ui/res/type/dialog.h"
 #include "ui/res/type/dialogaction.h"
 #include "ui/res/type/dialogtype.h"
 #include "ui/type.h"
+#include "ui/window/keymodifier.h"
+#include "ui/window/mousebutton.h"
 
 #include <algorithm>
 #include <chrono>

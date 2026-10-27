@@ -32,6 +32,12 @@
 #include "ui/interface/irender.h"
 #include "ui/render/shadow.h"
 #include "ui/render/textop.h"
+#include "ui/res/type/alignh.h"
+#include "ui/res/type/alignv.h"
+#include "ui/res/type/border.h"
+#include "ui/res/type/bound.h"
+#include "ui/res/type/colorpair.h"
+#include "ui/res/type/font.h"
 #include "ui/type.h"
 
 #include <algorithm>

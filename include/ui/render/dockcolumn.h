@@ -18,6 +18,7 @@
 #pragma once
 
 #include "common/noncopyable.h"
+#include "ui/color.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/idkind.h"
 #include "ui/render/dragtrack.h"
@@ -25,13 +26,19 @@
 #include "ui/render/slider.h"
 #include "ui/render/thumbmetrics.h"
 #include "ui/render/thumbtrack.h"
+#include "ui/render/uielement.h"
+#include "ui/render/uilayout.h"
 #include "ui/render/uirenderer.h"
 #include "ui/res/dock/anchor.h"
 #include "ui/res/dock/config.h"
 #include "ui/res/dock/row.h"
+#include "ui/res/dock/rowkind.h"
 #include "ui/res/dock/state.h"
 #include "ui/res/key/iconrole.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/alignh.h"
+#include "ui/res/type/alignv.h"
+#include "ui/res/type/border.h"
 #include "ui/res/type/bound.h"
 #include "ui/type.h"
 

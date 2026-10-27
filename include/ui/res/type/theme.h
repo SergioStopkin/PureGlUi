@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "ui/color.h"
 #include "ui/res/dock/theme.h"
 #include "ui/res/type/colorpair.h"
 #include "ui/res/type/font.h"

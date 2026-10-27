@@ -22,6 +22,7 @@
 #include "ui/render/thumbmetrics.h"
 #include "ui/render/thumbtrack.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/border.h"
 #include "ui/res/type/bound.h"
 #include "ui/type.h"
 

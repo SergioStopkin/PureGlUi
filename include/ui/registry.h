@@ -17,8 +17,6 @@
 
 #pragma once
 
-#include "ui/type.h"
-
 #include <algorithm>
 #include <cstddef>
 #include <unordered_map>

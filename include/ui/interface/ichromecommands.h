@@ -18,6 +18,7 @@
 #pragma once
 
 #include "ui/intent.h"
+#include "ui/intentkind.h"
 #include "ui/type.h"
 
 #include <string>

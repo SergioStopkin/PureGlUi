@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include "common/unicode.h"
 #include "ui/io/filefilter.h"
 #include "ui/window/nativewindowhandle.h"
 
@@ -30,6 +29,8 @@
 #include <vector>
 
 #ifdef _WIN32
+#include "common/unicode.h"
+
 // clang-format off
 #include <windows.h>
 // clang-format on

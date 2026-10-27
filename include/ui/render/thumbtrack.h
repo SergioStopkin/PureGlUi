@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "ui/render/axis.h"
 #include "ui/render/dragtrack.h"
 #include "ui/render/thumbmetrics.h"
 #include "ui/res/type/bound.h"

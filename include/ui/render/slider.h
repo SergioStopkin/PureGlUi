@@ -19,7 +19,6 @@
 
 #include "ui/render/axis.h"
 #include "ui/render/thumbmetrics.h"
-#include "ui/res/type/border.h"
 #include "ui/res/type/bound.h"
 #include "ui/type.h"
 

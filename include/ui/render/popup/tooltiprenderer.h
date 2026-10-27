@@ -17,10 +17,19 @@
 
 #pragma once
 
+#include "ui/color.h"
+#include "ui/config.h"
+#include "ui/gl/localglew.h"
 #include "ui/gl/textalign.h"
+#include "ui/render/elementevent.h"
 #include "ui/render/popup/popuprendererbase.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/bound.h"
+#include "ui/res/type/colorpair.h"
+#include "ui/res/type/region.h"
 #include "ui/type.h"
+#include "ui/window/keymodifier.h"
+#include "ui/window/mousebutton.h"
 
 #include <string>
 #include <utility>

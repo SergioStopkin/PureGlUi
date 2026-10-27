@@ -24,6 +24,7 @@
 #include "nlohmann/json.hpp"
 #include "ui/convert.h"
 #include "ui/idkind.h"
+#include "ui/res/dock/anchor.h"
 #include "ui/res/key/menu.h"
 #include "ui/res/localemanager.h"
 #include "ui/res/respath.h"

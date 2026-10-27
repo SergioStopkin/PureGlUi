@@ -17,11 +17,10 @@
 
 #pragma once
 
-#include "ui/color.h"
 #include "ui/interface/ieventapp.h"
-#include "ui/res/resmanager.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/changed.h"
+#include "ui/type.h"
 
 #include <cstdint>
 #include <string>

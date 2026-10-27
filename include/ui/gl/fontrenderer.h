@@ -35,6 +35,7 @@
 // NOLINTEND(llvm-include-order)
 
 #include "ui/gl/glutil.h"
+#include "ui/gl/localglew.h"
 
 #include <algorithm>
 #include <atomic>

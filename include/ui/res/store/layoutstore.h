@@ -30,6 +30,7 @@
 #include "ui/res/type/layout.h"
 #include "ui/res/type/popup.h"
 #include "ui/res/type/region.h"
+#include "ui/type.h"
 
 #include <algorithm>
 #include <iostream>

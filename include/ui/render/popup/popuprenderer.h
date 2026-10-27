@@ -17,13 +17,28 @@
 
 #pragma once
 
+#include "ui/color.h"
+#include "ui/config.h"
+#include "ui/gl/fontrenderer.h"
+#include "ui/gl/localglew.h"
+#include "ui/gl/svgrenderer.h"
 #include "ui/gl/textalign.h"
+#include "ui/render/elementevent.h"
+#include "ui/render/eventkind.h"
 #include "ui/render/popup/popuprendererbase.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
 #include "ui/render/uilayout.h"
+#include "ui/res/resmanager.h"
+#include "ui/res/type/bound.h"
+#include "ui/res/type/font.h"
 #include "ui/res/type/fontweight.h"
+#include "ui/res/type/iconplace.h"
+#include "ui/res/type/menu.h"
+#include "ui/res/type/themepreview.h"
 #include "ui/type.h"
+#include "ui/window/keymodifier.h"
+#include "ui/window/mousebutton.h"
 
 #include <algorithm>
 #include <cstddef>
