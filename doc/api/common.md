@@ -333,6 +333,21 @@ work();
 std::cout << "took " << Common::Time::msSince(started) << " ms" << std::endl;
 ```
 
+## Common::warnIfSlow
+
+Header: `include/common/warnifslow.h`
+
+A time a test holds to an upper bound, flagged and never failed: a CI runner sharing its cores oversleeps now and then, and one drawing on the CPU is over at every frame. A time at or over `mostMs` prints a line in GitHub Actions' own `::warning::` syntax, which the run shows as an annotation; elsewhere it is one line of output. Both repos' timing tests use it for their upper bounds, and keep failing on a lower bound, which catches work that did nothing.
+
+```cpp
+inline void warnIfSlow(std::string_view what, double ms, double mostMs);
+```
+
+```cpp
+Common::warnIfSlow("a 1 ms sleep's median", medianMs, 5.0);
+// ::warning::a 1 ms sleep's median took 15.6 ms, over 5
+```
+
 ## See also
 
 [vocabulary.md](vocabulary.md), [README.md](README.md)

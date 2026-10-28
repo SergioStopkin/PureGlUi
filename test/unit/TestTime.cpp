@@ -23,16 +23,16 @@
  */
 
 #include "common/time.h"
+#include "common/warnifslow.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
 #include <gtest/gtest.h>
-#include <iostream>
-#include <string_view>
 
 using Common::Time;
+using Common::warnIfSlow;
 
 namespace {
 
@@ -43,15 +43,6 @@ constexpr std::size_t SLEEPS = 9;
 
 // Well under a Windows timer tick, well over a sleep that wakes when asked
 constexpr double MOST_MS = 5.0;
-
-// A runner sharing its cores oversleeps now and then, so a wait over MOST_MS warns and
-// never fails; printed as GitHub Actions' own warning, an annotation on the run
-void warnIfSlow(std::string_view what, double ms)
-{
-    if (ms >= MOST_MS) {
-        std::cout << "::warning::" << what << " took " << ms << " ms, over " << MOST_MS << std::endl;
-    }
-}
 
 } // namespace
 
@@ -71,7 +62,7 @@ TEST(Time, AMillisecondSleepIsNotATimerTick)
         slept = Time::msSince(start);
     }
     std::ranges::sort(sleptMs);
-    warnIfSlow("a 1 ms sleep's median", sleptMs.at(SLEEPS / 2));
+    warnIfSlow("a 1 ms sleep's median", sleptMs.at(SLEEPS / 2), MOST_MS);
 }
 
 TEST(Time, ASleepUntilWakesAtItsPoint)
@@ -85,5 +76,5 @@ TEST(Time, ASleepUntilAPassedPointReturnsAtOnce)
 {
     const Time::point_t start = Time::now();
     Time::sleepUntil(start - std::chrono::seconds(1));
-    warnIfSlow("a sleep until a passed point", Time::msSince(start));
+    warnIfSlow("a sleep until a passed point", Time::msSince(start), MOST_MS);
 }
