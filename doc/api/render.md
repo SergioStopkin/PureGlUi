@@ -54,7 +54,6 @@ Methods:
 - `const UiElement * parentOf(const UiElement & child) const` - the element sharing the child's id but with a different type (e.g. a `Tab` for a `TabClose`), or `nullptr`.
 - `const std::vector<UiElement> & elements() const` / `std::vector<UiElement> & elements()` - the flat draw list (draw in order).
 - Cached font-handle getters: `menuFont()`, `itemFont()`, `itemFontBold()`, `popupFont()`, `statusBarFont()`, `tooltipFont()` (all `Ui::font_handle_t`).
-- `int buttonImgSize() const` - a top-menu icon button's image size (CSS px); a toolbar button's icon is its `toolbar-button` box inset by the box's padding.
 - `UiElement & addElement(UiElementType type, const bound_t & bound, id_t id = INVALID_ID)` - append an element, stamping `accepts` from `defaultAccepts(type)`. Override `accepts` on the returned reference for the exceptions (a submenu parent takes `Hover` only). Insertion order is z-order, so a contributor added after `build()` - a dock, via the extra-ops hook - sits on top of the chrome it overlaps.
 
 Text fitting is not a `UiLayout` member: `truncateText` / `truncateFileName` are free functions in `ui/render/truncate.h` - see [Text fitting](#text-fitting-uirender).

@@ -77,8 +77,8 @@ TEST_F(WindowGeometryTest, DialogAreaStartsInsideTheChrome)
     const auto & layout = resManager.layout();
     const auto   area   = windowManager.dialogArea();
 
-    EXPECT_GE(area.x, phys(layout.leftToolbar.width));
-    EXPECT_GE(area.y, phys(layout.topMenu.height + layout.workspaceTab.height));
+    EXPECT_GE(area.x, layout.leftToolbar.width);
+    EXPECT_GE(area.y, layout.topMenu.height + layout.workspaceTab.height);
 }
 
 TEST_F(WindowGeometryTest, DialogAreaLeavesTheStatusBarAndRightToolbarFree)
@@ -86,20 +86,20 @@ TEST_F(WindowGeometryTest, DialogAreaLeavesTheStatusBarAndRightToolbarFree)
     const auto & layout = resManager.layout();
     const auto   area   = windowManager.dialogArea();
 
-    EXPECT_LE(area.x + area.w, WINDOW_W - phys(layout.rightToolbar.width));
-    EXPECT_LE(area.y + area.h, WINDOW_H - phys(layout.statusBar.height));
+    EXPECT_LE(area.x + area.w, Ui::toCss(WINDOW_W) - layout.rightToolbar.width);
+    EXPECT_LE(area.y + area.h, Ui::toCss(WINDOW_H) - layout.statusBar.height);
 }
 
 TEST_F(WindowGeometryTest, DialogAreaIsInsetByTheDialogMarginOnEverySide)
 {
     const auto & layout = resManager.layout();
     const auto   area   = windowManager.dialogArea();
-    const auto   margin = phys(layout.dialog.margin);
+    const auto   margin = layout.dialog.margin;
 
-    EXPECT_FLOAT_EQ(area.x, phys(layout.leftToolbar.width) + margin);
-    EXPECT_FLOAT_EQ(area.y, phys(layout.topMenu.height + layout.workspaceTab.height) + margin);
-    EXPECT_FLOAT_EQ(area.x + area.w, WINDOW_W - phys(layout.rightToolbar.width) - margin);
-    EXPECT_FLOAT_EQ(area.y + area.h, WINDOW_H - phys(layout.statusBar.height) - margin);
+    EXPECT_FLOAT_EQ(area.x, layout.leftToolbar.width + margin);
+    EXPECT_FLOAT_EQ(area.y, layout.topMenu.height + layout.workspaceTab.height + margin);
+    EXPECT_FLOAT_EQ(area.x + area.w, Ui::toCss(WINDOW_W) - layout.rightToolbar.width - margin);
+    EXPECT_FLOAT_EQ(area.y + area.h, Ui::toCss(WINDOW_H) - layout.statusBar.height - margin);
 }
 
 // The floor exists so the largest dialog fits in this area; if the two ever

@@ -52,6 +52,10 @@ struct alignas(16) config_t final {
     {
         return { .x = toPhysRound(css.x), .y = toPhysRound(css.y), .w = toPhysRound(css.w), .h = toPhysRound(css.h) };
     }
+    // The pixel an edge at css px, made whole, is drawn from: GL fills a pixel whose centre
+    // is inside it. toPhysRound's at a whole scale; at 1.25x/1.5x/1.75x a window's edge
+    // put there meets the one GL draws, where a fraction would be cut off by the platform
+    [[nodiscard]] fpx_t toPhysEdge(fpx_t css) const { return std::ceil(toPhysRound(css) - 0.5F); }
 
     // physical px -> CSS px.
     [[nodiscard]] fpx_t toCss(int phys) const { return phys / scale; }
@@ -75,6 +79,7 @@ inline int                    toPhysFloor(fpx_t css) { return g_config.toPhysFlo
 inline fpx_t                  toPhysRound(int css) { return g_config.toPhysRound(css); }
 inline fpx_t                  toPhysRound(fpx_t css) { return g_config.toPhysRound(css); }
 inline Ui::Res::Type::bound_t toPhysRound(const Ui::Res::Type::bound_t & css) { return g_config.toPhysRound(css); }
+inline fpx_t                  toPhysEdge(fpx_t css) { return g_config.toPhysEdge(css); }
 inline fpx_t                  toCss(int phys) { return g_config.toCss(phys); }
 inline fpx_t                  toCss(fpx_t phys) { return g_config.toCss(phys); }
 inline int                    toCssFloor(int phys) { return g_config.toCssFloor(phys); }

@@ -27,7 +27,6 @@
 #include "ui/window/nativewindow.h"
 #include "ui/window/popup/popupwindow.h"
 
-#include <cmath>
 #include <iostream>
 
 namespace Ui::Window::Popup {
@@ -59,11 +58,10 @@ public:
               const Ui::Res::Type::dialog_t & dialog,
               const Ui::Res::Type::bound_t &  area)
     {
-        const auto & dlg     = resManager.layout().dialog;
-        const fpx_t  dialogW = toPhys(dialog.width > 0 ? dialog.width : dlg.width);
-        const fpx_t  dialogH = toPhys(dialog.height > 0 ? dialog.height : dlg.height);
-
-        const auto pos = centeredPosition(area, dialogW, dialogH);
+        const auto & dlg = resManager.layout().dialog;
+        const auto   pos = centeredPosition(area,
+                                            dialog.width > 0 ? dialog.width : dlg.width,
+                                            dialog.height > 0 ? dialog.height : dlg.height);
 
         setPosition(pos.x, pos.y);
         setBackground(resManager.theme().dialog.bg);
@@ -73,13 +71,13 @@ public:
             setCornerRadii(dialogRadii);
         }
 
-        if (!create(parentWindow, dialogW, dialogH)) {
+        if (!create(parentWindow, pos.w, pos.h)) {
             std::cerr << "[DialogWindow] Failed to create window" << std::endl;
             return false;
         }
 
         if (g_config.isCompositing) {
-            move(-dialogW, -dialogH);
+            move(-pos.w, -pos.h);
             setPosition(pos.x, pos.y);
         }
 
@@ -89,7 +87,7 @@ public:
 
     void recenter(const Ui::Res::Type::bound_t & area)
     {
-        const auto pos = centeredPosition(area, m_bound.w, m_bound.h);
+        const auto pos = centeredPosition(area, toCss(m_bound.w), toCss(m_bound.h));
         if (g_config.isCompositing) {
             setPosition(pos.x, pos.y);
         } else {
@@ -98,15 +96,21 @@ public:
     }
 
 private:
-    // Centred in the area the coordinator hands over - the space inside the
-    // chrome, less the dialog margin - not the raw window. Snapped to integer
-    // pixels: sub-pixel positions misalign the composite texture on XWayland.
-    static Ui::Res::Type::bound_t centeredPosition(const Ui::Res::Type::bound_t & area, fpx_t dialogW, fpx_t dialogH)
+    // Centred in the area the coordinator hands over - the space inside the chrome, less
+    // the dialog margin - not the raw window: CSS px in, physical px out. Its edges on a
+    // whole CSS px (toPhysEdge): whole pixels, which the composite texture on XWayland
+    // needs, and at macOS's 2x whole points - AppKit widens a window standing on half a
+    // point out to whole ones, a point taller than GL draws, left black along its top.
+    // Its size is the pixels between those edges: at 1.25x/1.5x/1.75x a fraction the
+    // platform would cut off, ending the window short of where GL draws its far edge
+    static Ui::Res::Type::bound_t centeredPosition(const Ui::Res::Type::bound_t & area, fpx_t cssW, fpx_t cssH)
     {
-        return { .x = std::round(area.x + ((area.w - dialogW) / 2.0F)),
-                 .y = std::round(area.y + ((area.h - dialogH) / 2.0F)),
-                 .w = dialogW,
-                 .h = dialogH };
+        const fpx_t left = area.x + ((area.w - cssW) / 2.0F);
+        const fpx_t top  = area.y + ((area.h - cssH) / 2.0F);
+        return { .x = toPhysEdge(left),
+                 .y = toPhysEdge(top),
+                 .w = toPhysEdge(left + cssW) - toPhysEdge(left),
+                 .h = toPhysEdge(top + cssH) - toPhysEdge(top) };
     }
 };
 

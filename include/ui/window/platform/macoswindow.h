@@ -37,6 +37,7 @@
 #define __ICONS__
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
+#import <objc/runtime.h>
 // NOLINTEND(clang-diagnostic-import-preprocessor-directive-pedantic)
 
 namespace Ui::Window::Platform {
@@ -341,6 +342,32 @@ public:
         return main ? main.frame.size.height : 0.0;
     }
 
+    // What a popup's NSWindow is made of: NSWindow with constrainFrameRect:toScreen: handing
+    // back the frame it is given. In fullscreen macOS 26 constrains every frame a window is
+    // made or set at to a menu bar's height below the screen's top (31 pt, the bar hidden or
+    // not), and a list hung under our own menu bar stands higher. Made at runtime, once: a
+    // class written in a header would be defined by every file that includes it
+    static Class popupWindowClass()
+    {
+        static Class const popupClass = []() -> Class {
+            constexpr const char* name = "PureGlUiPopupWindow";
+            Class subclass = objc_allocateClassPair([NSWindow class], name, 0);
+            if (subclass == Nil) {
+                return objc_getClass(name);
+            }
+            const SEL selector = @selector(constrainFrameRect:toScreen:);
+            class_addMethod(subclass,
+                selector,
+                imp_implementationWithBlock(^NSRect(id /*window*/, NSRect frameRect, NSScreen* /*screen*/) {
+                    return frameRect;
+                }),
+                method_getTypeEncoding(class_getInstanceMethod([NSWindow class], selector)));
+            objc_registerClassPair(subclass);
+            return subclass;
+        }();
+        return popupClass;
+    }
+
     // Create a borderless popup NSWindow as a child of `parent`, shared GL context.
     // screenX/screenY are top-left in physical pixels; width/height are physical pixels.
     // Leaves m_bound.x/y untouched (callers set those via setPosition() as parent-relative).
@@ -362,10 +389,10 @@ public:
             const CGFloat yPts = screenHeightPts - (screenY / bsf) - (height / bsf);
             NSRect frame = NSMakeRect(xPts, yPts, width / bsf, height / bsf);
 
-            m_nsWindow = [[NSWindow alloc] initWithContentRect:frame
-                                                     styleMask:NSWindowStyleMaskBorderless
-                                                       backing:NSBackingStoreBuffered
-                                                         defer:NO];
+            m_nsWindow = [[popupWindowClass() alloc] initWithContentRect:frame
+                                                               styleMask:NSWindowStyleMaskBorderless
+                                                                 backing:NSBackingStoreBuffered
+                                                                   defer:NO];
             if (!m_nsWindow) {
                 std::cerr << "[MacOsWindow] Popup NSWindow alloc/init returned nil" << std::endl;
                 return false;

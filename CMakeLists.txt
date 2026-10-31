@@ -299,11 +299,13 @@ endif()
 # ===========================================================================
 # jemalloc - optional drop-in replacement for the system allocator. Gracefully
 # absent when not installed; off the critical path for the framework.
+# Not on macOS: it takes over the default malloc zone, which AppKit crashes
+# freeing through on macOS 26, and on 15 it changed neither load nor a frame
 # ===========================================================================
 option(USE_JEMALLOC "Link against jemalloc to replace the system allocator" ON)
 set(JEMALLOC_FOUND FALSE)
 set(JEMALLOC_LIBRARIES "")
-if(USE_JEMALLOC)
+if(USE_JEMALLOC AND NOT APPLE)
     if(WIN32)
         find_library(JEMALLOC_LIBRARY NAMES jemalloc)
         find_path(JEMALLOC_INCLUDE_DIR jemalloc/jemalloc.h)

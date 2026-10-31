@@ -44,9 +44,6 @@
 #ifdef HAVE_X11
 #include "ui/window/platform/x11include.h"
 #endif
-#if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
-#include "ui/window/popup/eglcache.h"
-#endif
 #endif
 
 namespace Ui::Window::Popup {
@@ -395,37 +392,36 @@ private:
         const int      screen = DefaultScreen(m_display);
         const ::Window root   = RootWindow(m_display, screen);
 
-        auto & cache = eglCache();
-
-        // First popup: full discovery. Subsequent: use cached results.
+        // Full discovery until it has cached an opaque config, then that one. The cache is
+        // EglContext's alone: the main window's teardown drops it, and a transparent popup
+        // never makes one, so a popup after either searches again rather than failing
         XVisualInfo * vi = nullptr;
 
-        if (!cache.searched) {
-            // --- First-time discovery (slow path) ---
-            cache.searched = true;
+        if (!Ui::Window::EglContext::hasCachedConfig()) {
+            // --- Discovery (slow path) ---
 
             // Detect compositor
             {
                 int compMajor {};
                 int compMinor {};
-                cache.hasCompositor = false;
+                s_hasCompositor = false;
                 if (XCompositeQueryVersion(m_display, &compMajor, &compMinor) != 0) {
                     const Atom     compAtom = XInternAtom(m_display, "_NET_WM_CM_S0", Ui::Window::Platform::X11::False);
                     const ::Window selOwner = XGetSelectionOwner(m_display, compAtom);
-                    cache.hasCompositor     = (selOwner != Ui::Window::Platform::X11::None);
+                    s_hasCompositor         = (selOwner != Ui::Window::Platform::X11::None);
                 }
                 // XWayland: Wayland compositor handles alpha even if X11 atom is absent
-                if (!cache.hasCompositor && g_config.isCompositing) {
-                    cache.hasCompositor = true;
+                if (!s_hasCompositor && g_config.isCompositing) {
+                    s_hasCompositor = true;
                 }
                 if constexpr (POPUP_DEBUG) {
-                    std::cout << "[PopupWindow] Compositor present=" << cache.hasCompositor << std::endl;
+                    std::cout << "[PopupWindow] Compositor present=" << s_hasCompositor << std::endl;
                 }
             }
 
             // Try to find a 32-bit ARGB visual
             VisualID argbVid = 0;
-            if (cache.hasCompositor) {
+            if (s_hasCompositor) {
                 argbVid = findArgbVisualId(screen);
             }
 
@@ -492,7 +488,7 @@ private:
             }
         } else {
             // --- Cached fast path ---
-            m_hasCompositor = cache.hasCompositor;
+            m_hasCompositor = s_hasCompositor;
 
             // Reuse cached display+config (skip init + config search)
             m_context = std::make_unique<Ui::Window::EglContext>();
@@ -511,7 +507,7 @@ private:
             }
         }
 
-        m_hasCompositor = cache.hasCompositor;
+        m_hasCompositor = s_hasCompositor;
         if constexpr (POPUP_DEBUG) {
             std::cout << "[PopupWindow] Visual depth=" << vi->depth << " hasAlpha=" << m_hasAlpha
                       << " msaa=" << (m_msaa ? "yes" : "no") << std::endl;
@@ -994,13 +990,10 @@ private:
     bool m_followsParent      = false; // parented to the main window (X11 child) -> auto-tracks parent move/resize
     bool m_isInputTransparent = false; // setInputTransparent
 
-    // Static cache for EGL config discovery results (survives popup destroy/recreate)
 #if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
-    static Ui::Window::Popup::egl_cache_t & eglCache()
-    {
-        static Ui::Window::Popup::egl_cache_t cache;
-        return cache;
-    }
+    // What the discovery that cached EglContext's config found of a compositor, for every
+    // popup made from that config (survives popup destroy/recreate)
+    inline static bool s_hasCompositor = false;
 #endif // HAVE_X11 && !HAVE_WAYLAND
 
     Ui::Res::Type::border_t m_cornerRadii {};

@@ -144,6 +144,10 @@ public:
     }
 
 #ifdef __linux__
+    // Whether initCachedConfig has a display+config to start from: the main window's
+    // teardown drops it with the display, so a popup made after that searches again
+    [[nodiscard]] static bool hasCachedConfig() { return s_cachedValid; }
+
     /**
      * @brief Initialize EGL with a pre-existing display and config
      *

@@ -146,7 +146,8 @@ struct alignas(16) Ui::config_t final {
     [[nodiscard]] int   toPhysFloor(int css) const;   // floor to int (font/texture sizes)
     [[nodiscard]] int   toPhysFloor(fpx_t css) const;
     [[nodiscard]] fpx_t toPhysRound(int css) const;
-    [[nodiscard]] fpx_t toPhysRound(fpx_t css) const; // round CSS to int before scaling (popup pos/size)
+    [[nodiscard]] fpx_t toPhysRound(fpx_t css) const; // round CSS to int before scaling (popup size)
+    [[nodiscard]] fpx_t toPhysEdge(fpx_t css) const;  // the pixel GL draws an edge there from (popup anchor)
 
     // physical px -> CSS px
     [[nodiscard]] fpx_t toCss(int phys) const;
@@ -173,13 +174,14 @@ inline int   Ui::toPhysFloor(int css);
 inline int   Ui::toPhysFloor(fpx_t css);
 inline fpx_t Ui::toPhysRound(int css);
 inline fpx_t Ui::toPhysRound(fpx_t css);
+inline fpx_t Ui::toPhysEdge(fpx_t css);
 inline fpx_t Ui::toCss(int phys);
 inline fpx_t Ui::toCss(fpx_t phys);
 inline int   Ui::toCssFloor(int phys);
 inline int   Ui::toCssFloor(fpx_t phys);
 ```
 
-Notes: `toPhys` applies raw `scale`; `toPhysFloor` truncates for integer sizes; `toPhysRound` snaps the CSS value to the pixel grid before scaling. The `int`-overload `toPhysRound(int)` is identical to `toPhys(int)` (no fractional CSS input to round).
+Notes: `toPhys` applies raw `scale`; `toPhysFloor` truncates for integer sizes; `toPhysRound` snaps the CSS value to the pixel grid before scaling. The `int`-overload `toPhysRound(int)` is identical to `toPhys(int)` (no fractional CSS input to round). `toPhysEdge` is `toPhysRound` made a whole pixel the way GL fills one, a pixel whose centre is inside: the same at a whole scale, and at 1.25x/1.5x/1.75x where an edge GL draws begins, so a popup hung there meets it rather than standing where the platform cuts the fraction off.
 
 ```cpp
 Ui::g_config.scale = 1.5F;                 // host sets scale for a HiDPI display

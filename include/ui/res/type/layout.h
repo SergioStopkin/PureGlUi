@@ -81,7 +81,7 @@ struct alignas(128) layout_t final {
     fpx_t menuItemHoverMarginV {};     // top-menu-item:hover vertical margin (px)
     fpx_t menuItemHoverMarginH {};     // top-menu-item:hover horizontal margin (px)
     fpx_t menuItemIconWidth   = 16;    // top-menu-item-icon: width (svg render box)
-    int   buttonImgSize       = 24;    // :root --button-img-size
+    fpx_t buttonImgSize       = 24;    // :root --button-img-size
     fpx_t windowWidth         = 1600;  // :root --window-width
     fpx_t windowHeight        = 1000;  // :root --window-height
     float iconHoverShadowX    = 2.0F;  // :root --button-icon-hover-shadow-x

@@ -55,6 +55,7 @@
 #include "ui/window/eventtype.h"
 #include "ui/window/mousebutton.h"
 #include "ui/window/nativewindow.h"
+#include "ui/window/popup/popupwindow.h"
 #include "ui/window/windowmanager.h"
 
 #include <algorithm>
@@ -77,6 +78,11 @@ namespace Ui {
 // classified, menu hover, and the popup lifecycle with its geometry. One line
 // or more per input event, so this is loud under any real use.
 constexpr bool SHELL_DEBUG = false;
+
+// Flip to true to trace how the pointer switches the open list across the menu bar: a
+// move onto a button (from the main window or from over the list), what handleMenuHover
+// decides and why, a held hover and its replay, and the waits that hold a switch off
+constexpr bool MENU_HOVER_DEBUG = false;
 
 /**
  * @brief The runnable framework core - owns the fw object graph.
@@ -164,10 +170,15 @@ public:
 
     [[nodiscard]] bool isPopupOpen() const override { return m_openMenuId != Ui::INVALID_ID; }
 
-    void openPopup(id_t menuId) override { createMenuPopup(menuId); }
+    void openPopup(id_t menuId) override
+    {
+        traceMenuHover("opened", menuId);
+        createMenuPopup(menuId);
+    }
 
     void closePopup() override
     {
+        traceMenuHover("closed", m_openMenuId);
         // Deferred: the click may originate inside the popup window we are about to
         // destroy, so close after the current event drains. routeIntent has already
         // gated this on isPopupOpen().
@@ -611,6 +622,10 @@ public:
 
             const auto & event   = m_windowManager.currentEvent();
             m_pressClosedRowMenu = Ui::INVALID_ID;
+            if constexpr (MENU_HOVER_DEBUG) {
+                std::cout << "[MenuHover] press: list=" << event.isPopupEvent << " at " << event.mouse.x << ","
+                          << event.mouse.y << " clickCount=" << event.mouse.clickCount << std::endl;
+            }
 
             // Popup press -- only handle outside-click policy (inside forwarding done by dispatchEvent)
             if (event.isPopupEvent && m_windowManager.hasPopup()) {
@@ -688,7 +703,7 @@ public:
                 if (event.mouse.y >= 0 && event.mouse.y < menuBarHeight) {
                     if (event.mouse.x < menusTotalWidthPhysical()) {
                         if constexpr (SHELL_DEBUG) {
-                            std::cout << "[Shell] Click on menu button while popup open - deferring to click handler"
+                            std::cout << "[Shell] Press on the menu bar while popup open - its title decides below"
                                       << std::endl;
                         }
                         closePopup = false;
@@ -708,6 +723,11 @@ public:
                     destroyPopup();
                 }
             }
+            // A title opens, closes or switches its list on the press (isListTitle)
+            if (const Ui::Render::element_event_t & press = m_windowManager.lastPressResult(); isListTitle(press)) {
+                traceMenuHover("pressed a title", press.id);
+                dispatchClick(press);
+            }
             // Main window press routing already done by dispatchEvent
             if (event.childWindowId == Ui::INVALID_ID) {
                 m_windowManager.requestMainRender();
@@ -721,6 +741,14 @@ public:
             }
 
             const auto & event = m_windowManager.currentEvent();
+            if constexpr (MENU_HOVER_DEBUG) {
+                const auto & click = m_windowManager.lastClickResult();
+                std::cout << "[MenuHover] release: list=" << event.isPopupEvent
+                          << " consumed=" << m_windowManager.popupEventConsumed() << " at " << event.mouse.x << ","
+                          << event.mouse.y << " click type=" << static_cast<int>(click.type) << " on '"
+                          << (click.id == Ui::INVALID_ID ? std::string {} : m_resManager.findMenuItem(click.id).label)
+                          << "'" << std::endl;
+            }
 
             // Popup release -- handle click result or close
             if (event.isPopupEvent && m_windowManager.hasPopup()) {
@@ -739,9 +767,10 @@ public:
                 return;
             }
 
-            // Main/child release -- handle click result
+            // Main/child release -- handle click result. A title's press did its work, so
+            // its release does nothing
             const auto & result = m_windowManager.lastClickResult();
-            if (result.id != Ui::INVALID_ID) {
+            if (result.id != Ui::INVALID_ID && !isListTitle(result)) {
                 dispatchClick(result);
             }
             if (event.childWindowId == Ui::INVALID_ID) {
@@ -756,6 +785,13 @@ public:
             }
 
             const auto & event = m_windowManager.currentEvent();
+            if constexpr (MENU_HOVER_DEBUG) {
+                if (m_openMenuId != Ui::INVALID_ID || m_menuSwitchPending) {
+                    std::cout << "[MenuHover] move with a list open: list=" << event.isPopupEvent
+                              << " content=" << (event.childWindowId != Ui::INVALID_ID) << " at " << event.mouse.x
+                              << "," << event.mouse.y << std::endl;
+                }
+            }
 
             // Popup move -- handle menu bar hover detection
             if (event.isPopupEvent) {
@@ -766,7 +802,12 @@ public:
 
                     const int menuBarHeight = toPhysFloor(m_resManager.layout().topMenu.height);
                     if (mainY >= 0 && mainY < menuBarHeight) {
-                        if (m_windowManager.onMouseMove(mainX, mainY)) {
+                        const bool isHoverChanged = m_windowManager.onMouseMove(mainX, mainY);
+                        if constexpr (MENU_HOVER_DEBUG) {
+                            std::cout << "[MenuHover] move over the bar from the list at " << mainX << "," << mainY
+                                      << " hover changed=" << isHoverChanged << std::endl;
+                        }
+                        if (isHoverChanged) {
                             m_windowManager.requestMainRender();
                         }
                     }
@@ -794,6 +835,7 @@ public:
                     const auto & b = m_windowManager.elementBound(m.id);
                     if (b.w > 0 && b.contains(cssX, cssY)) {
                         if (m_hoveredMenuId != m.id) {
+                            traceMenuHover("move onto a button", m.id);
                             m_hoveredMenuId = m.id;
                             handleMenuHover(m.id);
                         }
@@ -814,6 +856,7 @@ public:
             if constexpr (SHELL_DEBUG) {
                 std::cout << "[Shell] Menu button hover: id=" << id << std::endl;
             }
+            traceMenuHover("element hover", id);
             handleMenuHover(id);
         });
 
@@ -926,6 +969,7 @@ public:
                 // (deferred menu switch sets it; next iteration clears it)
                 if (m_menuJustActivated) {
                     m_menuJustActivated = false;
+                    traceMenuHover("wait cleared, a pass had events", m_openMenuId);
                 }
                 m_windowManager.drainDeferred();
             }
@@ -936,8 +980,15 @@ public:
 
             if (m_windowManager.renderQueue().hasPending()) {
                 m_windowManager.renderAll();
+                // A list made before this frame has had it, so a switch may take it down -
+                // with no event after it, nothing else would say so
+                if (m_menuJustActivated) {
+                    m_menuJustActivated = false;
+                    traceMenuHover("wait cleared, a frame was drawn", m_openMenuId);
+                }
                 m_windowManager.drainDeferred();
             }
+            replayHeldHover();
 
             if (isStopAfterFrame) {
                 isStopAfterFrame = false;
@@ -1002,6 +1053,7 @@ private:
     // the close rather than a request to open again. Cleared by the next press
     id_t m_pressClosedRowMenu = Ui::INVALID_ID;
     id_t m_hoveredMenuId      = Ui::INVALID_ID; // ID of menu currently hovered (avoids duplicate hover actions)
+    id_t m_heldMenuId         = Ui::INVALID_ID; // a hover handleMenuHover held off, for replayHeldHover
 
     // Bool flags (grouped for minimal padding).
     bool m_pendingResize     = false;
@@ -1106,6 +1158,7 @@ private:
      */
     void destroyPopup(bool syncDisplay = false)
     {
+        traceMenuHover("list destroyed", m_openMenuId);
         m_windowManager.destroyPopup(syncDisplay);
 
         m_openMenuId     = Ui::INVALID_ID;
@@ -1179,9 +1232,13 @@ private:
 
     void handleMenuHover(id_t menuId)
     {
+        // The newest hover is the one owed: one held off before it is dropped
+        m_heldMenuId = Ui::INVALID_ID;
+
         // Skip action menus (icon buttons with no popup)
         for (const auto & menu : m_resManager.menus()) {
             if (menu.id == menuId && !menu.actionKey.empty()) {
+                traceMenuHover("skipped, an action button", menuId);
                 return;
             }
         }
@@ -1191,6 +1248,7 @@ private:
         // popup open (so moving back to it finds it still open) and never opens a
         // dropdown of its own.
         if (!m_resManager.findMenuItem(menuId).enabled) {
+            traceMenuHover("skipped, disabled", menuId);
             return;
         }
 
@@ -1203,42 +1261,88 @@ private:
                 }
                 m_hoveredMenuId = menuId;
             }
+            traceMenuHover("no list open, nothing to switch", menuId);
             return;
         }
 
         // Don't switch to the same menu
         if (m_openMenuId == menuId) {
+            traceMenuHover("already open", menuId);
             return;
         }
 
         // A dock row's menu is not part of the bar: sweeping the pointer across the
         // bar must not trade it for one of the bar's dropdowns
         if (m_rowMenuElement != Ui::INVALID_ID) {
+            traceMenuHover("skipped, a row's menu is open", menuId);
             return;
         }
 
         // Don't switch immediately after activation -- wait one render pass
-        // to avoid destroying a popup that was just created this frame.
-        if (m_menuJustActivated) {
+        // to avoid destroying a popup that was just created this frame. Nor while a
+        // switch waits for its frame. Either way the hover is held, and replayHeldHover
+        // asks again once nothing holds it: a pointer resting on the button sends no more
+        if (m_menuJustActivated || m_menuSwitchPending) {
+            m_heldMenuId = menuId;
+            traceMenuHover("held", menuId);
             return;
         }
+        traceMenuHover("switch started", menuId);
 
         // Always defer menu switching when hovering:
         // 1. Destroy old popup now (so the area it covered can be redrawn)
         // 2. Mark main window for re-render
         // 3. Create new popup AFTER render (via deferred mechanism)
         // This ensures corner capture sees the properly rendered background.
-        if (!m_menuSwitchPending) {
-            destroyPopup(true); // Destroy old popup, triggers requestContentRefresh
-            m_menuSwitchPending = true;
-            m_windowManager.subscribe().defer([this, menuId]() {
-                if constexpr (SHELL_DEBUG) {
-                    std::cout << "[Shell] Committing deferred menu switch to: " << menuId << std::endl;
-                }
-                createMenuPopup(menuId);
-                m_menuSwitchPending = false;
-                m_menuJustActivated = true;
-            });
+        destroyPopup(true); // Destroy old popup, triggers requestContentRefresh
+        m_menuSwitchPending = true;
+        m_windowManager.subscribe().defer([this, menuId]() {
+            if constexpr (SHELL_DEBUG) {
+                std::cout << "[Shell] Committing deferred menu switch to: " << menuId << std::endl;
+            }
+            createMenuPopup(menuId);
+            m_menuSwitchPending = false;
+            m_menuJustActivated = true;
+            traceMenuHover("switch made its list", menuId);
+        });
+    }
+
+    // A menu-bar title that opens a list, not an action button (actionKey): it reacts to the
+    // press, as every OS's menu bar does - doc/api/shell-actions.md "Menu bar behaviour" -
+    // and its release does nothing. Whatever else is pressed acts on the release
+    [[nodiscard]] bool isListTitle(const Ui::Render::element_event_t & event) const
+    {
+        return event.type == Ui::Render::UiElementType::MenuButton && event.id != Ui::INVALID_ID
+            && m_resManager.actionKeyFor(event.id).empty();
+    }
+
+    // One line of the menu-hover trace: what happened, to which menu, and the state that
+    // decides the next hover
+    void traceMenuHover(std::string_view what, id_t menuId) const
+    {
+        if constexpr (MENU_HOVER_DEBUG) {
+            const auto nameOf = [this](id_t id) {
+                return id == Ui::INVALID_ID ? std::string { "-" } : m_resManager.findMenuItem(id).label;
+            };
+            std::cout << "[MenuHover] " << what << ": menu=" << nameOf(menuId) << " open=" << nameOf(m_openMenuId)
+                      << " hovered=" << nameOf(m_hoveredMenuId) << " held=" << nameOf(m_heldMenuId)
+                      << " pending=" << m_menuSwitchPending << " justActivated=" << m_menuJustActivated << std::endl;
+        }
+    }
+
+    // A hover handleMenuHover held, once nothing holds a switch off, if the pointer is still
+    // on that button: resting there it sends nothing more, so the shell asks again
+    void replayHeldHover()
+    {
+        if (m_heldMenuId == Ui::INVALID_ID || m_menuJustActivated || m_menuSwitchPending) {
+            return;
+        }
+        const id_t menuId = std::exchange(m_heldMenuId, Ui::INVALID_ID);
+        if (m_windowManager.isPointerIn(m_windowManager.elementBound(menuId))) {
+            traceMenuHover("replaying a held hover", menuId);
+            handleMenuHover(menuId);
+        } else {
+            traceMenuHover("dropped a held hover, the pointer moved off", menuId);
         }
     }
 
@@ -1255,28 +1359,15 @@ private:
 
         const auto & menu = *it;
 
-        // Calculate cumulative X position by summing widths of all preceding menu buttons
-        fpx_t buttonXCss = 0;
-        fpx_t buttonH    = 0;
-        if (m_windowManager.hasUiRenderer()) {
-            for (const auto & m : menus) {
-                const auto & b = m_windowManager.elementBound(m.id);
-                if (m.order < menu.order) {
-                    buttonXCss += b.w;
-                } else if (m.id == menuId) {
-                    buttonH = b.h;
-                    break;
-                }
-            }
-        }
-        // Y = bottom of menu button (button height in CSS pixels)
-        const fpx_t buttonYCss = buttonH;
+        // Under its button where the layout put it - empty before the first layout, the
+        // window's top-left then
+        const Ui::Res::Type::bound_t & button = m_windowManager.elementBound(menuId);
 
         if constexpr (SHELL_DEBUG) {
-            std::cout << "[Shell] Popup position: menuId=" << menuId << " X=" << buttonXCss << " Y=" << buttonYCss
-                      << std::endl;
+            std::cout << "[Shell] Popup position: menuId=" << menuId << " X=" << button.x
+                      << " Y=" << button.y + button.h << std::endl;
         }
-        showMenuPopup(menu, buttonXCss, buttonYCss);
+        showMenuPopup(menu, button.x, button.y + button.h);
     }
 
     // Everything a popup menu needs once its anchor is known, for a top-bar dropdown
@@ -1297,22 +1388,14 @@ private:
             std::cout << "[Shell] Creating popup for menu: " << menu.id << std::endl;
         }
 
-        // Get main window's absolute screen position
-        int mainWindowScreenX = 0;
-        int mainWindowScreenY = 0;
-        m_windowManager.mainWindowScreenPosition(mainWindowScreenX, mainWindowScreenY);
+        // Where the main window stands, for handlePopupMove to notice it move
+        m_windowManager.mainWindowScreenPosition(m_lastWindowX, m_lastWindowY);
 
-        // Store current window position for move detection
-        m_lastWindowX = mainWindowScreenX;
-        m_lastWindowY = mainWindowScreenY;
-
-        // Use toPhysRound so position and size stay divisible by g_config.scale - i.e.
-        // integer NS points on macOS (bsf=2). Fractional physical px produce a
-        // half-point NS frame; the CAShapeLayer mask then snaps to integer points
-        // while GL renders at the fractional edge, leaving a 1-px hairline at the
-        // top/right.
-        const fpx_t buttonX    = mainWindowScreenX + toPhysRound(anchorXCss);
-        const fpx_t buttonY    = mainWindowScreenY + toPhysRound(anchorYCss);
+        // The anchor on the pixel its edge is drawn from (toPhysEdge), the size through
+        // toPhysRound: both whole CSS px first, so they stay divisible by g_config.scale -
+        // integer NS points on macOS (bsf=2). Fractional physical px produce a half-point NS
+        // frame; the CAShapeLayer mask then snaps to integer points while GL renders at the
+        // fractional edge, leaving a 1-px hairline at the top/right
         const fpx_t popupWidth = toPhysRound(m_windowManager.menuPopupCssWidth(menu.items));
 
         const fpx_t contentCssH = menuPopupCssHeight(menu);
@@ -1325,17 +1408,16 @@ private:
 
         const Ui::Res::Type::border_t popupRadii = m_resManager.layout().topMenuDropdown.border.scaled(g_config.scale);
 
-        const Ui::Res::Type::bound_t popupBound = { .x = buttonX, .y = buttonY, .w = popupWidth, .h = popupHeight };
+        const Ui::Res::Type::bound_t popupBound = { .x = toPhysEdge(anchorXCss),
+                                                    .y = toPhysEdge(anchorYCss),
+                                                    .w = popupWidth,
+                                                    .h = popupHeight };
         if (!m_windowManager.createPopup(popupBound, popupRadii, m_resManager.theme().second.bg)) {
             std::cerr << "[Shell] Failed to create popup window" << std::endl;
             return;
         }
-
-        auto * popupWindow = m_windowManager.popupWindow();
-        if (popupWindow == nullptr) {
-            std::cerr << "[Shell] Popup window not available" << std::endl;
-            return;
-        }
+        // Made by createPopup above, so there
+        Ui::Window::Popup::PopupWindow & popupWindow = *m_windowManager.popupWindow();
 
         if constexpr (SHELL_DEBUG) {
             std::cout << "[Shell] Popup size: " << popupWidth << "x" << popupHeight << std::endl;
@@ -1348,9 +1430,9 @@ private:
         // Composited, initPopupRenderer's recapture already drew it into the main frame
         if (!g_config.isCompositing) {
             if (m_windowManager.renderPopup()) {
-                popupWindow->swapBuffers();
+                popupWindow.swapBuffers();
             }
-            popupWindow->show();
+            popupWindow.show();
         }
 
         // Mark that this popup was just activated; we want to wait one render pass

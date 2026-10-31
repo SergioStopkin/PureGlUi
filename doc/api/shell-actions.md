@@ -187,10 +187,36 @@ std::wstring resolveDialogPlaceholders(const std::string & tpl);
   each time so one plugged in since is listed) in dialog content.
   Installed as the dialog content resolver during `wireEvents()`.
 
+#### Menu bar behaviour
+
+The menu bar behaves as every OS's and toolkit's own does - macOS, Windows, GNOME, Qt,
+a browser's - since that is what a user's hand already knows. What differs from them is
+a defect, not a style:
+
+- A title opens its list on the **press**, not the release. Opening runs nothing, so
+  there is nothing for a release to confirm: the list shows as the button goes down,
+  and a click made while the pointer sweeps on - its release landing on the next title,
+  or past it - still opens what was pressed. Push buttons, toolbar buttons and menu
+  items stay on the release, which lets a user slide off one and change their mind.
+- A quick click on a title leaves its list open.
+- A press on the open list's title closes it; the release that follows does nothing.
+- With a list open, the list follows the pointer across the titles, however fast it
+  moves (the hold-off below).
+- Not yet: releasing over an item after dragging down from the title, which picks the
+  item everywhere else. The OS hands that release to the window the press began in -
+  the main window - so the list never sees it.
+
+`TestMenuBar` (component suite) drives these through the shell's own loop, the pointer's
+presses, moves and releases put in the OS's event queue as the OS would.
+
 `createMenuPopup(id_t menuId)` is the internal popup builder (private; reached via
 the `IChromeCommands::openPopup` override and menu-hover switching), listed here
-because the task references it - it is not part of the public host API. It anchors
-under the bar button and hands off to `showMenuPopup(menu, anchorXCss, anchorYCss)`,
+because the task references it - it is not part of the public host API. Hover switching
+holds off while a list was just made, until a frame has drawn it, and while a switch
+waits for its frame; a hover that arrives then is held (`m_heldMenuId`) and replayed at
+the end of the loop's pass once nothing holds it, if the pointer is still on that button
+(`WindowManager::isPointerIn`) - a fast pointer that stops on a button sends nothing more.
+It anchors under the bar button (its layout bound) and hands off to `showMenuPopup(menu, anchorXCss, anchorYCss)`,
 which the `openRowMenu` override shares: a dock `Menu` row's menu opens right-aligned
 under its row (above it when it would run past the window bottom). A row menu is
 never restored by key - a reload, move or resize closes it - bar hover does not trade

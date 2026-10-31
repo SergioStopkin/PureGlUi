@@ -607,7 +607,7 @@ private:
                     case UiElementType::TabClose: return layout.tabCloseIconSize;
                     case UiElementType::TabArrow: return el.bound.h;
                     case UiElementType::ToolbarButton: return buttonIcon;
-                    default: return m_layout.buttonImgSize();
+                    default: return layout.buttonImgSize;
                     }
                 }();
                 fpx_t imgW = imgSz;

@@ -267,6 +267,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
 
     // Event dispatch state
     Event                       m_currentEvent {};
+    Ui::Render::element_event_t m_lastPressResult {}; // what a main-window press landed on
     Ui::Render::element_event_t m_lastClickResult {};
     bool                        m_popupEventConsumed = false;
 
@@ -717,21 +718,21 @@ public:
         }
     }
 
-    // Where a dialog may sit: inside the chrome (menu+tabs, toolbars, status bar)
+    // Where a dialog may sit, CSS px: inside the chrome (menu+tabs, toolbars, status bar)
     // less its own margin. Docks are deliberately not subtracted - a dialog is
     // modal over the whole app, not a guest of the workspace they frame.
     [[nodiscard]] Ui::Res::Type::bound_t dialogArea() const
     {
         const auto & layout = m_resManager.layout();
-        const fpx_t  margin = toPhys(layout.dialog.margin);
-        const fpx_t  left   = toPhys(layout.leftToolbar.width) + margin;
-        const fpx_t  right  = toPhys(layout.rightToolbar.width) + margin;
-        const fpx_t  top    = toPhys(layout.topMenu.height + layout.workspaceTab.height) + margin;
-        const fpx_t  bottom = toPhys(layout.statusBar.height) + margin;
+        const fpx_t  margin = layout.dialog.margin;
+        const fpx_t  left   = layout.leftToolbar.width + margin;
+        const fpx_t  right  = layout.rightToolbar.width + margin;
+        const fpx_t  top    = layout.topMenu.height + layout.workspaceTab.height + margin;
+        const fpx_t  bottom = layout.statusBar.height + margin;
         return { .x = left,
                  .y = top,
-                 .w = std::max(1.0F, m_windowWidth - left - right),
-                 .h = std::max(1.0F, m_windowHeight - top - bottom) };
+                 .w = std::max(1.0F, toCss(m_windowWidth) - left - right),
+                 .h = std::max(1.0F, toCss(m_windowHeight) - top - bottom) };
     }
 
     // The rect left for embedded content after the UI chrome (toolbars + docks
@@ -951,6 +952,7 @@ public:
     }
 
     [[nodiscard]] const Event &                       currentEvent() const { return m_currentEvent; }
+    [[nodiscard]] const Ui::Render::element_event_t & lastPressResult() const { return m_lastPressResult; }
     [[nodiscard]] const Ui::Render::element_event_t & lastClickResult() const { return m_lastClickResult; }
     [[nodiscard]] bool                                popupEventConsumed() const { return m_popupEventConsumed; }
 
@@ -989,6 +991,7 @@ public:
      */
     void dispatchEvent(const Event & incoming)
     {
+        m_lastPressResult    = {};
         m_lastClickResult    = {};
         m_popupEventConsumed = false;
         trackPointer(incoming);
@@ -1050,11 +1053,11 @@ public:
                                  event.mouse.clickCount,
                                  event.mouse.modifiers);
                 } else {
-                    onMousePress(event.mouse.x,
-                                 event.mouse.y,
-                                 event.mouse.button,
-                                 event.mouse.clickCount,
-                                 event.mouse.modifiers);
+                    m_lastPressResult = onMousePress(event.mouse.x,
+                                                     event.mouse.y,
+                                                     event.mouse.button,
+                                                     event.mouse.clickCount,
+                                                     event.mouse.modifiers);
                 }
                 break;
             case EventType::MouseButtonRelease:
@@ -1610,25 +1613,8 @@ public:
         return m_main->renderer().popupWidthOf(items);
     }
 
-    /**
-     * @brief Create popup window at screen coordinates with uniform corner radius
-     * @param screenX Absolute X coordinate
-     * @param screenY Absolute Y coordinate
-     * @param width Popup width
-     * @param height Popup height
-     * @param cornerRadius Corner radius for software blending (used when true alpha unavailable)
-     * @return true on success
-     */
-    /**
-     * @brief Create popup window at screen coordinates with per-corner radii
-     * @param bound Screen position (x, y) and size (w, h)
-     * @param radii Per-corner radii (topLeft, topRight, bottomRight, bottomLeft)
-     * @param bgColor Background color
-     * @param parentPixels Pre-captured parent framebuffer for corner blending
-     * @param parentPixelW Parent framebuffer width
-     * @param parentPixelH Parent framebuffer height
-     * @return true on success
-     */
+    // The menu's popup at bound - physical px from the main window's content corner, as the
+    // popup keeps it, each platform placing it on screen from there - cut to radii
     bool createPopup(const Ui::Res::Type::bound_t &  bound,
                      const Ui::Res::Type::border_t & radii,
                      const Ui::Color &               bgColor)
@@ -1638,28 +1624,14 @@ public:
             destroyPopup(true);
         }
 
-        // Convert absolute screen coords to coordinates relative to main window
-        int parentScreenX {};
-        int parentScreenY {};
-        mainWindowScreenPosition(parentScreenX, parentScreenY);
-        const fpx_t relX = bound.x - parentScreenX;
-        const fpx_t relY = bound.y - parentScreenY;
-
-        if (!makePopupWindow(
-            { .x = relX, .y = relY, .w = bound.w, .h = bound.h },
-            radii,
-            bgColor,
-            false,
-            [this]() { recapturePopupCorners(); },
-            m_popupWindow)) {
-            std::cerr << "[WindowManager] Failed to create popup window (screen=" << bound.x << "," << bound.y
-                      << ", rel=" << relX << "," << relY << ")" << std::endl;
+        if (!makePopupWindow(bound, radii, bgColor, false, [this]() { recapturePopupCorners(); }, m_popupWindow)) {
+            std::cerr << "[WindowManager] Failed to create popup window at " << bound.x << "," << bound.y << std::endl;
             return false;
         }
 
         if constexpr (WM_ROUTE_DEBUG) {
-            std::cout << "[WindowManager] Created popup at screen(" << bound.x << "," << bound.y << ") rel(" << relX
-                      << "," << relY << ") size " << bound.w << "x" << bound.h << std::endl;
+            std::cout << "[WindowManager] Created popup at " << bound.x << "," << bound.y << " size " << bound.w << "x"
+                      << bound.h << std::endl;
         }
         return true;
     }
@@ -1976,7 +1948,8 @@ public:
         }
     }
 
-    [[nodiscard]] bool hasDialog() const { return m_dialogWindow && m_dialogWindow->window().isValid(); }
+    [[nodiscard]] bool                hasDialog() const { return m_dialogWindow && m_dialogWindow->window().isValid(); }
+    Ui::Window::Popup::DialogWindow * dialogWindow() { return m_dialogWindow ? &m_dialogWindow->window() : nullptr; }
     [[nodiscard]] Ui::Res::Type::DialogAction     lastDialogAction() const { return m_lastDialogResult; }
     [[nodiscard]] const Ui::Res::Type::dialog_t & lastDialogData() const { return m_lastDialogData; }
 
@@ -2174,6 +2147,12 @@ public:
             requestMainRender();
         }
         syncTooltip();
+    }
+
+    // Whether the pointer, whichever window has it, stands in a rect of the main window, CSS px
+    [[nodiscard]] bool isPointerIn(const Ui::Res::Type::bound_t & cssBound) const
+    {
+        return m_pointerX != Ui::NO_POINTER && cssBound.contains(toCss(m_pointerX), toCss(m_pointerY));
     }
 
     /**

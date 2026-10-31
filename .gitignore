@@ -15,3 +15,4 @@ result-*
 
 # Local lint-output scratch dumps (./clang-tidy.sh > errs-clang-tidy)
 errs-*
+logs-*

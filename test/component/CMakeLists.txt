@@ -16,17 +16,24 @@ add_executable(
     TestChromeLifecycle.cpp
     TestContentSurface.cpp
     TestInitHooks.cpp
+    TestPopupPlacement.cpp
+    TestSecondMainWindow.cpp
+    TestMenuBar.cpp
 )
 
-# macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Three do: TestGlSmoke
-# creates a real window via NativeWindow -> macoswindow.h, TestInitHooks includes ui/shell.h, which pulls Cocoa
-# transitively through action/openfile.h -> io/filedialog.h, and TestWindowGeometry includes ui/window/windowmanager.h,
-# which pulls it through eventfactory.h -> macosevent.h. So on macOS, including shell.h or windowmanager.h at all forces
+# macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Six do: TestGlSmoke
+# creates a real window via NativeWindow -> macoswindow.h, TestInitHooks, TestSecondMainWindow and TestMenuBar include
+# ui/shell.h, which pulls Cocoa transitively through action/openfile.h -> io/filedialog.h, TestWindowGeometry includes
+# ui/window/windowmanager.h, which pulls it through eventfactory.h -> macosevent.h, and TestPopupPlacement asks AppKit
+# itself where a window stands (nativegeometry.h). So on macOS, including shell.h or windowmanager.h at all forces
 # Obj-C++ on the includer - windowless says nothing about it. TestContentSurface includes windowmanager.h too but is #if
 # defined(HAVE_X11), so it is an empty TU here. The rest are pure C++. GL_SILENCE_DEPRECATION quiets the deprecated-GL
 # SDK annotations for these Obj-C++ units (CMAKE_CXX_FLAGS' -Wno-... only covers CXX).
 if(APPLE)
-    set_source_files_properties(TestGlSmoke.cpp TestInitHooks.cpp TestWindowGeometry.cpp PROPERTIES LANGUAGE OBJCXX)
+    set_source_files_properties(
+        TestGlSmoke.cpp TestInitHooks.cpp TestWindowGeometry.cpp TestPopupPlacement.cpp TestSecondMainWindow.cpp
+        TestMenuBar.cpp PROPERTIES LANGUAGE OBJCXX
+    )
     target_compile_definitions(${TARGET} PRIVATE GL_SILENCE_DEPRECATION)
 endif()
 

@@ -385,7 +385,7 @@ public:
             }
         }
         if (cssVariables.contains(layoutKeyName(LayoutKey::ButtonImgSize))) {
-            m_layout.buttonImgSize = Ui::Convert::str2int(cssVariables[layoutKeyName(LayoutKey::ButtonImgSize)]);
+            m_layout.buttonImgSize = Ui::Convert::str2fpx(cssVariables[layoutKeyName(LayoutKey::ButtonImgSize)]);
         }
         if (cssVariables.contains(layoutKeyName(LayoutKey::WindowWidth))) {
             m_layout.windowWidth = Ui::Convert::str2fpx(cssVariables[layoutKeyName(LayoutKey::WindowWidth)]);

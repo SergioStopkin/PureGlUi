@@ -39,6 +39,7 @@
 #include "ui/type.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -104,7 +105,6 @@ public:
         m_shortcutFont  = 0;
         m_statusBarFont = 0;
         m_tooltipFont   = 0;
-        m_buttonImgSize = layout.buttonImgSize;
 
         // Resolve font handles (create once, reuse)
         if (render != nullptr) {
@@ -140,7 +140,9 @@ public:
                 } else {
                     textW = static_cast<fpx_t>(menuText.size()) * layout.fallbackCharWidth;
                 }
-                const fpx_t buttonW = textW + (padH * 2);
+                // Whole CSS px, so every button's edges are, and the list a click hangs under
+                // one stands on the pixel its edge is drawn from - on whole points at macOS's 2x
+                const fpx_t buttonW = std::ceil(textW + (padH * 2));
 
                 auto & el = addElement(UiElementType::MenuButton,
                                        { .x = cursorX, .w = buttonW, .h = layout.topMenu.height },
@@ -406,11 +408,6 @@ public:
     // Measures a tooltip before its window exists; the tooltip draws with its own
     [[nodiscard]] Ui::font_handle_t tooltipFont() const { return m_tooltipFont; }
 
-    /**
-     * @brief Get the button image size in CSS pixels
-     */
-    [[nodiscard]] int buttonImgSize() const { return m_buttonImgSize; }
-
     // Append an element the layout does not build itself. This is how anything
     // owned outside UiLayout - dock rows, dock grips - joins hit-testing, hover
     // and bindings instead of running a parallel event path of its own.
@@ -437,7 +434,6 @@ private:
     Ui::font_handle_t      m_shortcutFont  = 0;
     Ui::font_handle_t      m_statusBarFont = 0;
     Ui::font_handle_t      m_tooltipFont   = 0;
-    int                    m_buttonImgSize = 24;
 
     void addTabClose(fpx_t              tabX,
                      fpx_t              tabY,

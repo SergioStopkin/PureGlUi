@@ -4,5 +4,4 @@ cmake
 freetype
 fontconfig
 googletest
-jemalloc
 librsvg
