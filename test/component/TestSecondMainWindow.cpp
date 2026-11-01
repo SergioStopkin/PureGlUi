@@ -25,24 +25,14 @@
  * shell again - can open no popup at all
  */
 
-#include "ui/res/type/menu.h"
+#include "menubarloop.h"
 #include "ui/shell.h"
 #include "ui/type.h"
 
 #include <gtest/gtest.h>
+#include <vector>
 
 namespace {
-
-// The first top menu a click opens a list for, INVALID_ID when there is none
-Ui::id_t listMenuIdOf(const Ui::Shell & shell)
-{
-    for (const Ui::Res::Type::menu_t & menu : shell.resManager().menus()) {
-        if (menu.visible && menu.enabled && menu.actionKey.empty() && !menu.items.empty()) {
-            return menu.id;
-        }
-    }
-    return Ui::INVALID_ID;
-}
 
 TEST(SecondMainWindow, OpensAMenuListAsTheFirstDid)
 {
@@ -51,12 +41,12 @@ TEST(SecondMainWindow, OpensAMenuListAsTheFirstDid)
         if (!shell.initialize()) {
             GTEST_SKIP() << "no window or GL context here";
         }
-        const Ui::id_t menuId = listMenuIdOf(shell);
-        ASSERT_NE(menuId, Ui::INVALID_ID);
+        const std::vector<Ui::id_t> menuIds = PureGlUi::listMenuIdsOf(shell);
+        ASSERT_FALSE(menuIds.empty());
 
         // The frame the app draws before anyone can click a menu
         shell.windowManager().renderAll();
-        shell.openPopup(menuId);
+        shell.openPopup(menuIds.front());
         EXPECT_NE(shell.windowManager().popupWindow(), nullptr) << "main window " << turn;
 
         shell.shutdown();

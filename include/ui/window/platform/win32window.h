@@ -131,9 +131,10 @@ public:
             // WS_CLIPCHILDREN: excludes child window areas from parent's paint region so the main
             // window's GL SwapBuffers does not overwrite the content surface's pixels.
             // WS_CLIPSIBLINGS: same protection between sibling popups.
+            // The frame at the system's DPI: no window yet stands on a monitor of its own
             constexpr DWORD style = WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
             RECT rect = { .left = 0, .top = 0, .right = static_cast<LONG>(width), .bottom = static_cast<LONG>(height) };
-            AdjustWindowRectEx(&rect, style, FALSE, 0);
+            AdjustWindowRectExForDpi(&rect, style, FALSE, 0, GetDpiForSystem());
 
             m_hwnd = CreateWindowExW(0,
                                      L"PureGlUiWindowClass",
@@ -170,6 +171,10 @@ public:
                     AttachThreadInput(thisThread, fgThread, FALSE);
                 }
             }
+        }
+
+        if (m_hwnd != nullptr) {
+            m_dpi = GetDpiForWindow(m_hwnd);
         }
 
         // Child windows (content surface) - the content surface manages its own GL context on the HWND.
@@ -262,18 +267,13 @@ public:
         }
     }
 
-    static int queryDpi(NativeDisplayHandle /*nativeDisplay*/)
-    {
-        HDC hdc    = GetDC(NULL);
-        int dpiVal = GetDeviceCaps(hdc, LOGPIXELSX);
-        ReleaseDC(NULL, hdc);
-        std::cout << "[Win32Window] DPI: " << dpiVal << std::endl;
-        return dpiVal;
-    }
+    // The window's own, per-monitor-v2 aware as the process is: the system DPI is the one
+    // the session was signed in at, on whichever monitor
+    [[nodiscard]] int dpi() const override { return static_cast<int>(m_dpi); }
 
     // Every display on the desktop, at its current mode, named by its monitor where the
     // driver names one; a rate 0 where it reports its hardware default (0 or 1)
-    static std::vector<display_t> queryDisplays(NativeDisplayHandle /*nativeDisplay*/)
+    static std::vector<display_t> displaysOf(NativeDisplayHandle /*nativeDisplay*/)
     {
         std::vector<display_t> displays;
         DISPLAY_DEVICEW        device {};
@@ -357,7 +357,7 @@ public:
                                    .bottom = static_cast<LONG>(bound.h) };
             const auto style   = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_STYLE));
             const auto exStyle = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_EXSTYLE));
-            AdjustWindowRectEx(&rect, style, FALSE, exStyle);
+            AdjustWindowRectExForDpi(&rect, style, FALSE, exStyle, m_dpi);
             SetWindowPos(m_hwnd,
                          NULL,
                          static_cast<int>(bound.x),
@@ -580,10 +580,31 @@ public:
             // AdjustWindowRect gives the outer size Win32 actually constrains.
             if (self != nullptr && (self->m_minWidth > 0 || self->m_minHeight > 0)) {
                 RECT frame { 0, 0, roundToInt(self->m_minWidth), roundToInt(self->m_minHeight) };
-                AdjustWindowRect(&frame, static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_STYLE)), FALSE);
+                AdjustWindowRectExForDpi(&frame,
+                                         static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_STYLE)),
+                                         FALSE,
+                                         0,
+                                         self->m_dpi);
                 auto * info            = asMinMaxInfo(lParam);
                 info->ptMinTrackSize.x = frame.right - frame.left;
                 info->ptMinTrackSize.y = frame.bottom - frame.top;
+                return 0;
+            }
+            break;
+        case WM_DPICHANGED:
+            // Another monitor's DPI, or the desktop's setting changed: kept for dpi(), which
+            // pollEvent's detector reads, and the rect Windows suggests taken, which keeps the
+            // window as large to the eye - its WM_SIZE follows
+            if (self != nullptr) {
+                self->m_dpi            = LOWORD(wParam);
+                const RECT * suggested = asRect(lParam);
+                SetWindowPos(hwnd,
+                             nullptr,
+                             suggested->left,
+                             suggested->top,
+                             suggested->right - suggested->left,
+                             suggested->bottom - suggested->top,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
                 return 0;
             }
             break;
@@ -617,6 +638,14 @@ private:
     {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, performance-no-int-to-ptr)
         return reinterpret_cast<MINMAXINFO *>(lParam);
+    }
+
+    // WM_DPICHANGED passes the rect it suggests through LPARAM (same sanctioned exception
+    // as asMinMaxInfo)
+    static const RECT * asRect(LPARAM lParam)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, performance-no-int-to-ptr)
+        return reinterpret_cast<const RECT *>(lParam);
     }
 
     static LONG_PTR asClassCursor(HCURSOR cursor)
@@ -740,7 +769,8 @@ private:
     HGLRC m_hglrc      = nullptr;
     HICON m_hIconBig   = nullptr;
     HICON m_hIconSmall = nullptr;
-    fpx_t m_minWidth   = 0; // client floor, answered on WM_GETMINMAXINFO
+    UINT  m_dpi        = USER_DEFAULT_SCREEN_DPI; // the window's, as WM_DPICHANGED last said
+    fpx_t m_minWidth   = 0;                       // client floor, answered on WM_GETMINMAXINFO
     fpx_t m_minHeight  = 0;
 };
 

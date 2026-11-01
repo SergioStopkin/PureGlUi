@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -149,15 +150,11 @@ public:
         }
     }
 
-    static int queryDpi(NativeDisplayHandle /*nativeDisplay*/)
-    {
-        const int dpi = m_outputScale * 96;
-        std::cout << "[WaylandWindow] DPI from wl_output scale: " << dpi << " (" << m_outputScale << "x)" << std::endl;
-        return dpi;
-    }
+    // Its output's scale, which the output reports again when the desktop's setting changes
+    [[nodiscard]] int dpi() const override { return m_scale * 96; }
 
     // The output the window was given, at its current mode; none before it reported one
-    static std::vector<display_t> queryDisplays(NativeDisplayHandle /*nativeDisplay*/)
+    static std::vector<display_t> displaysOf(NativeDisplayHandle /*nativeDisplay*/)
     {
         return (m_outputDisplay.width > 0) ? std::vector<display_t> { m_outputDisplay } : std::vector<display_t> {};
     }
@@ -302,8 +299,7 @@ public:
     void handleOutputScale(int32_t scale)
     {
         if (scale > 0) {
-            m_scale       = scale;
-            m_outputScale = scale;
+            m_scale = scale;
             // Tell compositor our buffer is already rendered at this scale
             if (m_surface) {
                 wl_surface_set_buffer_scale(m_surface, scale);
@@ -312,6 +308,8 @@ public:
     }
 
     bool shouldClose() const { return m_shouldClose; }
+
+    [[nodiscard]] bool isActivated() const { return m_isActivated; }
 
     // Accessors for event handling
     wl_display *             wlDisplay() const { return m_display; }
@@ -349,11 +347,10 @@ private:
     // State
     int  m_scale       = 1;
     bool m_shouldClose = false;
+    bool m_isActivated = true; // as the last configure said; nothing to lose before the first
     bool m_configured  = false;
 
-    // Output scale shared across instances for queryDpi() (static method needs static state)
-    static inline int m_outputScale = 1;
-    // The output's name and current mode, for queryDisplays() likewise
+    // The output's name and current mode, shared across instances for the static displaysOf()
     static inline display_t m_outputDisplay { .isPrimary = true };
 
     // -------- Static listeners --------
@@ -390,10 +387,16 @@ private:
 
     static constexpr xdg_surface_listener s_xdgSurfaceListener = { xdgSurfaceConfigure };
 
+    // The window's states come with each configure: activated while the app has the focus,
+    // its own popup's grab included - unlike a keyboard leave, which that grab sends
     static void
-    xdgToplevelConfigure(void * data, xdg_toplevel * /*toplevel*/, int32_t width, int32_t height, wl_array * /*states*/)
+    xdgToplevelConfigure(void * data, xdg_toplevel * /*toplevel*/, int32_t width, int32_t height, wl_array * states)
     {
-        auto * self = static_cast<WaylandWindow *>(data);
+        auto *                          self      = static_cast<WaylandWindow *>(data);
+        const uint32_t                  activated = XDG_TOPLEVEL_STATE_ACTIVATED;
+        const std::span<const uint32_t> list(static_cast<const uint32_t *>(states->data),
+                                             states->size / sizeof(uint32_t));
+        self->m_isActivated = std::ranges::find(list, activated) != list.end();
         self->handleConfigure(width, height);
     }
 

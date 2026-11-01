@@ -62,6 +62,9 @@ public:
      */
     void init(Ui::IWindow & window) override
     {
+        // The DPI the window starts at, so only a change is reported
+        m_lastDpi = window.dpi();
+
         // Get seat from WaylandWindow
         auto * wlWin = dynamic_cast<WaylandWindow *>(&window);
         if (!wlWin) {
@@ -210,6 +213,22 @@ public:
             }
         }
 
+        // The output's scale, which its listener keeps on the window, read the same way
+        if (wlWin->dpi() != m_lastDpi) {
+            m_lastDpi  = wlWin->dpi();
+            event.type = EventType::ScaleChange;
+            return true;
+        }
+
+        // And the window's activated state, which its configure keeps on it
+        if (wlWin->isActivated() != m_isActivated) {
+            m_isActivated = wlWin->isActivated();
+            if (!m_isActivated) {
+                event.type = EventType::FocusLost;
+                return true;
+            }
+        }
+
         // Return queued event if available
         if (!m_eventQueue.empty()) {
             event = m_eventQueue.front();
@@ -353,6 +372,8 @@ private:
     // Track window size for generating resize events
     int  m_lastWidth    = 0;
     int  m_lastHeight   = 0;
+    int  m_lastDpi      = 0;    // the window's DPI last reported
+    bool m_isActivated  = true; // the window's activated state last reported
     bool m_closeEmitted = false;
 
     Ui::Window::child_id_fn_t m_childWindowLookup;

@@ -389,7 +389,7 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
     }
 
     // Set DPI/scale (same as App::initialize)
-    Ui::g_config.dpi   = Ui::Window::NativeWindow::queryDpi(m_mainWindow.nativeDisplay());
+    Ui::g_config.dpi   = m_mainWindow.dpi();
     Ui::g_config.scale = Ui::g_config.dpi / 96.0F;
 
     m_mainWindow.makeCurrent();

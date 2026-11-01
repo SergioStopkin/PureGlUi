@@ -26,6 +26,8 @@ enum class EventType : unsigned char {
     None,
     CloseRequested,
     Resize,
+    ScaleChange, // the main window's DPI may have changed: another monitor, the desktop's setting
+    FocusLost,   // another app took the focus; none is sent for the app getting it back
     MouseButtonPress,
     MouseButtonRelease,
     MouseMove,

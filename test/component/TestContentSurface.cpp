@@ -86,6 +86,7 @@ public:
     void                                 setBackground(const Ui::Color & /*color*/) override { }
     void                                 setRoundedCorners(bool /*enabled*/, Ui::fpx_t /*radius*/) override { }
     [[nodiscard]] Ui::Res::Type::bound_t bound() const override { return {}; }
+    [[nodiscard]] int                    dpi() const override { return 96; }
     [[nodiscard]] bool                   isHardwareGl() const override { return false; }
     void                                 makeCurrent() override { }
     void                                 swapBuffers() override { }

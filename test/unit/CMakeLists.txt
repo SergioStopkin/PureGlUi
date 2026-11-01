@@ -45,6 +45,7 @@ add_executable(
     TestTruncateText.cpp
     TestTooltipBoundOf.cpp
     TestRefreshRateOf.cpp
+    TestScaleFactorOf.cpp
     TestTime.cpp
     TestDisplaysTextOf.cpp
     TestTooltipWantedOf.cpp

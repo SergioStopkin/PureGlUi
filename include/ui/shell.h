@@ -614,6 +614,28 @@ public:
             }
         });
 
+        // ScaleChange: the main window may stand at another DPI. Laid out again by the reload
+        // Ctrl+R runs, which reads the DPI afresh and replays the host's hooks - once per
+        // batch, and not at all for a change that leaves the DPI as it is
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::ScaleChange), Ui::APP_ID, [this]() {
+            if (m_isRescalePending || m_windowManager.askedDpi() == g_config.dpi) {
+                return;
+            }
+            m_isRescalePending = true;
+            m_windowManager.subscribe().defer([this]() {
+                m_isRescalePending = false;
+                reloadChrome();
+            });
+        });
+
+        // FocusLost: an open list closes, as every OS's own menu does when another app takes
+        // the focus; a dialog stays for the user's return
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::FocusLost), Ui::APP_ID, [this]() {
+            if (m_windowManager.hasPopup()) {
+                destroyPopup();
+            }
+        });
+
         // MouseButtonPress
         sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::MouseButtonPress), Ui::APP_ID, [this]() {
             if (m_windowManager.hasDialog()) {
@@ -931,7 +953,7 @@ public:
         // Asked again here, not kept from startup: a display plugged in since is listed
         replace(L"%DISPLAYS%",
                 Common::Unicode::fromUtf8(
-                Ui::Window::displaysTextOf(Ui::Window::NativeWindow::queryDisplays(mainWindow.nativeDisplay()))));
+                Ui::Window::displaysTextOf(Ui::Window::NativeWindow::displaysOf(mainWindow.nativeDisplay()))));
 
         return result;
     }
@@ -1057,6 +1079,7 @@ private:
 
     // Bool flags (grouped for minimal padding).
     bool m_pendingResize     = false;
+    bool m_isRescalePending  = false; // a reload for a new DPI waits for its batch to end
     bool m_menuSwitchPending = false; // Re-entry guard for deferred menu switch
     bool m_menuJustActivated = false; // True briefly after creating a popup until it renders once
 

@@ -31,6 +31,7 @@
 
 #if defined(_WIN32) || defined(__APPLE__) || (defined(HAVE_X11) && !defined(HAVE_WAYLAND))
 
+#include "menubarloop.h"
 #include "nativegeometry.h"
 #include "ui/color.h"
 #include "ui/config.h"
@@ -38,7 +39,6 @@
 #include "ui/res/type/border.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/dialog.h"
-#include "ui/res/type/menu.h"
 #include "ui/shell.h"
 #include "ui/type.h"
 #include "ui/window/nativewindow.h"
@@ -104,18 +104,6 @@ protected:
 
     [[nodiscard]] Ui::Window::NativeWindow & mainWindow() { return m_shell.windowManager().mainWindow(); }
 
-    // Every top menu a click opens a list for
-    [[nodiscard]] std::vector<Ui::id_t> listMenuIds() const
-    {
-        std::vector<Ui::id_t> menuIds;
-        for (const Ui::Res::Type::menu_t & menu : m_shell.resManager().menus()) {
-            if (menu.visible && menu.enabled && menu.actionKey.empty() && !menu.items.empty()) {
-                menuIds.emplace_back(menu.id);
-            }
-        }
-        return menuIds;
-    }
-
     // The list a click on the menu opens, once the OS has placed it
     [[nodiscard]] Ui::Window::Popup::PopupWindow * openList(Ui::id_t menuId)
     {
@@ -144,14 +132,15 @@ TEST_P(PopupPlacementTest, TheMainWindowSaysWhereItsContentIs)
 // A popup asked for at a rect is made there: the platform's own conversion, the flip of a
 // macOS frame into points, gives back what it was handed - at the content's very top too,
 // which in fullscreen is the screen's, where an OS may keep windows clear of its menu bar.
-// Whole CSS px, so no platform has a fraction of a point to round. Shown, it is a menu's
-// list, which EveryMenuListStandsFlushUnderItsButton opens as a click does
+// Whole px at any scale, as the framework hands them (toPhysEdge), so no platform has a
+// fraction of one to round. Shown, it is a menu's list, which
+// EveryMenuListStandsFlushUnderItsButton opens as a click does
 TEST_P(PopupPlacementTest, APopupLandsWhereItIsAsked)
 {
-    const Ui::Res::Type::bound_t asked { .x = Ui::toPhysRound(40),
+    const Ui::Res::Type::bound_t asked { .x = Ui::toPhysEdge(40.0F),
                                          .y = 0.0F,
-                                         .w = Ui::toPhysRound(160),
-                                         .h = Ui::toPhysRound(120) };
+                                         .w = Ui::toPhysEdge(160.0F),
+                                         .h = Ui::toPhysEdge(120.0F) };
     ASSERT_TRUE(m_shell.windowManager().createPopup(asked, {}, Ui::Color {}));
     Ui::Window::Popup::PopupWindow * popup = m_shell.windowManager().popupWindow();
     ASSERT_NE(popup, nullptr);
@@ -172,7 +161,7 @@ TEST_P(PopupPlacementTest, APopupLandsWhereItIsAsked)
 // widths before it, a fraction a list rounded otherwise stands a pixel off
 TEST_P(PopupPlacementTest, EveryMenuListStandsFlushUnderItsButton)
 {
-    const std::vector<Ui::id_t> menuIds = listMenuIds();
+    const std::vector<Ui::id_t> menuIds = PureGlUi::listMenuIdsOf(m_shell);
     ASSERT_FALSE(menuIds.empty());
 
     for (const Ui::id_t menuId : menuIds) {
@@ -241,7 +230,7 @@ TEST_P(PopupPlacementTest, EveryDialogStandsOnAWholeCssPx)
 // under it shows through where the list meets its button
 TEST_P(PopupPlacementTest, AMenuListShowsItsWholeTopLine)
 {
-    const std::vector<Ui::id_t> menuIds = listMenuIds();
+    const std::vector<Ui::id_t> menuIds = PureGlUi::listMenuIdsOf(m_shell);
     ASSERT_FALSE(menuIds.empty());
     const Ui::Window::Popup::PopupWindow * list = openList(menuIds.front());
     ASSERT_NE(list, nullptr);

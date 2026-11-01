@@ -23,7 +23,7 @@
 
 namespace Ui::Window {
 
-// One display the desktop runs on (NativeWindow::queryDisplays): its size in physical
+// One display the desktop runs on (NativeWindow::displaysOf): its size in physical
 // px and its refresh rate, 0 where it gives none
 struct alignas(64) display_t final {
     std::string name; // the connector's or the screen's own

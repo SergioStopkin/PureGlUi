@@ -88,6 +88,11 @@ public:
     // Geometry
     [[nodiscard]] virtual Ui::Res::Type::bound_t bound() const = 0;
 
+    // The DPI the OS gives this window's UI, 96 being 1x: where the window stands, as the
+    // OS last said. On IWindow because an event handler sees its window only through it,
+    // and on Win32 a change arrives inside a modal move loop that no posted message leaves
+    [[nodiscard]] virtual int dpi() const = 0;
+
     // True if the GL context backing this window runs on a real GPU.
     // False only on platforms that fell back to a software/CPU rasterizer
     // (e.g. macOS without GPU passthrough). Consumers gate features that

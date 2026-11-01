@@ -58,8 +58,10 @@ jobs:
       - name: Build Component Tests
         run:  ./build.sh ct
 
+      # At 1.25x, the commonest scale that is not whole, so the px math and every placement
+      # test meet a fraction: PUREGLUI_SCALE multiplies the DPI the OS gives
       - name: Run Component Tests
-        run:  xvfb-run -a ./run.sh ct
+        run:  xvfb-run -a env PUREGLUI_SCALE=1.25 ./run.sh ct
 
       - name: Build Coverage
         run:  ./build.sh cov
@@ -184,8 +186,8 @@ jobs:
           ./run.sh ut
 
       # The X11 corner-capture suite is compiled out here (HAVE_X11); TestGlSmoke
-      # runs on Mesa, which run.sh deploys next to the binary.
+      # runs on Mesa, which run.sh deploys next to the binary. At 1.25x as on Linux
       - name: Run Component Tests
         run: |
           export PATH="/c/vcpkg/installed/x64-windows-release/bin:$PATH"
-          ./run.sh ct
+          PUREGLUI_SCALE=1.25 ./run.sh ct

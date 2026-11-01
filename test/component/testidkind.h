@@ -28,9 +28,10 @@ namespace PureGlUi {
 // it is, so an untagged one would pass a layer that dropped the kind byte. A kind
 // per role, so a layer that took one for another fails too
 enum class TestIdKind : std::uint8_t {
-    Row     = 128, // a dock row's
-    Surface = 129, // a content surface's
-    Tab     = 130, // a tab's
+    Row        = 128, // a dock row's
+    Surface    = 129, // a content surface's
+    Tab        = 130, // a tab's
+    Subscriber = 131, // an event subscriber's
 };
 
 static_assert(Ui::isHostId(Ui::idOf(TestIdKind::Row, 0)), "test kinds are host kinds");

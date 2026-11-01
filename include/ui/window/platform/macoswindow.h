@@ -22,7 +22,6 @@
 #include "ui/gl/localglew.h"
 #include "ui/res/type/border.h"
 #include "ui/window/display.h"
-#include "ui/window/platform/macosevent.h"
 #include "ui/window/windowbase.h"
 
 #include <iostream>
@@ -167,7 +166,9 @@ public:
 
             // Without an .app bundle the Dock / menu bar show the executable name
             // (`pureglui`). Override the process name so "PureGlUi" appears instead.
-            [[NSProcessInfo processInfo] setProcessName:[NSString stringWithUTF8String:title.c_str()]];
+            NSString* name = [NSString stringWithUTF8String:title.c_str()];
+            [[NSProcessInfo processInfo] setProcessName:name];
+            launchOnce(name);
 
             // NSWindow frames are in POINTS, not pixels. `width`/`height` are physical pixels
             // (matching X11 semantics); divide by backingScaleFactor to get points.
@@ -215,45 +216,10 @@ public:
 
             applyRoundedCorners();
 
-            // Observe close / terminate so the main loop sees a CloseRequested event.
-            NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
-            m_closeObserver = [nc addObserverForName:NSWindowWillCloseNotification
-                                              object:m_nsWindow
-                                               queue:nil
-                                          usingBlock:^(NSNotification*) {
-                                              g_macCloseRequested.store(true);
-                                          }];
-            m_terminateObserver = [nc addObserverForName:NSApplicationWillTerminateNotification
-                                                  object:app
-                                                   queue:nil
-                                              usingBlock:^(NSNotification*) {
-                                                  g_macCloseRequested.store(true);
-                                              }];
-            // Snapshot the current geometry into the shared Resize slot. A move
-            // leaves the size unchanged, but the shell persists frame position on
-            // every synthesized Resize event (matching X11 ConfigureNotify, which
-            // fires for move and resize alike), so both notifications feed the same
-            // block - otherwise a move-only drag would never update session.json.
-            void (^snapshotGeometry)(NSNotification*) = ^(NSNotification* note) {
-                NSWindow* win = note.object;
-                const NSSize pts = [[win contentView] bounds].size;
-                const CGFloat bsf = macBackingScaleFactor();
-                g_macResizeWidth.store(static_cast<int>(pts.width * bsf));
-                g_macResizeHeight.store(static_cast<int>(pts.height * bsf));
-                g_macResizePending.store(true);
-            };
-            m_resizeObserver = [nc addObserverForName:NSWindowDidResizeNotification
-                                               object:m_nsWindow
-                                                queue:nil
-                                           usingBlock:snapshotGeometry];
-            m_moveObserver = [nc addObserverForName:NSWindowDidMoveNotification
-                                             object:m_nsWindow
-                                              queue:nil
-                                         usingBlock:snapshotGeometry];
-
+            // Its close, resize, move and scale reach the loop through MacOsEvent, which
+            // observes the window for as long as its shell runs
             [m_nsWindow makeKeyAndOrderFront:nil];
             [app activateIgnoringOtherApps:YES];
-            [app finishLaunching];
 
             return true;
         }
@@ -279,23 +245,6 @@ public:
     void destroy() override
     {
         @autoreleasepool {
-            NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
-            if (m_closeObserver) {
-                [nc removeObserver:m_closeObserver];
-                m_closeObserver = nil;
-            }
-            if (m_terminateObserver) {
-                [nc removeObserver:m_terminateObserver];
-                m_terminateObserver = nil;
-            }
-            if (m_resizeObserver) {
-                [nc removeObserver:m_resizeObserver];
-                m_resizeObserver = nil;
-            }
-            if (m_moveObserver) {
-                [nc removeObserver:m_moveObserver];
-                m_moveObserver = nil;
-            }
             if (m_nsWindow) {
                 // Popup NSWindows are retained by their parent via addChildWindow:; nilling our
                 // reference alone leaves the popup visible. Detach + close so the parent drops
@@ -439,18 +388,17 @@ public:
         }
     }
 
-    static int queryDpi(NativeDisplayHandle /*nativeDisplay*/)
+    // 96 a point: the backing scale of the screen the window stands on, which AppKit
+    // changes with a notification MacOsEvent watches; the main screen's before it has one
+    [[nodiscard]] int dpi() const override
     {
-        // g_scale = g_dpi / 96, so return 96 * backingScaleFactor to produce the correct scale.
-        const CGFloat bsf = backingScaleFactor();
-        const int dpiVal = static_cast<int>(96.0 * bsf);
-        std::cout << "[MacOsWindow] DPI: " << dpiVal << " (backingScaleFactor=" << bsf << ")" << std::endl;
-        return dpiVal;
+        NSWindow* window = m_nsWindow ? m_nsWindow : [m_glView window];
+        return roundToInt(96.0 * (window ? [window backingScaleFactor] : backingScaleFactor()));
     }
 
     // Every screen, in physical px; the first is the one with the menu bar, macOS's
     // primary. A rate 0 before macOS 12, which says it only through CoreGraphics
-    static std::vector<display_t> queryDisplays(NativeDisplayHandle /*nativeDisplay*/)
+    static std::vector<display_t> displaysOf(NativeDisplayHandle /*nativeDisplay*/)
     {
         std::vector<display_t> displays;
         NSArray<NSScreen*>* screens = [NSScreen screens];
@@ -777,6 +725,79 @@ public:
     }
 
 private:
+    // The app launched as NSApplicationMain launches one, once per process, as GLFW does:
+    // [NSApp run] until AppKit says it has finished, the menu bar made just before. One
+    // that calls finishLaunching itself, started from a terminal, is neither made active
+    // nor shown its menu bar - nor fullscreen's reveal - until the user switches away and back
+    static void launchOnce(NSString* name)
+    {
+        if ([[NSRunningApplication currentApplication] isFinishedLaunching]) {
+            return;
+        }
+        NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+        id<NSObject> willFinish = [center addObserverForName:NSApplicationWillFinishLaunchingNotification
+                                                      object:NSApp
+                                                       queue:nil
+                                                  usingBlock:^(NSNotification*) {
+                                                      installMainMenu(name);
+                                                  }];
+        // The loop stops once it next handles an event, so one is posted for it
+        id<NSObject> didFinish = [center addObserverForName:NSApplicationDidFinishLaunchingNotification
+                                                     object:NSApp
+                                                      queue:nil
+                                                 usingBlock:^(NSNotification*) {
+                                                     [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined
+                                                                                         location:NSZeroPoint
+                                                                                    modifierFlags:0
+                                                                                        timestamp:0
+                                                                                     windowNumber:0
+                                                                                          context:nil
+                                                                                          subtype:0
+                                                                                            data1:0
+                                                                                            data2:0]
+                                                              atStart:YES];
+                                                     [NSApp stop:nil];
+                                                 }];
+        [NSApp run];
+        [center removeObserver:willFinish];
+        [center removeObserver:didFinish];
+    }
+
+    // The menu bar every Mac app has, which fullscreen reveals at the screen's top edge
+    // together with the title bar and its buttons: the app menu, its Quit closing the main
+    // window as the close button does - so the shell's own close path runs and saves the
+    // session, where terminate: would exit at once - and the Window menu, with Toggle Full
+    // Screen on Ctrl+Cmd+F. Quit goes to the key window, always the main one: our popups
+    // and dialogs are borderless, which AppKit never makes key
+    static void installMainMenu(NSString* name)
+    {
+        NSMenu* appMenu = [[NSMenu alloc] init];
+        [appMenu addItemWithTitle:[@"Hide " stringByAppendingString:name] action:@selector(hide:) keyEquivalent:@"h"];
+        NSMenuItem* hideOthers = [appMenu addItemWithTitle:@"Hide Others"
+                                                    action:@selector(hideOtherApplications:)
+                                             keyEquivalent:@"h"];
+        [hideOthers setKeyEquivalentModifierMask:NSEventModifierFlagOption | NSEventModifierFlagCommand];
+        [appMenu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
+        [appMenu addItem:[NSMenuItem separatorItem]];
+        [appMenu addItemWithTitle:[@"Quit " stringByAppendingString:name]
+                           action:@selector(performClose:)
+                    keyEquivalent:@"q"];
+
+        NSMenu* windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+        [windowMenu addItemWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
+        [windowMenu addItemWithTitle:@"Zoom" action:@selector(performZoom:) keyEquivalent:@""];
+        NSMenuItem* fullScreen = [windowMenu addItemWithTitle:@"Toggle Full Screen"
+                                                       action:@selector(toggleFullScreen:)
+                                                keyEquivalent:@"f"];
+        [fullScreen setKeyEquivalentModifierMask:NSEventModifierFlagControl | NSEventModifierFlagCommand];
+
+        NSMenu* bar = [[NSMenu alloc] init];
+        [[bar addItemWithTitle:@"" action:nil keyEquivalent:@""] setSubmenu:appMenu];
+        [[bar addItemWithTitle:@"Window" action:nil keyEquivalent:@""] setSubmenu:windowMenu];
+        [NSApp setMainMenu:bar];
+        [NSApp setWindowsMenu:windowMenu];
+    }
+
     // Cocoa has no "move" cursor; the closed hand is what it uses for dragging
     // content, which is what Move means here
     [[nodiscard]] static NSCursor* toNsCursor(Ui::Window::PointerShape shape)
@@ -796,10 +817,6 @@ private:
 
     NSWindow* m_nsWindow = nullptr;
     NSOpenGLView* m_glView = nullptr;
-    id<NSObject> m_closeObserver = nullptr;
-    id<NSObject> m_terminateObserver = nullptr;
-    id<NSObject> m_resizeObserver = nullptr;
-    id<NSObject> m_moveObserver = nullptr;
     // Diagnostic: logs makeCurrent only when the resolved context changes, to detect
     // content-surface setView swaps and context detach issues without flooding logs per frame.
     mutable void* m_lastCtxLog = nullptr;

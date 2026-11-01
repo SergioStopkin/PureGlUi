@@ -23,7 +23,6 @@
 #include "ui/window/eventtype.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cstring>
 #include <iostream>
 #include <utility>
@@ -42,16 +41,6 @@ namespace Ui::Window::Platform {
 // Flip to true to trace every scroll event: what the device sent, the phase of the
 // gesture it belongs to (fingers on or the momentum after them) and the notches it became
 constexpr bool SCROLL_DEBUG = false;
-
-// Shared close-request flag. Set by NSWindowWillCloseNotification / NSApplicationWillTerminateNotification
-// observers registered in MacOsWindow::create(); consumed by MacOsEvent::pollEvent() to emit CloseRequested.
-inline std::atomic<bool> g_macCloseRequested { false };
-
-// Shared resize snapshot. Set by NSWindowDidResizeNotification observer in physical pixels;
-// consumed by MacOsEvent::pollEvent() as a coalesced Resize event.
-inline std::atomic<bool> g_macResizePending { false };
-inline std::atomic<int>  g_macResizeWidth { 0 };
-inline std::atomic<int>  g_macResizeHeight { 0 };
 
 #ifdef __APPLE__
 // Retina multiplier. NSWindow frames and NSEvent locations are in POINTS; the rest of the codebase
@@ -72,20 +61,48 @@ inline CGFloat macBackingScaleFactor()
  */
 class MacOsEvent final : public Ui::IEventOS {
 public:
-    MacOsEvent()           = default;
-    ~MacOsEvent() override = default;
+    MacOsEvent() = default;
 
-    /**
-     * @brief Initialize (no-op for macOS)
-     */
-    void init(Ui::IWindow & /*window*/) override { }
+    // What it observed ends with it, so a shell after this one hears nothing of its window
+    ~MacOsEvent() override
+    {
+#ifdef __APPLE__
+        for (id<NSObject> observer : m_observers) {
+            [[NSNotificationCenter defaultCenter] removeObserver:observer];
+        }
+#endif
+    }
+
+    // The window's close, resize, move and scale, and the app's end and its loss of the focus,
+    // kept here for the loop to read - per shell, so none reaches the next. A resize is due
+    // at once: AppKit fits a window to its screen as it shows it, before this observes anything
+    void init(Ui::IWindow & window) override
+    {
+#ifdef __APPLE__
+        m_mainView          = window.nativeHandle();
+        NSWindow * nsWindow = [m_mainView window];
+        observe(NSWindowWillCloseNotification, nsWindow, ^(NSNotification *) { m_isCloseRequested = true; });
+        observe(NSApplicationWillTerminateNotification, NSApp, ^(NSNotification *) { m_isCloseRequested = true; });
+        observe(NSApplicationDidResignActiveNotification, NSApp, ^(NSNotification *) { m_isFocusLost = true; });
+        // A move too, at the same size: the shell keeps where the window stands from it
+        observe(NSWindowDidResizeNotification, nsWindow, ^(NSNotification *) { m_isResizeDue = true; });
+        observe(NSWindowDidMoveNotification, nsWindow, ^(NSNotification *) { m_isResizeDue = true; });
+        observe(NSWindowDidChangeBackingPropertiesNotification, nsWindow, ^(NSNotification *) {
+            m_isScaleChanged = true;
+        });
+        m_isResizeDue = true;
+#else
+        (void)window;
+#endif
+    }
 
     // WindowManager-provided native-handle -> child id lookup, called in
     // convertNSEvent() to stamp event.childWindowId.
     void setChildWindowLookup(Ui::Window::child_id_fn_t lookup) override { m_childWindowLookup = std::move(lookup); }
 
-    void addPopupWindow(NativeWindowHandle /*handle*/) override { }
-    void removePopupWindow(NativeWindowHandle /*handle*/) override { }
+    // Our popups, dialogs and tooltip, so their events are told from AppKit's own windows'
+    void addPopupWindow(NativeWindowHandle handle) override { m_popupViews.emplace_back(handle); }
+    void removePopupWindow(NativeWindowHandle handle) override { std::erase(m_popupViews, handle); }
 
     // -------- Ui::IEventOS implementation --------
 
@@ -93,6 +110,9 @@ public:
     {
         (void)window;
 #ifdef __APPLE__
+        if (m_isCloseRequested || m_isFocusLost || m_isScaleChanged || m_isResizeDue) {
+            return true;
+        }
         @autoreleasepool {
             NSEvent * event = [NSApp nextEventMatchingMask:NSEventMaskAny
                                                  untilDate:nil
@@ -107,21 +127,40 @@ public:
 
     bool pollEvent(Event & event, Ui::IWindow & window) override
     {
-        (void)window;
 #ifdef __APPLE__
-        // Synthesize CloseRequested from the shared flag (set by window/app notification observers).
-        if (g_macCloseRequested.exchange(false)) {
-            event      = Event {};
-            event.type = EventType::CloseRequested;
+        if (m_isCloseRequested) {
+            m_isCloseRequested = false;
+            event              = Event {};
+            event.type         = EventType::CloseRequested;
             return true;
         }
 
-        // Synthesize coalesced Resize from the shared snapshot (set by NSWindowDidResizeNotification observer).
-        if (g_macResizePending.exchange(false)) {
-            event               = Event {};
-            event.type          = EventType::Resize;
-            event.resize.width  = static_cast<fpx_t>(g_macResizeWidth.load());
-            event.resize.height = static_cast<fpx_t>(g_macResizeHeight.load());
+        if (m_isFocusLost) {
+            m_isFocusLost = false;
+            event         = Event {};
+            event.type    = EventType::FocusLost;
+            return true;
+        }
+
+        // Before the resize a new backing brings, whose px are read at the new scale
+        if (m_isScaleChanged) {
+            m_isScaleChanged = false;
+            m_isResizeDue    = true;
+            event            = Event {};
+            event.type       = EventType::ScaleChange;
+            return true;
+        }
+
+        // The size the window has now, in px: a burst of notifications is one event
+        if (m_isResizeDue) {
+            m_isResizeDue        = false;
+            NSView *      view   = window.nativeHandle();
+            const NSSize  points = [view bounds].size;
+            const CGFloat scale  = [[view window] backingScaleFactor];
+            event                = Event {};
+            event.type           = EventType::Resize;
+            event.resize.width   = static_cast<fpx_t>(points.width * scale);
+            event.resize.height  = static_cast<fpx_t>(points.height * scale);
             return true;
         }
 
@@ -143,6 +182,7 @@ public:
         }
 #else
         (void)event;
+        (void)window;
         return false;
 #endif
     }
@@ -194,6 +234,12 @@ private:
         // would be needed to distinguish - deferred until pointer interaction is wired up.
         NSWindow * srcWin  = [nsEvent window];
         NSView *   srcView = [srcWin contentView];
+
+        // A window not ours is AppKit's to handle, sendEvent still handing it there: the
+        // title bar fullscreen reveals over our menu bar would press its first title too
+        if (srcWin != nil && srcView != m_mainView && std::ranges::find(m_popupViews, srcView) == m_popupViews.end()) {
+            return event;
+        }
         event.sourceWindow = srcView;
         if (m_childWindowLookup) {
             event.childWindowId = m_childWindowLookup(srcView);
@@ -415,6 +461,28 @@ private:
     // convertNSEvent() to stamp event.childWindowId so the main dispatcher can
     // route content-surface events correctly.
     Ui::Window::child_id_fn_t m_childWindowLookup;
+
+    // The windows whose events are ours: the main one, where content surfaces stand too,
+    // and each popup, dialog and tooltip while it is open - a handful
+    NativeWindowHandle              m_mainView {};
+    std::vector<NativeWindowHandle> m_popupViews;
+
+    // What the window's notifications left for the loop; AppKit posts them on this thread
+    bool m_isCloseRequested = false;
+    bool m_isFocusLost      = false;
+    bool m_isScaleChanged   = false;
+    bool m_isResizeDue      = false;
+
+#ifdef __APPLE__
+    std::vector<id<NSObject>> m_observers; // removed with this handler
+
+    // onPosted run on each name's notification from object, until this handler ends
+    void observe(NSNotificationName name, id object, void (^onPosted)(NSNotification *))
+    {
+        m_observers.emplace_back(
+        [[NSNotificationCenter defaultCenter] addObserverForName:name object:object queue:nil usingBlock:onPosted]);
+    }
+#endif
 };
 
 } // namespace Ui::Window::Platform

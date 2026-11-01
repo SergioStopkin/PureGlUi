@@ -218,6 +218,9 @@ Pure-virtual methods:
 - `void setBackground(const Ui::Color &color)` - background color.
 - `void setRoundedCorners(bool enabled, fpx_t radius)` - rounded window corners.
 - `Ui::Res::Type::bound_t bound() const` - current geometry.
+- `int dpi() const` - the DPI the OS gives the window's UI, 96 being 1x, where the window
+  stands as the OS last said. On the interface because an event handler sees its window
+  only through it: Win32 learns a change inside a modal move loop, as it does a resize.
 - `bool isHardwareGl() const` - true if the GL context runs on a real GPU; false
   only on a software/CPU rasterizer fallback (e.g. macOS without GPU
   passthrough). Consumers gate features that stall on software GL (IBL prefilter,

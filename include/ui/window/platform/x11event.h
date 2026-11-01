@@ -45,7 +45,9 @@ constexpr int BUTTON_PRESS      = 4;
 constexpr int BUTTON_RELEASE    = 5;
 constexpr int MOTION_NOTIFY     = 6;
 constexpr int LEAVE_NOTIFY      = 8;
+constexpr int FOCUS_OUT         = 10;
 constexpr int CONFIGURE_NOTIFY  = 22;
+constexpr int PROPERTY_NOTIFY   = 28;
 constexpr int SELECTION_REQUEST = 30;
 constexpr int SELECTION_NOTIFY  = 31;
 constexpr int CLIENT_MESSAGE    = 33;
@@ -76,6 +78,11 @@ public:
         m_clipboardAtom = XInternAtom(display, "CLIPBOARD", X11::False);
         m_targetsAtom   = XInternAtom(display, "TARGETS", X11::False);
         m_utf8Atom      = XInternAtom(display, "UTF8_STRING", X11::False);
+
+        // Xft.dpi lives in the root window's RESOURCE_MANAGER, which xrdb and every
+        // desktop's scale setting rewrite: each rewrite is a scale the UI may follow
+        m_resourceManagerAtom = XInternAtom(display, "RESOURCE_MANAGER", X11::False);
+        XSelectInput(display, DefaultRootWindow(display), PropertyChangeMask);
     }
 
     // WindowManager-provided native-handle -> child id lookup, called in
@@ -144,10 +151,11 @@ public:
     }
 
 private:
-    Atom        m_wmDeleteAtom  = 0;
-    Atom        m_clipboardAtom = 0;
-    Atom        m_targetsAtom   = 0;
-    Atom        m_utf8Atom      = 0;
+    Atom        m_wmDeleteAtom        = 0;
+    Atom        m_clipboardAtom       = 0;
+    Atom        m_targetsAtom         = 0;
+    Atom        m_utf8Atom            = 0;
+    Atom        m_resourceManagerAtom = 0;
     std::string m_clipboardText;
 
     // Double-click reconstruction (X11 has no native double-click signal).
@@ -202,6 +210,24 @@ private:
                 event.type          = EventType::Resize;
                 event.resize.width  = xev.xconfigure.width;
                 event.resize.height = xev.xconfigure.height;
+            }
+            break;
+
+        // The focus gone from the main window and everything in it: not to a child of its
+        // own (Inferior), not a grab's passing hold (Grab/Ungrab), not the pointer's
+        // following in PointerRoot mode (Pointer) - another app, or none, has it
+        case X11EventTypes::FOCUS_OUT:
+            if (xev.xfocus.window == mainWin
+                && (xev.xfocus.mode == NotifyNormal || xev.xfocus.mode == NotifyWhileGrabbed)
+                && xev.xfocus.detail != NotifyInferior && xev.xfocus.detail != NotifyPointer) {
+                event.type = EventType::FocusLost;
+            }
+            break;
+
+        // Stamped as the main window's (the default above): the scale is the whole UI's
+        case X11EventTypes::PROPERTY_NOTIFY:
+            if (xev.xproperty.atom == m_resourceManagerAtom) {
+                event.type = EventType::ScaleChange;
             }
             break;
 

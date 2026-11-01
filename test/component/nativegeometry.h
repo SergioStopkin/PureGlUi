@@ -18,12 +18,14 @@
 #pragma once
 
 // What the OS itself says of a window - whether it is on screen, where its content stands,
-// which pixels its shape shows - and the largest state it gives one, for a test to hold the
-// framework's own answers against. Physical px, x right and y down from the primary
+// which pixels its shape shows - and what it does to one: its largest state, a move or a
+// resize as its own frame makes them, and the app's activation, for a test to hold
+// the framework's own answers against. Physical px, x right and y down from the primary
 // screen's top-left
 
 #include "common/bit.h"
 #include "common/time.h"
+#include "ui/config.h"
 #include "ui/interface/iwindow.h"
 #include "ui/res/type/bound.h"
 #include "ui/type.h"
@@ -40,13 +42,19 @@
 #import <QuartzCore/QuartzCore.h>
 // NOLINTEND(clang-diagnostic-import-preprocessor-directive-pedantic)
 
+#include <cmath>
 #include <memory>
 #elifdef HAVE_X11
+#include "common/bytes.h"
+#include "common/cstr.h"
 #include "ui/window/platform/x11include.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
+#include <string_view>
 #endif
 
 namespace PureGlUi {
@@ -91,22 +99,79 @@ inline bool isShownAt(const Ui::IWindow & window, int x, int y)
     return isShown;
 }
 
+// Moved and sized by delta's px, frame and all, at once: the window's own messages for it
+// are sent before this returns
+inline void moveResizeBy(const Ui::IWindow & window, const Ui::Res::Type::bound_t & delta)
+{
+    RECT frame {};
+    GetWindowRect(window.nativeHandle(), &frame);
+    SetWindowPos(window.nativeHandle(),
+                 nullptr,
+                 frame.left + Ui::roundToInt(delta.x),
+                 frame.top + Ui::roundToInt(delta.y),
+                 frame.right - frame.left + Ui::roundToInt(delta.w),
+                 frame.bottom - frame.top + Ui::roundToInt(delta.h),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 #elifdef __APPLE__
 
-// AppKit's event loop run for a moment, which is where it moves and animates windows
-inline void settle(const Ui::IWindow & /*window*/)
+// AppKit's event loop run once, for up to 10 ms
+inline void runAppKitOnce()
 {
-    const Common::Time::point_t start = Common::Time::now();
-    while (Common::Time::now() - start < SETTLE) {
-        @autoreleasepool {
-            NSEvent * event = [NSApp nextEventMatchingMask:NSEventMaskAny
-                                                 untilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]
-                                                    inMode:NSDefaultRunLoopMode
-                                                   dequeue:YES];
-            if (event != nil) {
-                [NSApp sendEvent:event];
-            }
+    @autoreleasepool {
+        NSEvent * event = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                             untilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]
+                                                inMode:NSDefaultRunLoopMode
+                                               dequeue:YES];
+        if (event != nil) {
+            [NSApp sendEvent:event];
         }
+    }
+}
+
+// The window server has the window where AppKit has it, within a point, or shows it
+// nowhere: both in CoreGraphics' global points, y down from the primary screen's top
+inline bool isPlaced(NSWindow * nsWindow)
+{
+    CFArrayRef list = CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow,
+                                                 static_cast<CGWindowID>([nsWindow windowNumber]));
+    if (list == nullptr) {
+        return true;
+    }
+    CGRect shown = CGRectNull;
+    if (CFArrayGetCount(list) > 0) {
+        const auto info   = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(list, 0));
+        const auto bounds = static_cast<CFDictionaryRef>(CFDictionaryGetValue(info, kCGWindowBounds));
+        if (bounds != nullptr) {
+            CGRectMakeWithDictionaryRepresentation(bounds, &shown);
+        }
+    }
+    CFRelease(list);
+    if (CGRectIsNull(shown)) {
+        return true;
+    }
+    const NSRect  frame        = [nsWindow frame];
+    const CGFloat screenHeight = [[NSScreen screens] firstObject].frame.size.height;
+    return std::abs(CGRectGetMinX(shown) - NSMinX(frame)) <= 1.0
+        && std::abs(CGRectGetMinY(shown) - (screenHeight - NSMaxY(frame))) <= 1.0
+        && std::abs(CGRectGetWidth(shown) - NSWidth(frame)) <= 1.0
+        && std::abs(CGRectGetHeight(shown) - NSHeight(frame)) <= 1.0;
+}
+
+// AppKit's event loop run until the window server has the window where AppKit put it, then
+// a moment more, which is where AppKit moves and animates windows: a press posted before is
+// placed against the frame the window had before its latest change, by as much as it moved
+inline void settle(const Ui::IWindow & window)
+{
+    NSWindow *                  nsWindow = [window.nativeHandle() window];
+    const Common::Time::point_t start    = Common::Time::now();
+    while (!isPlaced(nsWindow) && Common::Time::now() - start < MOST_WAIT) {
+        runAppKitOnce();
+    }
+    const Common::Time::point_t placed = Common::Time::now();
+    while (Common::Time::now() - placed < SETTLE) {
+        runAppKitOnce();
     }
 }
 
@@ -145,6 +210,20 @@ inline bool isShownAt(const Ui::IWindow & window, int x, int y)
     const id       maskObject = mask;
     CAShapeLayer * shape      = maskObject;
     return CGPathContainsPoint([shape path], nullptr, inMask, false);
+}
+
+// Moved and sized by delta's px at once, its notifications sent before this returns. A
+// frame is in points up from the bottom-left, which a resize keeps: its top edge moves
+inline void moveResizeBy(const Ui::IWindow & window, const Ui::Res::Type::bound_t & delta)
+{
+    NSWindow *    nsWindow = [window.nativeHandle() window];
+    const CGFloat scale    = [nsWindow backingScaleFactor];
+    const NSRect  frame    = [nsWindow frame];
+    [nsWindow setFrame:NSMakeRect(NSMinX(frame) + (delta.x / scale),
+                                  NSMinY(frame) - (delta.y / scale),
+                                  NSWidth(frame) + (delta.w / scale),
+                                  NSHeight(frame) + (delta.h / scale))
+               display:YES];
 }
 
 #elifdef HAVE_X11
@@ -198,6 +277,22 @@ inline bool isShownAt(const Ui::IWindow & window, int x, int y)
         XFree(rectangles);
     }
     return isShown;
+}
+
+// Moved and sized by delta's px, synced, so what the server sends for it waits in the
+// queue the next poll reads
+inline void moveResizeBy(const Ui::IWindow & window, const Ui::Res::Type::bound_t & delta)
+{
+    Display *         display = window.nativeDisplay();
+    XWindowAttributes attributes {};
+    XGetWindowAttributes(display, window.nativeHandle(), &attributes);
+    XMoveResizeWindow(display,
+                      window.nativeHandle(),
+                      attributes.x + Ui::roundToInt(delta.x),
+                      attributes.y + Ui::roundToInt(delta.y),
+                      static_cast<unsigned int>(attributes.width + Ui::roundToInt(delta.w)),
+                      static_cast<unsigned int>(attributes.height + Ui::roundToInt(delta.h)));
+    XSync(display, Ui::Window::Platform::X11::False);
 }
 
 #endif
@@ -288,6 +383,146 @@ template <typename predicate_t>
                                && attributes.height == HeightOfScreen(attributes.screen);
         return isFullscreen == isEnlarged;
     });
+}
+
+#endif
+
+// The app made inactive, as a click on another app's window makes it, or active again.
+// False when the OS kept it as it was
+#ifdef _WIN32
+
+// The desktop's shell window brought to the front, or this one back with its input queue
+// joined to the front one's, the rights a process no longer in front needs to take it
+[[nodiscard]] inline bool setActive(const Ui::IWindow & window, bool isActive)
+{
+    if (isActive) {
+        const DWORD frontThread = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+        const DWORD thisThread  = GetCurrentThreadId();
+        AttachThreadInput(thisThread, frontThread, TRUE);
+        SetForegroundWindow(window.nativeHandle());
+        AttachThreadInput(thisThread, frontThread, FALSE);
+    } else if (GetShellWindow() == nullptr || SetForegroundWindow(GetShellWindow()) == 0) {
+        return false;
+    }
+    return waitUntil(window,
+                     [&window, isActive] { return (GetForegroundWindow() == window.nativeHandle()) == isActive; });
+}
+
+#elifdef __APPLE__
+
+// AppKit does it within its own loop, so it is waited out
+[[nodiscard]] inline bool setActive(const Ui::IWindow & window, bool isActive)
+{
+    if (isActive) {
+        [NSApp activateIgnoringOtherApps:YES];
+    } else {
+        [NSApp deactivate];
+    }
+    return waitUntil(window, [isActive] { return ([NSApp isActive] != NO) == isActive; });
+}
+
+#elifdef HAVE_X11
+
+// The input focus put on the root window, which no app owns, or back on this one
+[[nodiscard]] inline bool setActive(const Ui::IWindow & window, bool isActive)
+{
+    Display * display = window.nativeDisplay();
+    XSetInputFocus(display, isActive ? window.nativeHandle() : DefaultRootWindow(display), RevertToParent, CurrentTime);
+    return waitUntil(window, [&window, isActive] {
+        ::Window focus {};
+        int      revertTo {};
+        XGetInputFocus(window.nativeDisplay(), &focus, &revertTo);
+        return (focus == window.nativeHandle()) == isActive;
+    });
+}
+
+#endif
+
+// The window put at another DPI, as its OS puts it when the window moves to another monitor
+// or the desktop's scale setting changes. False where the OS has no way to
+#ifdef _WIN32
+
+// The rect WM_DPICHANGED suggests, through its LPARAM as Windows passes it: a pointer-to-
+// integer conversion static_cast cannot express, the sanctioned exception
+inline LPARAM asLParam(const RECT * rect)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<LPARAM>(rect);
+}
+
+// WM_DPICHANGED sent as Windows sends it: the DPI for both axes, and the frame grown with it
+[[nodiscard]] inline bool setDpi(const Ui::IWindow & window, int dpi)
+{
+    RECT frame {};
+    GetWindowRect(window.nativeHandle(), &frame);
+    const int  before = window.dpi();
+    const RECT suggested { .left   = frame.left,
+                           .top    = frame.top,
+                           .right  = frame.left + MulDiv(frame.right - frame.left, dpi, before),
+                           .bottom = frame.top + MulDiv(frame.bottom - frame.top, dpi, before) };
+    SendMessageW(window.nativeHandle(), WM_DPICHANGED, MAKEWPARAM(dpi, dpi), asLParam(&suggested));
+    return true;
+}
+
+#elifdef __APPLE__
+
+// A backing scale is its screen's alone: only another screen gives a window another
+[[nodiscard]] inline bool setDpi(const Ui::IWindow & /*window*/, int /*dpi*/) { return false; }
+
+#elifdef HAVE_X11
+
+// Xft.dpi written into the root window's RESOURCE_MANAGER as xrdb writes it, every other
+// resource kept
+[[nodiscard]] inline bool setDpi(const Ui::IWindow & window, int dpi)
+{
+    Display *      display   = window.nativeDisplay();
+    const ::Window root      = DefaultRootWindow(display);
+    const Atom     resources = XInternAtom(display, "RESOURCE_MANAGER", Ui::Window::Platform::X11::False);
+    Atom           type {};
+    int            format {};
+    Ui::Window::Platform::X11::Cardinal count {};
+    Ui::Window::Platform::X11::Cardinal after {};
+    unsigned char *                     data = nullptr;
+    std::string                         kept;
+    if (XGetWindowProperty(display,
+                           root,
+                           resources,
+                           0,
+                           65536 / 4,
+                           Ui::Window::Platform::X11::False,
+                           XA_STRING,
+                           &type,
+                           &format,
+                           &count,
+                           &after,
+                           &data)
+        == 0
+        && data != nullptr) {
+        // Xlib ends the data with a NUL, so it reads as a C string
+        const std::string text = Common::fromCString(data);
+        XFree(data);
+        std::string_view rest = text;
+        while (!rest.empty()) {
+            const std::size_t      end  = std::min(rest.find('\n'), rest.size());
+            const std::string_view line = rest.substr(0, end);
+            if (!line.starts_with("Xft.dpi:")) {
+                kept += line;
+                kept += '\n';
+            }
+            rest.remove_prefix(std::min(end + 1, rest.size()));
+        }
+    }
+    kept += "Xft.dpi:\t" + std::to_string(dpi) + "\n";
+    XChangeProperty(display,
+                    root,
+                    resources,
+                    XA_STRING,
+                    8,
+                    PropModeReplace,
+                    Common::asBytes(kept.data()),
+                    static_cast<int>(kept.size()));
+    XSync(display, Ui::Window::Platform::X11::False);
+    return true;
 }
 
 #endif

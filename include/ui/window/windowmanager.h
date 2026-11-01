@@ -76,6 +76,7 @@
 #include "ui/window/popup/popupwindow.h"
 #include "ui/window/refreshrateof.h"
 #include "ui/window/renderqueue.h"
+#include "ui/window/scalefactorof.h"
 #include "ui/window/spentbuttonof.h"
 #include "ui/window/tooltip.h"
 #include "ui/window/tooltipboundof.h"
@@ -1232,6 +1233,14 @@ public:
         return true;
     }
 
+    // The DPI the UI is to be laid out at: the main window's, as its OS gives it, times
+    // PUREGLUI_SCALE where that is set; g_config.dpi is the one it is laid out at now
+    [[nodiscard]] int askedDpi() const
+    {
+        return roundToInt(static_cast<fpx_t>(m_main->window().dpi())
+                          * scaleFactorOf(Common::System::environmentVariable(SCALE_VARIABLE)));
+    }
+
     /**
      * @brief Re-query display DPI and recompute UI margins.
      *
@@ -1248,10 +1257,10 @@ public:
             return false;
         }
         const float prevScale = g_config.scale;
-        g_config.dpi          = NativeWindow::queryDpi(m_main->window().nativeDisplay());
+        g_config.dpi          = askedDpi();
         g_config.scale        = static_cast<float>(g_config.dpi) / 96.0F;
         // 0 is no answer, which keeps the rate there was
-        const std::vector<display_t> displays    = NativeWindow::queryDisplays(m_main->window().nativeDisplay());
+        const std::vector<display_t> displays    = NativeWindow::displaysOf(m_main->window().nativeDisplay());
         const fpx_t                  refreshRate = refreshRateOf(displays);
         if (refreshRate > 0.0F) {
             g_config.refreshRate = refreshRate;
@@ -1889,6 +1898,10 @@ public:
         if (!m_dialogWindow->window().open(m_main->window(), m_resManager, resolved, dialogArea())) {
             m_dialogWindow.reset();
             return;
+        }
+        // Registered as makePopupWindow registers a popup; closePopupWindow unregisters both
+        if (m_eventHandler) {
+            m_eventHandler->addPopupWindow(m_dialogWindow->window().nativeHandle());
         }
 
         auto & dialogRenderer = m_dialogWindow->emplaceRenderer(

@@ -49,10 +49,12 @@ public:
     Win32Event()           = default;
     ~Win32Event() override = default;
 
-    /**
-     * @brief Initialize (no-op for Win32)
-     */
-    void init(Ui::IWindow & /*window*/) override { }
+    // The DPI the window starts at and whether the app is in front, so only a change is reported
+    void init(Ui::IWindow & window) override
+    {
+        m_lastDpi   = window.dpi();
+        m_isInFront = isAppInFront();
+    }
 
     // WindowManager-provided native-handle (HWND) -> child id lookup, called in
     // pollEvent() to stamp event.childWindowId.
@@ -72,7 +74,8 @@ public:
         // WndProc updates window bound directly during the modal resize/move
         // loop. Detect the change here so the event loop keeps spinning.
         const auto & bound = window.bound();
-        return (bound.w != m_lastWidth || bound.h != m_lastHeight || bound.x != m_lastX || bound.y != m_lastY);
+        return (bound.w != m_lastWidth || bound.h != m_lastHeight || bound.x != m_lastX || bound.y != m_lastY)
+            || window.dpi() != m_lastDpi || isAppInFront() != m_isInFront;
     }
 
     bool pollEvent(Event & event, Ui::IWindow & window) override
@@ -100,6 +103,24 @@ public:
             event.resize.width  = bound.w;
             event.resize.height = bound.h;
             return true;
+        }
+
+        // A DPI change rides the same detector: WM_DPICHANGED is sent inside the modal move
+        // loop a drag across monitors runs, which no posted message leaves
+        if (window.dpi() != m_lastDpi) {
+            m_lastDpi  = window.dpi();
+            event.type = EventType::ScaleChange;
+            return true;
+        }
+
+        // And the app losing the front: WM_ACTIVATEAPP is sent to the window procedure, and
+        // a notice posted from there could be dispatched by a loop not ours before this reads it
+        if (isAppInFront() != m_isInFront) {
+            m_isInFront = !m_isInFront;
+            if (!m_isInFront) {
+                event.type = EventType::FocusLost;
+                return true;
+            }
         }
 
         MSG msg;
@@ -391,6 +412,17 @@ private:
     fpx_t m_lastHeight = 0;
     fpx_t m_lastX      = 0;
     fpx_t m_lastY      = 0;
+    int   m_lastDpi    = 0;    // the window's DPI last reported
+    bool  m_isInFront  = true; // whether the app was in front, as last reported
+
+    // A window of this process is the one in front: a dialog of its own counts, another
+    // app's - or none, mid-switch - does not
+    [[nodiscard]] static bool isAppInFront()
+    {
+        DWORD processId = 0;
+        GetWindowThreadProcessId(GetForegroundWindow(), &processId);
+        return processId == GetCurrentProcessId();
+    }
 
     // Multi-click burst counter. We don't enable CS_DBLCLKS on the window
     // class, so WM_*BUTTONDOWN arrives even for the second press; the

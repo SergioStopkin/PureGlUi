@@ -195,8 +195,12 @@ public:
         XDefineCursor(m_display, m_xWindow, m_cursors.at(slot));
     }
 
-    static int queryDpi(NativeDisplayHandle display)
+    // Xft.dpi, which every desktop's scale setting writes, else 96 as GTK takes it: a
+    // screen's physical size is often missing or wrong, and says nothing of how far away
+    // it is seen from
+    [[nodiscard]] int dpi() const override
     {
+        Display * display = m_display;
         if (display == nullptr) {
             std::cout << "[X11Window] DPI fallback (no display): 96" << std::endl;
             return 96;
@@ -244,25 +248,13 @@ public:
             XFree(data);
         }
 
-        const int screen  = DefaultScreen(display);
-        const int widthPx = DisplayWidth(display, screen);
-        const int widthMm = DisplayWidthMM(display, screen);
-        if (widthMm > 0) {
-            const int dpiVal = static_cast<int>((widthPx * 25.4) / widthMm);
-            if (dpiVal > 0) {
-                std::cout << "[X11Window] DPI from physical: " << dpiVal << " (" << widthPx << "px / " << widthMm
-                          << "mm)" << std::endl;
-                return dpiVal;
-            }
-        }
-
         std::cout << "[X11Window] DPI fallback: 96" << std::endl;
         return 96;
     }
 
     // Every output lit, through XRandR: its mode's size, and its rate - the dot clock over
     // the pixels a frame takes, 0 where a virtual server's modes carry no clock
-    static std::vector<display_t> queryDisplays(NativeDisplayHandle display)
+    static std::vector<display_t> displaysOf(NativeDisplayHandle display)
     {
         std::vector<display_t> displays;
         if (display == nullptr) {
@@ -700,8 +692,10 @@ private:
         winAttrs.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask
                             | StructureNotifyMask;
 
+        // The main window alone hears the focus leave it: the app's, which a list closes on
         if (!isChildWindow) {
-            winAttrs.event_mask = static_cast<int64_t>(Common::Bit::Or(winAttrs.event_mask, LeaveWindowMask));
+            winAttrs.event_mask = static_cast<int64_t>(
+            Common::Bit::Or(Common::Bit::Or(winAttrs.event_mask, LeaveWindowMask), FocusChangeMask));
         }
 
         m_xWindow = XCreateWindow(m_display,

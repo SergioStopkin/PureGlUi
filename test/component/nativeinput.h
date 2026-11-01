@@ -17,10 +17,10 @@
 
 #pragma once
 
-// Pointer input put in the OS's own event queue, as the OS puts it, for a window's event
-// loop to read at its next poll - so a test drives the loop the app runs, batches and all,
-// rather than the handlers behind it. Physical px from the window's content corner; a
-// press and a release are the left button's
+// Pointer input, and the request the frame's close button makes, put in the OS's own event
+// queue as the OS puts them, for a window's event loop to read at its next poll - so a test
+// drives the loop the app runs, batches and all, rather than the handlers behind it.
+// Physical px from the window's content corner; a press and a release are the left button's
 
 #include "ui/interface/iwindow.h"
 
@@ -54,6 +54,8 @@ inline void postPointerRelease(const Ui::IWindow & window, int x, int y)
 {
     PostMessageW(window.nativeHandle(), WM_LBUTTONUP, 0, MAKELPARAM(x, y));
 }
+
+inline void postCloseRequest(const Ui::IWindow & window) { PostMessageW(window.nativeHandle(), WM_CLOSE, 0, 0); }
 
 #elifdef __APPLE__
 
@@ -91,6 +93,10 @@ inline void postPointerRelease(const Ui::IWindow & window, int x, int y)
 {
     postMouseEvent(window, NSEventTypeLeftMouseUp, x, y);
 }
+
+// As a click on its close button: AppKit closes the window at once, its will-close
+// notification sent before this returns
+inline void postCloseRequest(const Ui::IWindow & window) { [[window.nativeHandle() window] performClose:nil]; }
 
 #elifdef HAVE_X11
 
@@ -137,6 +143,24 @@ inline void postPointerPress(const Ui::IWindow & window, int x, int y) { postPoi
 inline void postPointerRelease(const Ui::IWindow & window, int x, int y)
 {
     postPointerButton(window, ButtonRelease, x, y);
+}
+
+// What a window manager sends for the frame's close button: WM_PROTOCOLS carrying
+// WM_DELETE_WINDOW, synced as the pointer's input is
+inline void postCloseRequest(const Ui::IWindow & window)
+{
+    Display * display = window.nativeDisplay();
+    XEvent    event {};
+    event.xclient.type         = ClientMessage;
+    event.xclient.display      = display;
+    event.xclient.window       = window.nativeHandle();
+    event.xclient.message_type = XInternAtom(display, "WM_PROTOCOLS", Ui::Window::Platform::X11::False);
+    event.xclient.format       = 32;
+    // NOLINTNEXTLINE(google-runtime-int)
+    event.xclient.data.l[0] = static_cast<long>(
+    XInternAtom(display, "WM_DELETE_WINDOW", Ui::Window::Platform::X11::False));
+    XSendEvent(display, window.nativeHandle(), Ui::Window::Platform::X11::False, NoEventMask, &event);
+    XSync(display, Ui::Window::Platform::X11::False);
 }
 
 #endif
