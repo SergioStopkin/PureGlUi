@@ -221,6 +221,12 @@ public:
             [m_nsWindow makeKeyAndOrderFront:nil];
             [app activateIgnoringOtherApps:YES];
 
+            // AppKit fits a window to its screen as it shows it: the size asked for is gone
+            const NSSize shown = [m_glView bounds].size;
+            const CGFloat scale = [m_nsWindow backingScaleFactor];
+            m_bound.w = static_cast<fpx_t>(shown.width * scale);
+            m_bound.h = static_cast<fpx_t>(shown.height * scale);
+
             return true;
         }
     }

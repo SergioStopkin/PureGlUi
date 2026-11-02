@@ -157,6 +157,13 @@ public:
             // the main window. Popups are unaffected (own creation path, and show()
             // uses SW_SHOWNOACTIVATE so menus never steal focus).
             if (m_hwnd != nullptr) {
+                // Windows holds a window to its screen as it makes it, and the WM_SIZE saying
+                // so came before wndProc could find this window through its user data
+                RECT client {};
+                GetClientRect(m_hwnd, &client);
+                m_bound.w = static_cast<fpx_t>(client.right);
+                m_bound.h = static_cast<fpx_t>(client.bottom);
+
                 const HWND  foreground = GetForegroundWindow();
                 const DWORD fgThread   = GetWindowThreadProcessId(foreground, nullptr);
                 const DWORD thisThread = GetCurrentThreadId();

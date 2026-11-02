@@ -36,6 +36,7 @@
 #include "menubarloop.h"
 #include "nativegeometry.h"
 #include "nativeinput.h"
+#include "ui/interface/iwindow.h"
 #include "ui/shell.h"
 #include "ui/type.h"
 
@@ -81,15 +82,22 @@ protected:
     [[nodiscard]] Ui::id_t openMenuId() const { return m_shell.resManager().activeMenuId(); }
 };
 
-// A title's list shows as the button goes down on it
+// A title's list shows as the button goes down on it. A failure says what the OS says of the
+// window as the press goes in and after: CI's macOS reads this one press 31 pt low, the
+// process's first through AppKit's loop, on a window bigger than its screen
 TEST_F(MenuBarTest, APressOpensItsList)
 {
     PureGlUi::runPasses(m_shell, [this](int pass) {
         if (pass == 0) {
-            PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
+            PureGlUi::postAt(m_shell, m_menuIds.at(0), [this](const Ui::IWindow & window, int x, int y) {
+                m_read += " posted " + std::to_string(x) + "," + std::to_string(y) + " with "
+                        + PureGlUi::placementOf(window) + ";";
+                PureGlUi::postPointerPress(window, x, y);
+            });
         }
     });
-    EXPECT_EQ(openMenuId(), m_menuIds.at(0)) << m_read;
+    EXPECT_EQ(openMenuId(), m_menuIds.at(0))
+    << m_read << " then " << PureGlUi::placementOf(m_shell.windowManager().mainWindow());
 }
 
 // A click made while the pointer sweeps on: pressed on the first title, the button comes

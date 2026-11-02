@@ -31,6 +31,7 @@
 #include "ui/type.h"
 
 #include <chrono>
+#include <string>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -53,7 +54,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <string>
 #include <string_view>
 #endif
 
@@ -62,6 +62,13 @@ namespace PureGlUi {
 // How long the OS is given to act on what it was asked, and the most a change of state takes
 constexpr std::chrono::milliseconds SETTLE { 100 };
 constexpr std::chrono::milliseconds MOST_WAIT { 5000 };
+
+// A rect as a failure says it
+[[nodiscard]] inline std::string textOf(const Ui::Res::Type::bound_t & bound)
+{
+    return std::to_string(Ui::roundToInt(bound.x)) + "," + std::to_string(Ui::roundToInt(bound.y)) + " "
+         + std::to_string(Ui::roundToInt(bound.w)) + "x" + std::to_string(Ui::roundToInt(bound.h));
+}
 
 #ifdef _WIN32
 
@@ -88,6 +95,12 @@ inline Ui::Res::Type::bound_t nativeContentRectOf(const Ui::IWindow & window)
              .y = static_cast<Ui::fpx_t>(origin.y),
              .w = static_cast<Ui::fpx_t>(client.right),
              .h = static_cast<Ui::fpx_t>(client.bottom) };
+}
+
+// What the OS says of the window now, for a failure to say
+[[nodiscard]] inline std::string placementOf(const Ui::IWindow & window)
+{
+    return "content " + textOf(nativeContentRectOf(window));
 }
 
 // Through the window's region; one with none shows every pixel
@@ -130,14 +143,24 @@ inline void runAppKitOnce()
     }
 }
 
-// The window server has the window where AppKit has it, within a point, or shows it
-// nowhere: both in CoreGraphics' global points, y down from the primary screen's top
-inline bool isPlaced(NSWindow * nsWindow)
+// An AppKit rect, points up from the primary screen's bottom, as CoreGraphics has one: y
+// down from its top
+inline Ui::Res::Type::bound_t topDownOf(NSRect rect)
+{
+    const CGFloat screenHeight = [[NSScreen screens] firstObject].frame.size.height;
+    return { .x = static_cast<Ui::fpx_t>(NSMinX(rect)),
+             .y = static_cast<Ui::fpx_t>(screenHeight - NSMaxY(rect)),
+             .w = static_cast<Ui::fpx_t>(NSWidth(rect)),
+             .h = static_cast<Ui::fpx_t>(NSHeight(rect)) };
+}
+
+// Where the window server has the window, top-down in points; no size where it shows it nowhere
+inline Ui::Res::Type::bound_t serverBoundsOf(NSWindow * nsWindow)
 {
     CFArrayRef list = CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow,
                                                  static_cast<CGWindowID>([nsWindow windowNumber]));
     if (list == nullptr) {
-        return true;
+        return {};
     }
     CGRect shown = CGRectNull;
     if (CFArrayGetCount(list) > 0) {
@@ -149,14 +172,22 @@ inline bool isPlaced(NSWindow * nsWindow)
     }
     CFRelease(list);
     if (CGRectIsNull(shown)) {
-        return true;
+        return {};
     }
-    const NSRect  frame        = [nsWindow frame];
-    const CGFloat screenHeight = [[NSScreen screens] firstObject].frame.size.height;
-    return std::abs(CGRectGetMinX(shown) - NSMinX(frame)) <= 1.0
-        && std::abs(CGRectGetMinY(shown) - (screenHeight - NSMaxY(frame))) <= 1.0
-        && std::abs(CGRectGetWidth(shown) - NSWidth(frame)) <= 1.0
-        && std::abs(CGRectGetHeight(shown) - NSHeight(frame)) <= 1.0;
+    return { .x = static_cast<Ui::fpx_t>(CGRectGetMinX(shown)),
+             .y = static_cast<Ui::fpx_t>(CGRectGetMinY(shown)),
+             .w = static_cast<Ui::fpx_t>(CGRectGetWidth(shown)),
+             .h = static_cast<Ui::fpx_t>(CGRectGetHeight(shown)) };
+}
+
+// The window server has the window where AppKit has it, within a point, or shows it nowhere
+inline bool isPlaced(NSWindow * nsWindow)
+{
+    const Ui::Res::Type::bound_t server = serverBoundsOf(nsWindow);
+    const Ui::Res::Type::bound_t frame  = topDownOf([nsWindow frame]);
+    return server.w == 0.0F
+        || (std::abs(server.x - frame.x) <= 1.0F && std::abs(server.y - frame.y) <= 1.0F
+            && std::abs(server.w - frame.w) <= 1.0F && std::abs(server.h - frame.h) <= 1.0F);
 }
 
 // AppKit's event loop run until the window server has the window where AppKit put it, then
@@ -190,6 +221,18 @@ inline Ui::Res::Type::bound_t nativeContentRectOf(const Ui::IWindow & window)
              .y = static_cast<Ui::fpx_t>((screenHeight - NSMaxY(onScreen)) * scale),
              .w = static_cast<Ui::fpx_t>(NSWidth(onScreen) * scale),
              .h = static_cast<Ui::fpx_t>(NSHeight(onScreen) * scale) };
+}
+
+// What the OS says of the window now, for a failure to say: AppKit's frame against the
+// window server's, the room its screen leaves a window, all in points, the content in px,
+// and whether the window and the app are the active ones
+[[nodiscard]] inline std::string placementOf(const Ui::IWindow & window)
+{
+    NSWindow * nsWindow = [window.nativeHandle() window];
+    return "frame " + textOf(topDownOf([nsWindow frame])) + ", server " + textOf(serverBoundsOf(nsWindow))
+         + ", content " + textOf(nativeContentRectOf(window)) + ", visible "
+         + textOf(topDownOf([[nsWindow screen] visibleFrame])) + ([nsWindow isKeyWindow] != NO ? ", key" : ", not key")
+         + ([NSApp isActive] != NO ? ", active" : ", not active");
 }
 
 // Through the mask the view's layer is cut by, at the pixel's centre: a layer measures up
@@ -256,6 +299,12 @@ inline Ui::Res::Type::bound_t nativeContentRectOf(const Ui::IWindow & window)
              .y = static_cast<Ui::fpx_t>(y),
              .w = static_cast<Ui::fpx_t>(attributes.width),
              .h = static_cast<Ui::fpx_t>(attributes.height) };
+}
+
+// What the OS says of the window now, for a failure to say
+[[nodiscard]] inline std::string placementOf(const Ui::IWindow & window)
+{
+    return "content " + textOf(nativeContentRectOf(window));
 }
 
 // Through the bounding shape, which is the window's own rectangle when none is set
