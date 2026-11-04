@@ -29,6 +29,7 @@
 
 #include "common/unicode.h"
 #include "fakerender.h"
+#include "testconst.h"
 #include "ui/action/registry.h"
 #include "ui/intent.h"
 #include "ui/render/context.h"
@@ -262,13 +263,13 @@ TEST_F(UiDriverTest, PopupWidthIsTheWidestRowAndNeverUnderTheFloor)
     const Ui::fpx_t floor  = resManager.layout().topMenuDropdown.width;
     const Ui::fpx_t padH   = resManager.popup().itemPaddingH;
     const auto      glyphs = Common::Unicode::fromUtf8(resManager.localeManager().get(row.label)).size();
-    const Ui::fpx_t labelW = static_cast<Ui::fpx_t>(glyphs) * FakeRender::GLYPH_WIDTH;
+    const Ui::fpx_t labelW = static_cast<Ui::fpx_t>(glyphs) * GLYPH_WIDTH;
     ASSERT_GT(labelW, 0.0F);
     ASSERT_LT(padH + labelW + padH, floor);
     EXPECT_FLOAT_EQ(layout.popupWidthOf({ row }, resManager, render), floor);
 
     row.shortcut             = std::string(32, 'W');
-    const Ui::fpx_t expected = padH + labelW + padH + (32.0F * FakeRender::GLYPH_WIDTH) + padH;
+    const Ui::fpx_t expected = padH + labelW + padH + (32.0F * GLYPH_WIDTH) + padH;
     ASSERT_GT(expected, floor);
     EXPECT_FLOAT_EQ(layout.popupWidthOf({ row }, resManager, render), expected);
 
@@ -287,7 +288,7 @@ TEST_F(UiDriverTest, PopupWidthIsTheWidestRowAndNeverUnderTheFloor)
     shortLabel.shortcut                 = std::string(48, 'W');
     Ui::Res::Type::menu_t shortShortcut = row;
     shortShortcut.shortcut              = "W";
-    const Ui::fpx_t column              = padH + labelW + padH + (48.0F * FakeRender::GLYPH_WIDTH) + padH;
+    const Ui::fpx_t column              = padH + labelW + padH + (48.0F * GLYPH_WIDTH) + padH;
     EXPECT_FLOAT_EQ(layout.popupWidthOf({ shortLabel, shortShortcut }, resManager, render), column);
 }
 

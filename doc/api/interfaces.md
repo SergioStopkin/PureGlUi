@@ -102,7 +102,7 @@ Called by: `Ui::Window::WindowManager` when dispatching decoded OS events.
 Header: `include/ui/interface/irenderer.h`
 
 `class IRenderer : public IEventApp` - a renderer OBJECT's lifecycle contract
-(render / resize / apply / refresh / cleanup / statusText / readPixels), plus the
+(render / resize / apply / cleanup / statusText / readPixels), plus the
 inherited `IEventApp` pointer events. This is the seam a host implements to embed
 a content surface.
 
@@ -117,10 +117,6 @@ Methods:
 - `void resize(fpx_t width, fpx_t height)` (pure) - handle window resize.
 - `void apply(Ui::Res::Type::changes_t changed)` (pure) - apply resource changes
   (theme, layout, etc.), the set of parts a reload or a runtime setter changed.
-- `void refresh()` (virtual, default no-op) - re-present the last rendered frame
-  without clearing or re-drawing. Used after the parent window swaps buffers so
-  this window's content stays visible (fullscreen/unredirected compositing). A
-  content-surface renderer may override it.
 - `void cleanup()` (pure) - release resources.
 - `const std::string &statusText() const` (virtual, default empty string) -
   status text, e.g. content stats for a content-surface renderer.
@@ -138,7 +134,7 @@ Methods:
 Implemented by: `Ui::Render::UiRenderer` (the UI chrome), the popup renderers
 `Ui::Render::Popup::PopupRenderer` / `DialogRenderer` (via
 `PopupRendererBase`), and host content renderers (which override `readPixels` /
-`statusText` / `refresh`).
+`statusText`).
 
 Called by: the window/coordinator layer (`Ui::Window::WindowManager` and the
 window pairing glue) to produce frames and react to resize/resource changes.

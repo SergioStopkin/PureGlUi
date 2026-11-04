@@ -58,15 +58,6 @@ public:
     virtual void apply(Ui::Res::Type::changes_t changed) = 0;
 
     /**
-     * @brief Re-present the last rendered frame without clearing or re-drawing
-     *
-     * Used after the parent window swaps buffers to ensure this window's
-     * content remains visible (needed in fullscreen/unredirected compositing).
-     * Default is no-op; a content-surface renderer may override it.
-     */
-    virtual void refresh() { }
-
-    /**
      * @brief Cleanup resources
      */
     virtual void cleanup() = 0;

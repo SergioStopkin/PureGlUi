@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "testconst.h"
 #include "ui/interface/irender.h"
 
 #include <string_view>
@@ -29,8 +30,6 @@ namespace PureGlUi {
 // mapping is verifiable. Shared by the headless UI-test suites.
 class FakeRender final : public Ui::IRender {
 public:
-    static constexpr Ui::fpx_t GLYPH_WIDTH = 8.0F;
-
     void beginFrame(Ui::fpx_t /*width*/, Ui::fpx_t /*height*/) override { }
     void endFrame() override { }
     void fillRect(const Ui::Res::Type::bound_t & /*bound*/,

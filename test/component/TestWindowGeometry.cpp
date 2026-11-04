@@ -26,6 +26,7 @@
  * the element list, and only a content refresh rebuilds it.
  */
 
+#include "testconst.h"
 #include "testidkind.h"
 #include "ui/idkind.h"
 #include "ui/render/uielement.h"
@@ -43,11 +44,6 @@
 #endif
 
 namespace PureGlUi {
-
-namespace {
-    constexpr Ui::fpx_t WINDOW_W = 1600.0F;
-    constexpr Ui::fpx_t WINDOW_H = 1000.0F;
-} // namespace
 
 class WindowGeometryTest : public ::testing::Test {
 protected:

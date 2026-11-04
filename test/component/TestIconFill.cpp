@@ -28,6 +28,7 @@
  * ASKS FOR - the only part the backend cannot second-guess.
  */
 
+#include "testconst.h"
 #include "ui/interface/irender.h"
 #include "ui/render/uirenderer.h"
 #include "ui/res/resmanager.h"
@@ -115,9 +116,6 @@ namespace {
     private:
         Ui::font_handle_t m_nextFont = 0;
     };
-
-    constexpr Ui::fpx_t VIEW_W = 1200.0F;
-    constexpr Ui::fpx_t VIEW_H = 800.0F;
 
 } // namespace
 

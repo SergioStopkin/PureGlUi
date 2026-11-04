@@ -18,7 +18,7 @@
 /**
  * @file TestScaleFactorOf.cpp
  * @brief Unit tests for ui/window/scalefactorof.h: PUREGLUI_SCALE multiplies the OS's DPI
- *        by a finite positive number, and anything else leaves the OS's scale as it is.
+ *        by a number from 0.25 to 8, and anything else leaves the OS's scale as it is.
  */
 
 #include "ui/window/scalefactorof.h"
@@ -32,6 +32,8 @@ TEST(ScaleFactorOf, ANumberIsTheFactor)
     EXPECT_FLOAT_EQ(scaleFactorOf("1.25"), 1.25F);
     EXPECT_FLOAT_EQ(scaleFactorOf("2"), 2.0F);
     EXPECT_FLOAT_EQ(scaleFactorOf("0.5"), 0.5F);
+    EXPECT_FLOAT_EQ(scaleFactorOf("0.25"), 0.25F);
+    EXPECT_FLOAT_EQ(scaleFactorOf("8"), 8.0F);
 }
 
 // Unset, the environment reads empty
@@ -45,4 +47,17 @@ TEST(ScaleFactorOf, NoFactorLeavesTheOsScale)
     EXPECT_FLOAT_EQ(scaleFactorOf("-1.5"), 1.0F);
     EXPECT_FLOAT_EQ(scaleFactorOf("inf"), 1.0F);
     EXPECT_FLOAT_EQ(scaleFactorOf("nan"), 1.0F);
+    EXPECT_FLOAT_EQ(scaleFactorOf("1.5x"), 1.0F);
+    EXPECT_FLOAT_EQ(scaleFactorOf("2 px"), 1.0F);
+    EXPECT_FLOAT_EQ(scaleFactorOf("2,5"), 1.0F);
+    EXPECT_FLOAT_EQ(scaleFactorOf("2%"), 1.0F);
+}
+
+// Negative: too small rounds the DPI to 0, which every toCss then divides by, and too large
+// overflows the DPI's cast
+TEST(ScaleFactorOf, AFactorOutOfRangeLeavesTheOsScale)
+{
+    EXPECT_FLOAT_EQ(scaleFactorOf("0.001"), 1.0F);
+    EXPECT_FLOAT_EQ(scaleFactorOf("1000"), 1.0F);
+    EXPECT_FLOAT_EQ(scaleFactorOf("1e30"), 1.0F);
 }

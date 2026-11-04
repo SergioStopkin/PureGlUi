@@ -29,11 +29,11 @@
 
 #ifdef HAVE_X11
 
-#include "testidkind.h"
-#include "ui/idkind.h"
+#include "testconst.h"
 #include "ui/interface/irenderer.h"
 #include "ui/interface/iwindow.h"
 #include "ui/res/resmanager.h"
+#include "ui/type.h"
 #include "ui/window/pointershape.h"
 #include "ui/window/windowmanager.h"
 
@@ -45,10 +45,6 @@
 #endif
 
 namespace PureGlUi {
-
-constexpr Ui::id_t SURFACE_A = Ui::idOf(TestIdKind::Surface, 10);
-constexpr Ui::id_t SURFACE_B = Ui::idOf(TestIdKind::Surface, 20);
-constexpr Ui::id_t UNKNOWN   = Ui::idOf(TestIdKind::Surface, 999);
 
 // Pure-surface IWindow stub with a settable native handle - enough to register
 // as a content surface and be resolved by handle.
@@ -185,7 +181,7 @@ TEST_F(ContentSurfaceTest, ReadyFlagTracks)
     EXPECT_FALSE(windowManager.isContentReady(SURFACE_A));
     windowManager.setContentSurfaceReady(SURFACE_A, true);
     EXPECT_TRUE(windowManager.isContentReady(SURFACE_A));
-    EXPECT_FALSE(windowManager.isContentReady(UNKNOWN));
+    EXPECT_FALSE(windowManager.isContentReady(UNKNOWN_SURFACE));
 }
 
 // The surfaces overlap, so switching the active one under the pointer takes it off
@@ -234,10 +230,10 @@ TEST_F(ContentSurfaceTest, RemovingTheOneUnderThePointerForgetsIt)
 // A tooltip or pointer for an id never registered makes no surface of it
 TEST_F(ContentSurfaceTest, TooltipAndPointerForAnUnknownIdDoNothing)
 {
-    windowManager.setContentTooltip(UNKNOWN, "name", { 0.0F, 0.0F, 8.0F, 8.0F });
-    windowManager.setContentPointer(UNKNOWN, Ui::Window::PointerShape::Crosshair);
-    EXPECT_FALSE(windowManager.isContentReady(UNKNOWN)); // an entry made by either would read ready
-    EXPECT_EQ(windowManager.contentWindow(UNKNOWN), nullptr);
+    windowManager.setContentTooltip(UNKNOWN_SURFACE, "name", { 0.0F, 0.0F, 8.0F, 8.0F });
+    windowManager.setContentPointer(UNKNOWN_SURFACE, Ui::Window::PointerShape::Crosshair);
+    EXPECT_FALSE(windowManager.isContentReady(UNKNOWN_SURFACE)); // an entry made by either would read ready
+    EXPECT_EQ(windowManager.contentWindow(UNKNOWN_SURFACE), nullptr);
 }
 
 } // namespace PureGlUi

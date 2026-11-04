@@ -18,19 +18,18 @@
 #pragma once
 
 // What the OS itself says of a window - whether it is on screen, where its content stands,
-// which pixels its shape shows - and what it does to one: its largest state, a move or a
-// resize as its own frame makes them, and the app's activation, for a test to hold
-// the framework's own answers against. Physical px, x right and y down from the primary
-// screen's top-left
+// which pixels its shape shows - and what it does to one: its largest state, and a move or a
+// resize as its own frame makes them, for a test to hold the framework's own answers against.
+// Physical px, x right and y down from the primary screen's top-left
 
 #include "common/bit.h"
 #include "common/time.h"
+#include "testconst.h"
 #include "ui/config.h"
 #include "ui/interface/iwindow.h"
 #include "ui/res/type/bound.h"
 #include "ui/type.h"
 
-#include <chrono>
 #include <string>
 
 #ifdef _WIN32
@@ -46,22 +45,17 @@
 #include <cmath>
 #include <memory>
 #elifdef HAVE_X11
-#include "common/bytes.h"
-#include "common/cstr.h"
+#include "common/system.h"
 #include "ui/window/platform/x11include.h"
+#include "ui/window/scalefactorof.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <span>
-#include <string_view>
 #endif
 
 namespace PureGlUi {
-
-// How long the OS is given to act on what it was asked, and the most a change of state takes
-constexpr std::chrono::milliseconds SETTLE { 100 };
-constexpr std::chrono::milliseconds MOST_WAIT { 5000 };
 
 // A rect as a failure says it
 [[nodiscard]] inline std::string textOf(const Ui::Res::Type::bound_t & bound)
@@ -397,6 +391,15 @@ template <typename predicate_t>
     return isReached;
 }
 
+// As the yellow button, Cmd+M and the Window menu ask it. False where AppKit refuses, which
+// it does with a beep for a window with no such button
+[[nodiscard]] inline bool minimize(const Ui::IWindow & window)
+{
+    NSWindow * nsWindow = [window.nativeHandle() window];
+    [nsWindow performMiniaturize:nil];
+    return waitUntil(window, [nsWindow] { return [nsWindow isMiniaturized] != NO; });
+}
+
 #elifdef HAVE_X11
 
 // Fullscreen as an EWMH window manager gives it, the window its screen's size; with no
@@ -436,57 +439,6 @@ template <typename predicate_t>
 
 #endif
 
-// The app made inactive, as a click on another app's window makes it, or active again.
-// False when the OS kept it as it was
-#ifdef _WIN32
-
-// The desktop's shell window brought to the front, or this one back with its input queue
-// joined to the front one's, the rights a process no longer in front needs to take it
-[[nodiscard]] inline bool setActive(const Ui::IWindow & window, bool isActive)
-{
-    if (isActive) {
-        const DWORD frontThread = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
-        const DWORD thisThread  = GetCurrentThreadId();
-        AttachThreadInput(thisThread, frontThread, TRUE);
-        SetForegroundWindow(window.nativeHandle());
-        AttachThreadInput(thisThread, frontThread, FALSE);
-    } else if (GetShellWindow() == nullptr || SetForegroundWindow(GetShellWindow()) == 0) {
-        return false;
-    }
-    return waitUntil(window,
-                     [&window, isActive] { return (GetForegroundWindow() == window.nativeHandle()) == isActive; });
-}
-
-#elifdef __APPLE__
-
-// AppKit does it within its own loop, so it is waited out
-[[nodiscard]] inline bool setActive(const Ui::IWindow & window, bool isActive)
-{
-    if (isActive) {
-        [NSApp activateIgnoringOtherApps:YES];
-    } else {
-        [NSApp deactivate];
-    }
-    return waitUntil(window, [isActive] { return ([NSApp isActive] != NO) == isActive; });
-}
-
-#elifdef HAVE_X11
-
-// The input focus put on the root window, which no app owns, or back on this one
-[[nodiscard]] inline bool setActive(const Ui::IWindow & window, bool isActive)
-{
-    Display * display = window.nativeDisplay();
-    XSetInputFocus(display, isActive ? window.nativeHandle() : DefaultRootWindow(display), RevertToParent, CurrentTime);
-    return waitUntil(window, [&window, isActive] {
-        ::Window focus {};
-        int      revertTo {};
-        XGetInputFocus(window.nativeDisplay(), &focus, &revertTo);
-        return (focus == window.nativeHandle()) == isActive;
-    });
-}
-
-#endif
-
 // The window put at another DPI, as its OS puts it when the window moves to another monitor
 // or the desktop's scale setting changes. False where the OS has no way to
 #ifdef _WIN32
@@ -520,58 +472,129 @@ inline LPARAM asLParam(const RECT * rect)
 
 #elifdef HAVE_X11
 
-// Xft.dpi written into the root window's RESOURCE_MANAGER as xrdb writes it, every other
-// resource kept
+// PUREGLUI_SCALE as the first setDpi found it, held until restoreDpi puts it back
+inline std::string g_scaleBefore;
+inline bool        g_isDpiSet = false;
+
+// Never Xft.dpi itself, which is the desktop's, read by other apps and left wrong by a run
+// that stops here: PUREGLUI_SCALE makes up the difference, and only the server's word that
+// the resources were rewritten is sent, which is what the shell answers
 [[nodiscard]] inline bool setDpi(const Ui::IWindow & window, int dpi)
 {
-    Display *      display   = window.nativeDisplay();
-    const ::Window root      = DefaultRootWindow(display);
-    const Atom     resources = XInternAtom(display, "RESOURCE_MANAGER", Ui::Window::Platform::X11::False);
-    Atom           type {};
-    int            format {};
-    Ui::Window::Platform::X11::Cardinal count {};
-    Ui::Window::Platform::X11::Cardinal after {};
-    unsigned char *                     data = nullptr;
-    std::string                         kept;
-    if (XGetWindowProperty(display,
-                           root,
-                           resources,
-                           0,
-                           65536 / 4,
-                           Ui::Window::Platform::X11::False,
-                           XA_STRING,
-                           &type,
-                           &format,
-                           &count,
-                           &after,
-                           &data)
-        == 0
-        && data != nullptr) {
-        // Xlib ends the data with a NUL, so it reads as a C string
-        const std::string text = Common::fromCString(data);
-        XFree(data);
-        std::string_view rest = text;
-        while (!rest.empty()) {
-            const std::size_t      end  = std::min(rest.find('\n'), rest.size());
-            const std::string_view line = rest.substr(0, end);
-            if (!line.starts_with("Xft.dpi:")) {
-                kept += line;
-                kept += '\n';
-            }
-            rest.remove_prefix(std::min(end + 1, rest.size()));
-        }
+    const std::string variable(Ui::Window::SCALE_VARIABLE);
+    if (!g_isDpiSet) {
+        g_scaleBefore = Common::System::environmentVariable(variable);
+        g_isDpiSet    = true;
     }
-    kept += "Xft.dpi:\t" + std::to_string(dpi) + "\n";
-    XChangeProperty(display,
-                    root,
-                    resources,
-                    XA_STRING,
-                    8,
-                    PropModeReplace,
-                    Common::asBytes(kept.data()),
-                    static_cast<int>(kept.size()));
+    const Ui::fpx_t factor = Ui::Window::scaleFactorOf(g_scaleBefore) * static_cast<Ui::fpx_t>(dpi)
+                           / static_cast<Ui::fpx_t>(window.dpi());
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    setenv(variable.c_str(), std::to_string(factor).c_str(), 1);
+
+    Display * display = window.nativeDisplay();
+    XEvent    event {};
+    event.xproperty.type   = PropertyNotify;
+    event.xproperty.window = DefaultRootWindow(display);
+    event.xproperty.atom   = XInternAtom(display, "RESOURCE_MANAGER", Ui::Window::Platform::X11::False);
+    event.xproperty.state  = PropertyNewValue;
+    XSendEvent(display, DefaultRootWindow(display), Ui::Window::Platform::X11::False, PropertyChangeMask, &event);
     XSync(display, Ui::Window::Platform::X11::False);
     return true;
+}
+
+inline void restoreDpi(const Ui::IWindow & /*window*/, int /*dpi*/)
+{
+    if (!g_isDpiSet) {
+        return;
+    }
+    g_isDpiSet = false;
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    setenv(std::string(Ui::Window::SCALE_VARIABLE).c_str(), g_scaleBefore.c_str(), 1);
+}
+
+#endif
+
+#if defined(_WIN32) || defined(__APPLE__)
+
+// The window back at the DPI it stood at, after setDpi
+inline void restoreDpi(const Ui::IWindow & window, int dpi) { (void)setDpi(window, dpi); }
+
+#endif
+
+// The window placed by its own moveResize, as a session's restore places it, the OS giving it
+// another DPI as it gets there. False where the OS has no other to give
+#ifdef _WIN32
+
+// A hook's message, through its LPARAM as Windows passes it: an integer-to-pointer conversion
+// static_cast cannot express, the sanctioned exception
+inline const CWPSTRUCT * asHookedMessage(LPARAM lParam)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<const CWPSTRUCT *>(lParam);
+}
+
+// The window to give another DPI as it next moves, and that DPI: a hook takes no argument
+inline const Ui::IWindow * g_movingWindow = nullptr;
+inline int                 g_dpiAhead     = 0;
+
+// WM_DPICHANGED from inside the SetWindowPos that moves the window, where Windows sends it for
+// a move onto a monitor of another DPI, which one monitor cannot make. Once: the move its
+// handler makes is not another
+inline LRESULT CALLBACK sendDpiOnMove(int code, WPARAM wParam, LPARAM lParam)
+{
+    const CWPSTRUCT * message = asHookedMessage(lParam);
+    if (code == HC_ACTION && g_movingWindow != nullptr && message->message == WM_WINDOWPOSCHANGED
+        && message->hwnd == g_movingWindow->nativeHandle()) {
+        const Ui::IWindow & window = *g_movingWindow;
+        g_movingWindow             = nullptr;
+        (void)setDpi(window, g_dpiAhead);
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
+
+[[nodiscard]] inline bool placeAtAnotherDpi(const Ui::Res::Type::bound_t & asked, Ui::IWindow & window, int dpi)
+{
+    g_movingWindow   = &window;
+    g_dpiAhead       = dpi;
+    const HHOOK hook = SetWindowsHookExW(WH_CALLWNDPROC, sendDpiOnMove, nullptr, GetCurrentThreadId());
+    if (hook == nullptr) {
+        return false;
+    }
+    window.moveResize(asked);
+    UnhookWindowsHookEx(hook);
+    return true;
+}
+
+#elifdef __APPLE__
+
+// Onto a screen of another backing scale, the one way AppKit gives a window another DPI, at
+// that screen's top-left: moveResize takes top-down px at the window's own scale. False with
+// no such screen, and the DPI is the screen's
+[[nodiscard]] inline bool placeAtAnotherDpi(const Ui::Res::Type::bound_t & asked, Ui::IWindow & window, int /*dpi*/)
+{
+    const CGFloat ownScale      = [[window.nativeHandle() window] backingScaleFactor];
+    const CGFloat primaryHeight = [[NSScreen screens] firstObject].frame.size.height;
+    for (NSScreen * screen in [NSScreen screens]) {
+        if ([screen backingScaleFactor] != ownScale) {
+            const NSRect room = [screen visibleFrame];
+            window.moveResize({ .x = static_cast<Ui::fpx_t>(NSMinX(room) * ownScale),
+                                .y = static_cast<Ui::fpx_t>((primaryHeight - NSMaxY(room)) * ownScale),
+                                .w = asked.w,
+                                .h = asked.h });
+            settle(window);
+            return true;
+        }
+    }
+    return false;
+}
+
+#elifdef HAVE_X11
+
+// An X11 window's DPI is the desktop's and no move changes it: the setting changed as it lands
+[[nodiscard]] inline bool placeAtAnotherDpi(const Ui::Res::Type::bound_t & asked, Ui::IWindow & window, int dpi)
+{
+    window.moveResize(asked);
+    return setDpi(window, dpi);
 }
 
 #endif

@@ -365,6 +365,9 @@ public:
         // content surfaces pick up the new pixel math before anything reopens.
         if (m_windowManager.refreshDisplayMetrics()) {
             m_windowManager.onMainWindowResize(m_windowManager.windowWidth(), m_windowManager.windowHeight());
+            // The layout's fonts rebuilt at the new scale, or a list reopened below is measured
+            // with the old ones
+            m_windowManager.renderAll();
         }
 
         // Reopen what was open
@@ -629,8 +632,9 @@ public:
         });
 
         // FocusLost: an open list closes, as every OS's own menu does when another app takes
-        // the focus; a dialog stays for the user's return
+        // the focus, and a switch waiting to make one stops; a dialog stays for the user's return
         sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::FocusLost), Ui::APP_ID, [this]() {
+            m_menuSwitchPending = false;
             if (m_windowManager.hasPopup()) {
                 destroyPopup();
             }
@@ -1080,7 +1084,7 @@ private:
     // Bool flags (grouped for minimal padding).
     bool m_pendingResize     = false;
     bool m_isRescalePending  = false; // a reload for a new DPI waits for its batch to end
-    bool m_menuSwitchPending = false; // Re-entry guard for deferred menu switch
+    bool m_menuSwitchPending = false; // Re-entry guard for deferred menu switch; FocusLost clears it to stop one
     bool m_menuJustActivated = false; // True briefly after creating a popup until it renders once
 
     static constexpr std::chrono::seconds TEMP_STATUS_DURATION { 1 };
@@ -1320,6 +1324,11 @@ private:
         destroyPopup(true); // Destroy old popup, triggers requestContentRefresh
         m_menuSwitchPending = true;
         m_windowManager.subscribe().defer([this, menuId]() {
+            // Stopped while it waited: the app lost the focus
+            if (!m_menuSwitchPending) {
+                traceMenuHover("switch stopped", menuId);
+                return;
+            }
             if constexpr (SHELL_DEBUG) {
                 std::cout << "[Shell] Committing deferred menu switch to: " << menuId << std::endl;
             }

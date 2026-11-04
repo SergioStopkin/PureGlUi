@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "ui/const.h"
 #include "ui/interface/ieventos.h"
 #include "ui/interface/iwindow.h"
 #include "ui/window/event.h"
@@ -41,16 +42,6 @@ namespace Ui::Window::Platform {
 // Flip to true to trace every scroll event: what the device sent, the phase of the
 // gesture it belongs to (fingers on or the momentum after them) and the notches it became
 constexpr bool SCROLL_DEBUG = false;
-
-#ifdef __APPLE__
-// Retina multiplier. NSWindow frames and NSEvent locations are in POINTS; the rest of the codebase
-// works in physical pixels. Multiply point-values by this to convert to pixels.
-inline CGFloat macBackingScaleFactor()
-{
-    NSScreen * screen = [NSScreen mainScreen];
-    return screen ? [screen backingScaleFactor] : 1.0;
-}
-#endif
 
 /**
  * @brief macOS event handling implementation
@@ -216,11 +207,20 @@ private:
      */
     static void setMouseXY(Event & event, NSEvent * nsEvent)
     {
+        // A move off every window of ours comes with none: it stands nowhere in them, and
+        // read as a position it would be their corner, where the first title stands
+        NSWindow * nsWindow = [nsEvent window];
+        if (nsWindow == nil) {
+            event.mouse.x = Ui::NO_POINTER;
+            event.mouse.y = Ui::NO_POINTER;
+            return;
+        }
+
         // locationInWindow: points, bottom-left origin.
         // Target:           pixels, top-left origin (matches X11/Wayland/Win32).
         const NSPoint loc   = [nsEvent locationInWindow];
-        const CGFloat bsf   = macBackingScaleFactor();
-        const NSSize  winSz = [[[nsEvent window] contentView] bounds].size; // points
+        const CGFloat bsf   = [nsWindow backingScaleFactor];
+        const NSSize  winSz = [[nsWindow contentView] bounds].size; // points
         event.mouse.x       = static_cast<int>(loc.x * bsf);
         event.mouse.y       = static_cast<int>((winSz.height - loc.y) * bsf);
     }

@@ -21,6 +21,7 @@
 // pointer input at one of them in the OS's queue, the passes that read it, and every event
 // they read, for a failure to say
 
+#include "testconst.h"
 #include "testidkind.h"
 #include "ui/config.h"
 #include "ui/idkind.h"
@@ -39,10 +40,6 @@
 
 namespace PureGlUi {
 
-// Passes the loop runs: the ones a test scripts, then several with nothing new, for
-// anything the shell still owes the pointer
-constexpr int PASSES = 8;
-
 // Every top menu a click opens a list for, in the bar's order
 [[nodiscard]] inline std::vector<Ui::id_t> listMenuIdsOf(const Ui::Shell & shell)
 {
@@ -56,7 +53,7 @@ constexpr int PASSES = 8;
 }
 
 // The shell's own loop for PASSES passes, script called at the start of each with its number
-inline void runPasses(Ui::Shell & shell, const std::function<void(int)> & script)
+inline void runPasses(const std::function<void(int)> & script, Ui::Shell & shell)
 {
     int pass = 0;
     shell.setFrameTasks([&shell, &pass, &script] {
@@ -80,7 +77,7 @@ void postAt(Ui::Shell & shell, Ui::id_t menuId, post_t post)
 }
 
 // Every event the loop reads from here on, appended to trace in order: a resize's size, a
-// pointer's px and whether a list's, so a failure says what the loop got and where
+// key's shortcut, a pointer's px and whether a list's, so a failure says what the loop got and where
 inline void traceEvents(Ui::Shell & shell, std::string & trace)
 {
     trace                                     = "the loop read:";
@@ -95,6 +92,8 @@ inline void traceEvents(Ui::Shell & shell, std::string & trace)
                                           if (event.type == Ui::Window::EventType::Resize) {
                                               trace += " " + std::to_string(Ui::roundToInt(event.resize.width)) + "x"
                                                      + std::to_string(Ui::roundToInt(event.resize.height));
+                                          } else if (event.type == Ui::Window::EventType::KeyPress) {
+                                              trace += " " + event.toShortcutString();
                                           } else if (event.type != Ui::Window::EventType::CloseRequested
                                                      && event.type != Ui::Window::EventType::ScaleChange
                                                      && event.type != Ui::Window::EventType::FocusLost) {
@@ -109,6 +108,7 @@ inline void traceEvents(Ui::Shell & shell, std::string & trace)
     traceAs(Ui::Window::EventType::Resize, "resize");
     traceAs(Ui::Window::EventType::ScaleChange, "scale");
     traceAs(Ui::Window::EventType::FocusLost, "focuslost");
+    traceAs(Ui::Window::EventType::KeyPress, "key");
     traceAs(Ui::Window::EventType::MouseMove, "move");
     traceAs(Ui::Window::EventType::MouseButtonPress, "press");
     traceAs(Ui::Window::EventType::MouseButtonRelease, "release");

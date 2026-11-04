@@ -98,7 +98,7 @@ purpose rather than spine position because the first two run on both paths:
   in its render step or in an event's own (a resize draws at once): the same
   handler and shutdown as Ctrl+C, with no clock to guess. CI's ASan step (both repos) runs the app this way, under `xvfb-run`, so the
   run ends the same however slow the machine.
-  With `PUREGLUI_SCALE` set to a number, the DPI the OS gives is multiplied by it, as
+  With `PUREGLUI_SCALE` set to a number from 0.25 to 8, the DPI the OS gives is multiplied by it, as
   Qt's `QT_SCALE_FACTOR` does - for a desktop that sizes the UI wrong, and for CI, whose
   component tests run at 1.25x on Linux and Windows. A change of the OS's DPI still
   comes through it (`ScaleChange`, laid out again by `reloadChrome()`).
@@ -206,7 +206,8 @@ a defect, not a style:
 - A press on the open list's title closes it; the release that follows does nothing.
 - With a list open, the list follows the pointer across the titles, however fast it
   moves (the hold-off below).
-- An open list closes when another app takes the focus (`FocusLost`).
+- An open list closes when another app takes the focus (`FocusLost`), and one the
+  pointer was switching to never opens.
 - Not yet: releasing over an item after dragging down from the title, which picks the
   item everywhere else. The OS hands that release to the window the press began in -
   the main window - so the list never sees it.

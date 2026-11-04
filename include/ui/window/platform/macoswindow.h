@@ -94,7 +94,7 @@ public:
     // frame (points) inside `parentContentView`.
     static NSRect flippedChildFrame(NSView* parentContentView, const Ui::Res::Type::bound_t& bound)
     {
-        const CGFloat bsf = backingScaleFactor();
+        const CGFloat bsf = [[parentContentView window] backingScaleFactor];
         const CGFloat parentH = parentContentView.bounds.size.height;
         const CGFloat wPts = bound.w / bsf;
         const CGFloat hPts = bound.h / bsf;
@@ -174,7 +174,7 @@ public:
             // (matching X11 semantics); divide by backingScaleFactor to get points.
             const CGFloat bsf = backingScaleFactor();
             NSRect frame = NSMakeRect(0, 0, width / bsf, height / bsf);
-            NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable;
+            NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
             m_nsWindow = [[NSWindow alloc] initWithContentRect:frame
                                                      styleMask:style
                                                        backing:NSBackingStoreBuffered
@@ -189,6 +189,7 @@ public:
             [m_nsWindow setReleasedWhenClosed:NO];
             [m_nsWindow setTitle:[NSString stringWithUTF8String:title.c_str()]];
             [m_nsWindow center];
+            [s_quitItem setTarget:m_nsWindow];
 
             auto [pixelFormat, accelerated] = pickPixelFormat();
             if (!pixelFormat) {
@@ -223,7 +224,7 @@ public:
 
             // AppKit fits a window to its screen as it shows it: the size asked for is gone
             const NSSize shown = [m_glView bounds].size;
-            const CGFloat scale = [m_nsWindow backingScaleFactor];
+            const CGFloat scale = backingScaleFactor();
             m_bound.w = static_cast<fpx_t>(shown.width * scale);
             m_bound.h = static_cast<fpx_t>(shown.height * scale);
 
@@ -270,10 +271,16 @@ public:
         }
     }
 
-    // Retina multiplier. 1.0 on non-Retina displays, 2.0 on Retina Macs.
+    // Retina multiplier. 1.0 on non-Retina displays, 2.0 on Retina Macs: the window's own,
+    // the main screen's only before it has one. Never the main screen's once it does: that is
+    // the key window's, and every px of a window on another screen would read at its scale.
     // On macOS this IS the app scale factor - DPI is a separate concept.
-    static CGFloat backingScaleFactor()
+    [[nodiscard]] CGFloat backingScaleFactor() const
     {
+        NSWindow* window = m_nsWindow ? m_nsWindow : [m_glView window];
+        if (window) {
+            return [window backingScaleFactor];
+        }
         NSScreen* screen = [NSScreen mainScreen];
         return screen ? [screen backingScaleFactor] : 1.0;
     }
@@ -337,7 +344,8 @@ public:
         m_bound.h = height;
 
         @autoreleasepool {
-            const CGFloat bsf = backingScaleFactor();
+            // The parent's, which screenX/screenY were worked out at: this window has none yet
+            const CGFloat bsf = [parent backingScaleFactor];
             // Convert screen-top-left physical pixels -> screen-bottom-left points (NSScreen coord system).
             const CGFloat screenHeightPts = primaryScreenHeightPts();
             const CGFloat xPts = screenX / bsf;
@@ -398,8 +406,7 @@ public:
     // changes with a notification MacOsEvent watches; the main screen's before it has one
     [[nodiscard]] int dpi() const override
     {
-        NSWindow* window = m_nsWindow ? m_nsWindow : [m_glView window];
-        return roundToInt(96.0 * (window ? [window backingScaleFactor] : backingScaleFactor()));
+        return roundToInt(96.0 * backingScaleFactor());
     }
 
     // Every screen, in physical px; the first is the one with the menu bar, macOS's
@@ -771,10 +778,10 @@ private:
 
     // The menu bar every Mac app has, which fullscreen reveals at the screen's top edge
     // together with the title bar and its buttons: the app menu, its Quit closing the main
-    // window as the close button does - so the shell's own close path runs and saves the
-    // session, where terminate: would exit at once - and the Window menu, with Toggle Full
-    // Screen on Ctrl+Cmd+F. Quit goes to the key window, always the main one: our popups
-    // and dialogs are borderless, which AppKit never makes key
+    // window - so the shell's own close path runs and saves the session, where terminate:
+    // would exit at once - and the Window menu, with Toggle Full Screen on Ctrl+Cmd+F. Quit
+    // has the main window as its target and calls close: performClose: sent AppKit's way
+    // closes no minimized window
     static void installMainMenu(NSString* name)
     {
         NSMenu* appMenu = [[NSMenu alloc] init];
@@ -785,9 +792,9 @@ private:
         [hideOthers setKeyEquivalentModifierMask:NSEventModifierFlagOption | NSEventModifierFlagCommand];
         [appMenu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
         [appMenu addItem:[NSMenuItem separatorItem]];
-        [appMenu addItemWithTitle:[@"Quit " stringByAppendingString:name]
-                           action:@selector(performClose:)
-                    keyEquivalent:@"q"];
+        s_quitItem = [appMenu addItemWithTitle:[@"Quit " stringByAppendingString:name]
+                                        action:@selector(close)
+                                 keyEquivalent:@"q"];
 
         NSMenu* windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
         [windowMenu addItemWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
@@ -821,6 +828,7 @@ private:
         return [NSCursor arrowCursor];
     }
 
+    inline static NSMenuItem* s_quitItem = nil; // made once per process, each main window its target
     NSWindow* m_nsWindow = nullptr;
     NSOpenGLView* m_glView = nullptr;
     // Diagnostic: logs makeCurrent only when the resolved context changes, to detect

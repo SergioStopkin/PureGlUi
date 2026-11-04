@@ -65,6 +65,8 @@ public:
 
         setPosition(pos.x, pos.y);
         setBackground(resManager.theme().dialog.bg);
+        // A click on it, coming back from another app, has to give it the keys
+        setFocusable(true);
 
         const Ui::Res::Type::border_t dialogRadii = dlg.border.scaled(g_config.scale);
         if (dialogRadii.anyNonZero()) {

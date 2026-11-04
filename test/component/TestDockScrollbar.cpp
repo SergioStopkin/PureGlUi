@@ -26,6 +26,7 @@
  * "scrollbar" block; dock state is seeded per test so nothing leaks between them.
  */
 
+#include "testconst.h"
 #include "testidkind.h"
 #include "ui/idkind.h"
 #include "ui/render/dockcolumn.h"
@@ -55,10 +56,10 @@ using Ui::Res::Dock::row_t;
 
 namespace {
 
-constexpr fpx_t DOCK_TOP    = 100.0F;
-constexpr fpx_t DOCK_HEIGHT = 200.0F;
-constexpr fpx_t DOCK_EDGE   = 300.0F; // viewport-facing edge of a left dock
-constexpr fpx_t DOCK_WIDTH  = 180.0F;
+using PureGlUi::DOCK_EDGE;
+using PureGlUi::DOCK_TOP;
+using PureGlUi::DOCK_WIDTH;
+using PureGlUi::SCROLLBAR_DOCK_HEIGHT;
 
 class DockScrollbarTest : public ::testing::Test {
 protected:
@@ -95,7 +96,7 @@ protected:
     static std::size_t overflowingRowCount()
     {
         const fpx_t rowH = s_resManager->popup().itemHeight;
-        return static_cast<std::size_t>(DOCK_HEIGHT / rowH) + 10;
+        return static_cast<std::size_t>(SCROLLBAR_DOCK_HEIGHT / rowH) + 10;
     }
 
     static std::size_t countOf(const UiLayout & layout, UiElementType type)
@@ -124,7 +125,7 @@ TEST_F(DockScrollbarTest, FewRowsNeedNoScrollbar)
 {
     UiLayout   layout;
     DockColumn dock(1, seed("sb-few", DOCK_WIDTH), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SCROLLBAR_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(makeRows(1));
 
     dock.appendElements(layout);
@@ -135,7 +136,7 @@ TEST_F(DockScrollbarTest, OverflowingRowsContributeExactlyOneScrollbarElement)
 {
     UiLayout   layout;
     DockColumn dock(1, seed("sb-many", DOCK_WIDTH), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SCROLLBAR_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(makeRows(overflowingRowCount()));
 
     dock.appendElements(layout);
@@ -148,7 +149,7 @@ TEST_F(DockScrollbarTest, CollapsedDockHasNoScrollbarHoweverManyRows)
 {
     UiLayout   layout;
     DockColumn dock(1, seed("sb-collapsed", 0.0F), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SCROLLBAR_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(makeRows(overflowingRowCount()));
 
     dock.appendElements(layout);
@@ -161,7 +162,7 @@ TEST_F(DockScrollbarTest, ScrollbarSitsInsideTheDockAndSpansItsContent)
 {
     UiLayout   layout;
     DockColumn dock(1, seed("sb-bounds", DOCK_WIDTH), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SCROLLBAR_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(makeRows(overflowingRowCount()));
 
     dock.appendElements(layout);
@@ -172,7 +173,7 @@ TEST_F(DockScrollbarTest, ScrollbarSitsInsideTheDockAndSpansItsContent)
         EXPECT_GE(element.bound.x, dock.outer().x);
         EXPECT_LE(element.bound.x + element.bound.w, dock.outer().x + dock.outer().w);
         EXPECT_FLOAT_EQ(element.bound.y, DOCK_TOP);
-        EXPECT_FLOAT_EQ(element.bound.h, DOCK_HEIGHT);
+        EXPECT_FLOAT_EQ(element.bound.h, SCROLLBAR_DOCK_HEIGHT);
     }
 }
 
@@ -183,11 +184,11 @@ TEST_F(DockScrollbarTest, ScrollbarSitsInsideTheDockAndSpansItsContent)
 TEST_F(DockScrollbarTest, PressOnTheTrackBelowTheThumbPagesDown)
 {
     DockColumn dock(1, seed("sb-page", DOCK_WIDTH), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SCROLLBAR_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(makeRows(overflowingRowCount()));
     ASSERT_EQ(dock.firstRow(), 0U);
 
-    dock.beginScrollGesture(DOCK_TOP + DOCK_HEIGHT - 1.0F);
+    dock.beginScrollGesture(DOCK_TOP + SCROLLBAR_DOCK_HEIGHT - 1.0F);
     EXPECT_FALSE(dock.isDraggingScroll());
     EXPECT_GT(dock.firstRow(), 0U);
 }
@@ -195,7 +196,7 @@ TEST_F(DockScrollbarTest, PressOnTheTrackBelowTheThumbPagesDown)
 TEST_F(DockScrollbarTest, PressOnTheThumbGrabsInsteadOfPaging)
 {
     DockColumn dock(1, seed("sb-grab", DOCK_WIDTH), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SCROLLBAR_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(makeRows(overflowingRowCount()));
 
     dock.beginScrollGesture(DOCK_TOP + 1.0F); // the thumb is at the top at row 0
@@ -209,21 +210,21 @@ TEST_F(DockScrollbarTest, PressOnTheThumbGrabsInsteadOfPaging)
 TEST_F(DockScrollbarTest, DraggingTheThumbMovesTheRowWindowAndStopsAtTheEnd)
 {
     DockColumn dock(1, seed("sb-drag", DOCK_WIDTH), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SCROLLBAR_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(makeRows(overflowingRowCount()));
 
     dock.beginScrollGesture(DOCK_TOP + 1.0F);
     ASSERT_TRUE(dock.isDraggingScroll());
 
-    EXPECT_TRUE(dock.onScrollDrag(DOCK_TOP + (DOCK_HEIGHT / 2.0F)));
+    EXPECT_TRUE(dock.onScrollDrag(DOCK_TOP + (SCROLLBAR_DOCK_HEIGHT / 2.0F)));
     const std::size_t middle = dock.firstRow();
     EXPECT_GT(middle, 0U);
 
     // Past the bottom: clamped, and a second identical drag reports no change
-    dock.onScrollDrag(DOCK_TOP + DOCK_HEIGHT + 1000.0F);
+    dock.onScrollDrag(DOCK_TOP + SCROLLBAR_DOCK_HEIGHT + 1000.0F);
     const std::size_t last = dock.firstRow();
     EXPECT_GT(last, middle);
-    EXPECT_FALSE(dock.onScrollDrag(DOCK_TOP + DOCK_HEIGHT + 2000.0F));
+    EXPECT_FALSE(dock.onScrollDrag(DOCK_TOP + SCROLLBAR_DOCK_HEIGHT + 2000.0F));
 }
 
 // Negative: a dock with nothing to scroll must ignore the gesture rather than
@@ -231,10 +232,10 @@ TEST_F(DockScrollbarTest, DraggingTheThumbMovesTheRowWindowAndStopsAtTheEnd)
 TEST_F(DockScrollbarTest, GestureOnANonScrollableDockIsInert)
 {
     DockColumn dock(1, seed("sb-inert", DOCK_WIDTH), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SCROLLBAR_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(makeRows(1));
 
-    dock.beginScrollGesture(DOCK_TOP + DOCK_HEIGHT - 1.0F);
+    dock.beginScrollGesture(DOCK_TOP + SCROLLBAR_DOCK_HEIGHT - 1.0F);
     EXPECT_FALSE(dock.isDraggingScroll());
     EXPECT_EQ(dock.firstRow(), 0U);
 }
@@ -246,12 +247,12 @@ TEST_F(DockScrollbarTest, GestureOnANonScrollableDockIsInert)
 TEST_F(DockScrollbarTest, HoverOverTheBarReportsAChangeOnceAndClearsOnLeave)
 {
     DockColumn dock(1, seed("sb-hover", DOCK_WIDTH), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SCROLLBAR_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(makeRows(overflowingRowCount()));
 
     // The bar sits at the content's right edge, just left of the grip
     const fpx_t barX = dock.content().x + dock.content().w - 2.0F;
-    const fpx_t barY = DOCK_TOP + (DOCK_HEIGHT / 2.0F);
+    const fpx_t barY = DOCK_TOP + (SCROLLBAR_DOCK_HEIGHT / 2.0F);
 
     EXPECT_TRUE(dock.onMouseMove(barX, barY));
     EXPECT_FALSE(dock.onMouseMove(barX, barY));

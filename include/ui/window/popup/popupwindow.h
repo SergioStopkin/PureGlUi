@@ -93,6 +93,9 @@ public:
     // keeps its hover - a tooltip, answering no input, must not take it
     void setInputTransparent(bool isInputTransparent) { m_isInputTransparent = isInputTransparent; }
 
+    // Before create: lets a window manager give it the focus, for a window that takes keys
+    void setFocusable(bool isFocusable) { m_isFocusable = isFocusable; }
+
     // Whether moveResize can move the popup once made, its bound parent-relative as
     // at create - what a tooltip following the pointer needs rather than a new window
     // each time: an X11 child of the main window (followsParent), or any X11 popup
@@ -587,6 +590,15 @@ private:
         // Set transient hint for proper window management
         XSetTransientForHint(m_display, m_xWindow, m_parent->nativeHandle());
 
+        // Never given the focus unless focusable: the keys stay with the main window, and a
+        // window manager focusing a list as it maps would read there as another app taking it
+        if (!m_isFocusable) {
+            XWMHints hints {};
+            hints.flags = InputHint;
+            hints.input = Ui::Window::Platform::X11::False;
+            XSetWMHints(m_display, m_xWindow, &hints);
+        }
+
         // Create EGL surface and context
         if (!m_context->createSurface(m_xWindow)) {
             XDestroyWindow(m_display, m_xWindow);
@@ -989,6 +1001,7 @@ private:
     bool m_isWayland          = false;
     bool m_followsParent      = false; // parented to the main window (X11 child) -> auto-tracks parent move/resize
     bool m_isInputTransparent = false; // setInputTransparent
+    bool m_isFocusable        = false; // setFocusable
 
 #if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
     // What the discovery that cached EglContext's config found of a compositor, for every

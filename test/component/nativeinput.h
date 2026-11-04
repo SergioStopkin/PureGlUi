@@ -32,6 +32,7 @@
 #define __ICONS__
 #import <Cocoa/Cocoa.h>
 // NOLINTEND(clang-diagnostic-import-preprocessor-directive-pedantic)
+#include "testconst.h"
 #elifdef HAVE_X11
 #include "ui/window/platform/x11include.h"
 #endif
@@ -94,9 +95,56 @@ inline void postPointerRelease(const Ui::IWindow & window, int x, int y)
     postMouseEvent(window, NSEventTypeLeftMouseUp, x, y);
 }
 
+// A move off every window of the app, as AppKit can send one: no window, and its location on
+// the screen rather than in one
+inline void postPointerMoveOffWindows()
+{
+    NSEvent * event = [NSEvent mouseEventWithType:NSEventTypeMouseMoved
+                                         location:NSMakePoint(1.0, 1.0)
+                                    modifierFlags:0
+                                        timestamp:0
+                                     windowNumber:0
+                                          context:nil
+                                      eventNumber:0
+                                       clickCount:0
+                                         pressure:0.0F];
+    [NSApp postEvent:event atStart:NO];
+}
+
 // As a click on its close button: AppKit closes the window at once, its will-close
 // notification sent before this returns
 inline void postCloseRequest(const Ui::IWindow & window) { [[window.nativeHandle() window] performClose:nil]; }
+
+// A click on the app menu's Quit, found by its key as a user knows it. False where AppKit has
+// it greyed, which a click does nothing on
+[[nodiscard]] inline bool clickQuit()
+{
+    NSMenu * appMenu = [[[NSApp mainMenu] itemAtIndex:0] submenu];
+    [appMenu update];
+    for (NSMenuItem * item in [appMenu itemArray]) {
+        if ([[item keyEquivalent] isEqualToString:@"q"] && [item isEnabled]) {
+            [appMenu performActionForItemAtIndex:[appMenu indexOfItem:item]];
+            return true;
+        }
+    }
+    return false;
+}
+
+// Q pressed as the OS reports it: to the key window, or to no window with none key
+inline void postQ(NSEventModifierFlags modifiers)
+{
+    NSEvent * event = [NSEvent keyEventWithType:NSEventTypeKeyDown
+                                       location:NSZeroPoint
+                                  modifierFlags:modifiers
+                                      timestamp:0
+                                   windowNumber:[[NSApp keyWindow] windowNumber]
+                                        context:nil
+                                     characters:@"q"
+                    charactersIgnoringModifiers:@"q"
+                                      isARepeat:NO
+                                        keyCode:MAC_KEY_Q];
+    [NSApp postEvent:event atStart:NO];
+}
 
 #elifdef HAVE_X11
 

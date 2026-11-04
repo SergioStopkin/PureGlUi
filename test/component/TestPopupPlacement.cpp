@@ -33,6 +33,7 @@
 
 #include "menubarloop.h"
 #include "nativegeometry.h"
+#include "testconst.h"
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/interface/iwindow.h"
@@ -53,8 +54,7 @@
 
 namespace {
 
-// Flip to true to trace where the OS has a popup at each step of putting it on screen
-constexpr bool PLACEMENT_DEBUG = false;
+using PureGlUi::PLACEMENT_DEBUG;
 
 // The first pixel an edge at css px reaches: GL fills a pixel whose centre is inside
 Ui::fpx_t firstPixelFrom(Ui::fpx_t css) { return std::ceil(Ui::toPhys(css) - 0.5F); }

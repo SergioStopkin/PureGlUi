@@ -107,15 +107,6 @@ public:
         return m_renderer->render();
     }
 
-    void refresh() override
-    {
-        if (!m_renderer.has_value()) {
-            return;
-        }
-        m_window.makeCurrent();
-        m_renderer->refresh();
-    }
-
     void resize(Ui::fpx_t width, Ui::fpx_t height) override
     {
         if (!m_renderer.has_value()) {

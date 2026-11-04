@@ -17,10 +17,10 @@
 
 #pragma once
 
-#include "ui/convert.h"
 #include "ui/type.h"
 
-#include <cmath>
+#include <cstddef>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -29,12 +29,23 @@ namespace Ui::Window {
 // The environment variable scaleFactorOf reads
 inline constexpr std::string_view SCALE_VARIABLE = "PUREGLUI_SCALE";
 
-// The factor PUREGLUI_SCALE puts on the OS's DPI, as Qt's QT_SCALE_FACTOR does: a finite
-// positive number, else 1, so an unset or mistyped value leaves the OS's scale as it is
+// The factors it may hold: far below them a DPI rounds to 0, which every toCss divides by,
+// and far above them it overflows its cast
+inline constexpr fpx_t LEAST_SCALE_FACTOR = 0.25F;
+inline constexpr fpx_t MOST_SCALE_FACTOR  = 8.0F;
+
+// The factor PUREGLUI_SCALE puts on the OS's DPI, as Qt's QT_SCALE_FACTOR does: the whole text
+// a number in that range, else 1, so an unset or mistyped value leaves the OS's scale as it
+// is. NaN compares false, so it is no factor either
 [[nodiscard]] inline fpx_t scaleFactorOf(const std::string & text)
 {
-    const fpx_t factor = Ui::Convert::parseCssNumber(text);
-    return (std::isfinite(factor) && factor > 0.0F) ? factor : 1.0F;
+    try {
+        std::size_t read   = 0;
+        const fpx_t factor = std::stof(text, &read);
+        return (read == text.size() && factor >= LEAST_SCALE_FACTOR && factor <= MOST_SCALE_FACTOR) ? factor : 1.0F;
+    } catch (const std::logic_error &) {
+        return 1.0F;
+    }
 }
 
 } // namespace Ui::Window

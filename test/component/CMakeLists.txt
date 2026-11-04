@@ -20,12 +20,14 @@ add_executable(
     TestSecondMainWindow.cpp
     TestMenuBar.cpp
     TestMenuBarWindowChange.cpp
+    TestListFocus.cpp
     TestScaleChange.cpp
+    TestOutputScale.cpp
 )
 
-# macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Eight do: TestGlSmoke
+# macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Nine do: TestGlSmoke
 # creates a real window via NativeWindow -> macoswindow.h, TestInitHooks, TestSecondMainWindow, TestMenuBar,
-# TestMenuBarWindowChange and TestScaleChange include ui/shell.h, which pulls Cocoa transitively through
+# TestMenuBarWindowChange, TestListFocus and TestScaleChange include ui/shell.h, which pulls Cocoa transitively through
 # action/openfile.h -> io/filedialog.h, TestWindowGeometry includes ui/window/windowmanager.h, which pulls it through
 # eventfactory.h -> macosevent.h, and TestPopupPlacement asks AppKit itself where a window stands (nativegeometry.h). So
 # on macOS, including shell.h or windowmanager.h at all forces Obj-C++ on the includer - windowless says nothing about
@@ -41,6 +43,7 @@ if(APPLE)
         TestSecondMainWindow.cpp
         TestMenuBar.cpp
         TestMenuBarWindowChange.cpp
+        TestListFocus.cpp
         TestScaleChange.cpp
         PROPERTIES LANGUAGE OBJCXX
     )

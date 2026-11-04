@@ -29,6 +29,7 @@
  * half - a rounded number must never lose digits.
  */
 
+#include "testconst.h"
 #include "testidkind.h"
 #include "ui/idkind.h"
 #include "ui/intent.h"
@@ -51,7 +52,6 @@
 #include "ui/result.h"
 
 #include <algorithm>
-#include <array>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
@@ -88,8 +88,6 @@ namespace {
     // arithmetic a reader can redo
     class RecordingText final : public Ui::IRender {
     public:
-        static constexpr Ui::fpx_t GLYPH = 8.0F;
-
         std::vector<text_call_t>  texts;
         std::vector<image_call_t> images;
 
@@ -140,7 +138,7 @@ namespace {
 
         [[nodiscard]] Ui::fpx_t textWidth(Ui::font_handle_t /*font*/, std::wstring_view text) override
         {
-            return static_cast<Ui::fpx_t>(text.size()) * GLYPH;
+            return static_cast<Ui::fpx_t>(text.size()) * GLYPH_WIDTH;
         }
 
         [[nodiscard]] Ui::font_handle_t createFont(const Ui::Res::Type::font_t & /*font*/) override
@@ -152,13 +150,6 @@ namespace {
         Ui::font_handle_t m_nextFont = 0;
     };
 
-    constexpr Ui::fpx_t VIEW_W     = 1200.0F;
-    constexpr Ui::fpx_t VIEW_H     = 800.0F;
-    constexpr Ui::fpx_t DOCK_TOP   = 100.0F;
-    constexpr Ui::fpx_t DOCK_H     = 300.0F;
-    constexpr Ui::fpx_t DOCK_EDGE  = 400.0F;
-    constexpr Ui::fpx_t DOCK_WIDTH = 200.0F;
-
 } // namespace
 
 class DockRowLayoutTest : public ::testing::Test {
@@ -167,7 +158,7 @@ protected:
 
     void SetUp() override { resManager.loadAll(); }
 
-    Ui::Res::Dock::dock_config_t seed(const std::string & name, Ui::fpx_t width = DOCK_WIDTH)
+    Ui::Res::Dock::dock_config_t seed(const std::string & name, Ui::fpx_t width = ROW_DOCK_WIDTH)
     {
         resManager.setDockState(name, Ui::Res::Dock::dock_state_t { width, width });
         return Ui::Res::Dock::dock_config_t { name, Ui::Res::Dock::DockAnchor::Left, 1, width };
@@ -239,7 +230,7 @@ protected:
 TEST_F(DockRowLayoutTest, KeyStaysInItsHalfAndValueIsRightAligned)
 {
     Ui::Render::DockColumn dock(1, seed("row-split"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t row;
     row.label = "Area";
@@ -263,7 +254,7 @@ TEST_F(DockRowLayoutTest, KeyStaysInItsHalfAndValueIsRightAligned)
 TEST_F(DockRowLayoutTest, DeeperRowsSpendTheirOwnHalfOnTheIndent)
 {
     Ui::Render::DockColumn dock(1, seed("row-depth"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t shallow;
     shallow.label             = "X";
@@ -286,7 +277,7 @@ TEST_F(DockRowLayoutTest, DeeperRowsSpendTheirOwnHalfOnTheIndent)
 TEST_F(DockRowLayoutTest, LabelStartsAfterTheExpanderColumnWithAGap)
 {
     Ui::Render::DockColumn dock(1, seed("row-gap"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t row;
     row.label = "Name";
@@ -311,7 +302,7 @@ TEST_F(DockRowLayoutTest, LabelStartsAfterTheExpanderColumnWithAGap)
 TEST_F(DockRowLayoutTest, ALongValueIsCutRatherThanOverrunningTheKey)
 {
     Ui::Render::DockColumn dock(1, seed("row-long"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     const std::string    longValue = "a-very-long-part-name-that-cannot-possibly-fit";
     Ui::Res::Dock::row_t row;
@@ -337,7 +328,7 @@ TEST_F(DockRowLayoutTest, ALongValueIsCutRatherThanOverrunningTheKey)
 TEST_F(DockRowLayoutTest, ARowWithNoValueDrawsOnlyItsLabel)
 {
     Ui::Render::DockColumn dock(1, seed("row-tree"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t row;
     row.label = "Node";
@@ -353,12 +344,12 @@ TEST_F(DockRowLayoutTest, ARowWithNoValueDrawsOnlyItsLabel)
 // Negative: a collapsed dock has no content area, so it draws no row text at all
 TEST_F(DockRowLayoutTest, ACollapsedDockDrawsNoRows)
 {
-    resManager.setDockState("row-collapsed", Ui::Res::Dock::dock_state_t { 0.0F, DOCK_WIDTH });
+    resManager.setDockState("row-collapsed", Ui::Res::Dock::dock_state_t { 0.0F, ROW_DOCK_WIDTH });
     Ui::Render::DockColumn dock(
     1,
-    Ui::Res::Dock::dock_config_t { "row-collapsed", Ui::Res::Dock::DockAnchor::Left, 1, DOCK_WIDTH },
+    Ui::Res::Dock::dock_config_t { "row-collapsed", Ui::Res::Dock::DockAnchor::Left, 1, ROW_DOCK_WIDTH },
     resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t row;
     row.label = "Hidden";
@@ -379,7 +370,7 @@ TEST_F(DockRowLayoutTest, ACollapsedDockDrawsNoRows)
 TEST_F(DockRowLayoutTest, ARowWithNoIdOffersNoElement)
 {
     Ui::Render::DockColumn dock(1, seed("row-inert"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t selectable;
     selectable.id    = Ui::idOf(TestIdKind::Row, 3);
@@ -410,7 +401,7 @@ TEST_F(DockRowLayoutTest, ARowWithNoIdOffersNoElement)
 TEST_F(DockRowLayoutTest, ARowClickActivatesTheHostsOwnId)
 {
     Ui::Render::DockColumn dock(1, seed("row-activate"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t row;
     row.id          = Ui::idOf(TestIdKind::Row, 42);
@@ -433,7 +424,7 @@ TEST_F(DockRowLayoutTest, ARowClickActivatesTheHostsOwnId)
 TEST_F(DockRowLayoutTest, AnExpanderClickTogglesTheSameRow)
 {
     Ui::Render::DockColumn dock(1, seed("row-toggle"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t row;
     row.id          = Ui::idOf(TestIdKind::Row, 42);
@@ -474,7 +465,7 @@ namespace {
 TEST_F(DockRowLayoutTest, AMenuRowOffersOneMenuElementOverItsValueColumn)
 {
     Ui::Render::DockColumn dock(1, seed("row-menu-element"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
     dock.setRows({ unitRow() });
 
     Ui::Render::UiLayout layout;
@@ -496,7 +487,7 @@ TEST_F(DockRowLayoutTest, AMenuRowOffersOneMenuElementOverItsValueColumn)
 TEST_F(DockRowLayoutTest, AValueClickOpensTheRowMenuByElementId)
 {
     Ui::Render::DockColumn dock(1, seed("row-menu-open"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
     dock.setRows({ unitRow() });
 
     Ui::Render::UiLayout layout;
@@ -512,7 +503,7 @@ TEST_F(DockRowLayoutTest, AValueClickOpensTheRowMenuByElementId)
 TEST_F(DockRowLayoutTest, ALabelClickOnAMenuRowStillActivatesIt)
 {
     Ui::Render::DockColumn dock(1, seed("row-menu-label"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
     dock.setRows({ unitRow() });
 
     Ui::Render::UiLayout layout;
@@ -532,7 +523,7 @@ TEST_F(DockRowLayoutTest, ALabelClickOnAMenuRowStillActivatesIt)
 TEST_F(DockRowLayoutTest, AMenuRowValueEndsBeforeItsChevron)
 {
     Ui::Render::DockColumn dock(1, seed("row-menu-chevron"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
     dock.setRows({ unitRow() });
 
     const auto          texts = draw(dock).texts;
@@ -549,7 +540,7 @@ TEST_F(DockRowLayoutTest, AMenuRowValueEndsBeforeItsChevron)
 TEST_F(DockRowLayoutTest, OnlyAMenuRowNamesAMenu)
 {
     Ui::Render::DockColumn dock(1, seed("row-menu-key"), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t text = unitRow();
     text.id                   = Ui::idOf(TestIdKind::Row, 43);
@@ -566,10 +557,6 @@ TEST_F(DockRowLayoutTest, OnlyAMenuRowNamesAMenu)
 // ============================================================================
 
 namespace {
-
-    // Narrower than a row's padding either side, and wide enough for rows yet not
-    // for a slider track or a deep expander. Dragging a dock shut passes both
-    constexpr std::array NARROW_WIDTHS { 12.0F, 60.0F };
 
     // Enough to scroll, and every fixed-size piece a row can carry: an expander at
     // the top level and two levels down, a slider, and a menu chevron
@@ -612,7 +599,6 @@ namespace {
     // Whether a piece lies inside the area along x, the axis a narrow dock squeezes
     bool isWithinX(const Ui::Res::Type::bound_t & piece, const Ui::Res::Type::bound_t & area)
     {
-        constexpr Ui::fpx_t EPSILON = 0.01F;
         return piece.w >= 0.0F && piece.x >= area.x - EPSILON && piece.x + piece.w <= area.x + area.w + EPSILON;
     }
 
@@ -625,7 +611,7 @@ TEST_F(DockRowLayoutTest, ANarrowDockOffersNothingOutsideItsContent)
 {
     for (const Ui::fpx_t width : NARROW_WIDTHS) {
         Ui::Render::DockColumn dock(1, seed("row-narrow-elements-" + std::to_string(width), width), resManager);
-        dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+        dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
         dock.setRows(furnishedRows());
 
         Ui::Render::UiLayout layout;
@@ -652,7 +638,7 @@ TEST_F(DockRowLayoutTest, ANarrowDockDrawsNoRowGlyphOutsideItsContent)
 
     for (const Ui::fpx_t width : NARROW_WIDTHS) {
         Ui::Render::DockColumn dock(1, seed("row-narrow-glyphs-" + std::to_string(width), width), resManager);
-        dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+        dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
         dock.setRows(furnishedRows());
 
         for (const image_call_t & image : draw(dock).images) {
@@ -671,7 +657,7 @@ TEST_F(DockRowLayoutTest, ANarrowDockDrawsNoRowGlyphOutsideItsContent)
 TEST_F(DockRowLayoutTest, ADockTooNarrowForARowOffersNoScrollbar)
 {
     Ui::Render::DockColumn dock(1, seed("row-narrow-scroll", NARROW_WIDTHS[0]), resManager);
-    dock.setLayout(DOCK_TOP, DOCK_H, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
     dock.setRows(furnishedRows());
 
     Ui::Render::UiLayout layout;

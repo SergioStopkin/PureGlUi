@@ -29,6 +29,7 @@
  * A real ResManager over the shipped res/ supplies the three dock-slider blocks.
  */
 
+#include "testconst.h"
 #include "testidkind.h"
 #include "ui/idkind.h"
 #include "ui/render/dockcolumn.h"
@@ -61,11 +62,11 @@ using Ui::Res::Dock::RowKind;
 
 namespace {
 
-constexpr fpx_t    DOCK_TOP    = 100.0F;
-constexpr fpx_t    DOCK_HEIGHT = 400.0F;
-constexpr fpx_t    DOCK_EDGE   = 300.0F; // viewport-facing edge of a left dock
-constexpr fpx_t    DOCK_WIDTH  = 180.0F;
-constexpr Ui::id_t SLIDER_ROW  = Ui::idOf(PureGlUi::TestIdKind::Row, 7);
+using PureGlUi::DOCK_EDGE;
+using PureGlUi::DOCK_TOP;
+using PureGlUi::DOCK_WIDTH;
+using PureGlUi::SLIDER_DOCK_HEIGHT;
+using PureGlUi::SLIDER_ROW;
 
 class DockSliderTest : public ::testing::Test {
 protected:
@@ -139,7 +140,7 @@ protected:
     [[nodiscard]] static std::unique_ptr<DockColumn> dockWith(const std::string & name, fpx_t ratio)
     {
         auto dock = std::make_unique<DockColumn>(1, seed(name), *s_resManager);
-        dock->setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+        dock->setLayout(DOCK_TOP, SLIDER_DOCK_HEIGHT, DOCK_EDGE);
         dock->setRows(rowsWithSlider(ratio));
         return dock;
     }
@@ -166,7 +167,7 @@ TEST_F(DockSliderTest, ATextOnlyDockOffersNoSliderElement)
 {
     UiLayout   layout;
     DockColumn dock(1, seed("sl-none"), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SLIDER_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows({ row_t {} });
     dock.appendElements(layout);
     EXPECT_FALSE(sliderElement(layout).has_value());
@@ -279,7 +280,7 @@ TEST_F(DockSliderTest, TheThumbIsHotWhereItIsDrawnInAScrollingDock)
 {
     UiLayout   layout;
     DockColumn dock(1, seed("sl-scroll"), *s_resManager);
-    dock.setLayout(DOCK_TOP, DOCK_HEIGHT, DOCK_EDGE);
+    dock.setLayout(DOCK_TOP, SLIDER_DOCK_HEIGHT, DOCK_EDGE);
     dock.setRows(scrollingRowsWithSlider(1.0F));
     dock.appendElements(layout);
     ASSERT_TRUE(dock.isScrollable());

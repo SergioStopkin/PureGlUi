@@ -36,50 +36,31 @@
 #include "menubarloop.h"
 #include "nativegeometry.h"
 #include "nativeinput.h"
+#include "shelltest.h"
 #include "ui/interface/iwindow.h"
 #include "ui/shell.h"
 #include "ui/type.h"
 
 #include <gtest/gtest.h>
 #include <string>
-#include <vector>
 
 namespace {
 
-class MenuBarTest : public ::testing::Test {
+class MenuBarTest : public PureGlUi::ShellTest {
 protected:
-    std::string           m_read; // every event the loop read, for a failure to say
-    Ui::Shell             m_shell;
-    bool                  m_isInitialized = false;
-    std::vector<Ui::id_t> m_menuIds;
-
     void SetUp() override
     {
-        if (!m_shell.initialize()) {
-            GTEST_SKIP() << "no window or GL context here";
+        ShellTest::SetUp();
+        if (!m_isInitialized) {
+            return;
         }
-        m_isInitialized = true;
-        m_menuIds       = PureGlUi::listMenuIdsOf(m_shell);
         if (m_menuIds.size() < 3) {
             GTEST_SKIP() << "fewer than three menus open a list here";
         }
-        PureGlUi::traceEvents(m_shell, m_read);
-
-        // On screen and drawn, as a user first sees it, before any input: AppKit placing a
-        // window just made reads a posted event's position against where it stood before
-        m_shell.windowManager().renderAll();
-        PureGlUi::settle(m_shell.windowManager().mainWindow());
+        // Settled before any input: AppKit placing a window just made reads a posted event's
+        // position against where it stood before
+        PureGlUi::settle(mainWindow());
     }
-
-    void TearDown() override
-    {
-        if (m_isInitialized) {
-            m_shell.shutdown();
-        }
-    }
-
-    // The list open once the loop has run, INVALID_ID for none
-    [[nodiscard]] Ui::id_t openMenuId() const { return m_shell.resManager().activeMenuId(); }
 };
 
 // A title's list shows as the button goes down on it. A failure says what the OS says of the
@@ -87,7 +68,8 @@ protected:
 // process's first through AppKit's loop, on a window bigger than its screen
 TEST_F(MenuBarTest, APressOpensItsList)
 {
-    PureGlUi::runPasses(m_shell, [this](int pass) {
+    PureGlUi::runPasses(
+    [this](int pass) {
         if (pass == 0) {
             PureGlUi::postAt(m_shell, m_menuIds.at(0), [this](const Ui::IWindow & window, int x, int y) {
                 m_read += " posted " + std::to_string(x) + "," + std::to_string(y) + " with "
@@ -95,7 +77,8 @@ TEST_F(MenuBarTest, APressOpensItsList)
                 PureGlUi::postPointerPress(window, x, y);
             });
         }
-    });
+    },
+    m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(0))
     << m_read << " then " << PureGlUi::placementOf(m_shell.windowManager().mainWindow());
 }
@@ -104,13 +87,15 @@ TEST_F(MenuBarTest, APressOpensItsList)
 // up over the next - the pressed list opens, then follows the pointer to where it rests
 TEST_F(MenuBarTest, AClickWhileSweepingOpensThePressedListThenFollows)
 {
-    PureGlUi::runPasses(m_shell, [this](int pass) {
+    PureGlUi::runPasses(
+    [this](int pass) {
         if (pass == 0) {
             PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
             PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
             PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerRelease);
         }
-    });
+    },
+    m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(1)) << m_read;
 }
 
@@ -118,25 +103,29 @@ TEST_F(MenuBarTest, AClickWhileSweepingOpensThePressedListThenFollows)
 // takes back nothing the press did
 TEST_F(MenuBarTest, AQuickClickLeavesItsListOpen)
 {
-    PureGlUi::runPasses(m_shell, [this](int pass) {
+    PureGlUi::runPasses(
+    [this](int pass) {
         if (pass == 0) {
             PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
             PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerRelease);
         }
-    });
+    },
+    m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(0)) << m_read;
 }
 
 // A press on the open list's title closes it, before its button comes up
 TEST_F(MenuBarTest, APressOnTheOpenTitleClosesItsList)
 {
-    PureGlUi::runPasses(m_shell, [this](int pass) {
+    PureGlUi::runPasses(
+    [this](int pass) {
         if (pass == 0) {
             m_shell.openPopup(m_menuIds.at(0));
         } else if (pass == 2) {
             PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
         }
-    });
+    },
+    m_shell);
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
 }
 
@@ -144,14 +133,16 @@ TEST_F(MenuBarTest, APressOnTheOpenTitleClosesItsList)
 // after the closing press opens nothing again
 TEST_F(MenuBarTest, AClickOnTheOpenTitleLeavesItsListClosed)
 {
-    PureGlUi::runPasses(m_shell, [this](int pass) {
+    PureGlUi::runPasses(
+    [this](int pass) {
         if (pass == 0) {
             m_shell.openPopup(m_menuIds.at(0));
         } else if (pass == 2) {
             PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
             PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerRelease);
         }
-    });
+    },
+    m_shell);
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
 }
 
@@ -159,13 +150,15 @@ TEST_F(MenuBarTest, AClickOnTheOpenTitleLeavesItsListClosed)
 // events, while that list is just made: the next title's list opens
 TEST_F(MenuBarTest, APointerOnTheNextTitleByTheClickOpensItsList)
 {
-    PureGlUi::runPasses(m_shell, [this](int pass) {
+    PureGlUi::runPasses(
+    [this](int pass) {
         if (pass == 0) {
             // What the click on the first title does
             m_shell.openPopup(m_menuIds.at(0));
             PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
         }
-    });
+    },
+    m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(1)) << m_read;
 }
 
@@ -174,7 +167,8 @@ TEST_F(MenuBarTest, APointerOnTheNextTitleByTheClickOpensItsList)
 // the one it crossed
 TEST_F(MenuBarTest, AListFollowsAPointerSweepingPastATitle)
 {
-    PureGlUi::runPasses(m_shell, [this](int pass) {
+    PureGlUi::runPasses(
+    [this](int pass) {
         if (pass == 0) {
             m_shell.openPopup(m_menuIds.at(0));
         } else if (pass == 1) {
@@ -185,9 +179,31 @@ TEST_F(MenuBarTest, AListFollowsAPointerSweepingPastATitle)
             PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
             PureGlUi::postAt(m_shell, m_menuIds.at(2), PureGlUi::postPointerMove);
         }
-    });
+    },
+    m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(2)) << m_read;
 }
+
+#ifdef __APPLE__
+
+// A move off every window of the app stands on no title: AppKit gives it no window to scale
+// by, so read as a position it is the window's corner, where the first title stands
+TEST_F(MenuBarTest, APointerOffEveryWindowLeavesTheListOpen)
+{
+    PureGlUi::runPasses(
+    [this](int pass) {
+        if (pass == 0) {
+            m_shell.openPopup(m_menuIds.at(1));
+        } else if (pass == 2) {
+            PureGlUi::postPointerMoveOffWindows();
+        }
+    },
+    m_shell);
+    EXPECT_NE(m_read.find("move -1,-1;"), std::string::npos) << m_read;
+    EXPECT_EQ(openMenuId(), m_menuIds.at(1)) << m_read;
+}
+
+#endif
 
 } // namespace
 
