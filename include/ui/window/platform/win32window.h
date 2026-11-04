@@ -352,26 +352,17 @@ public:
         m_bound = bound;
         this->requestRender();
         if (m_hwnd) {
-            // bound carries the frame origin (x, y - what screenFramePosition
-            // reports) and the CLIENT size (w, h - what WM_SIZE/session store),
-            // but SetWindowPos takes the OUTER size. Convert via the window's
-            // actual style - the same adjustment create() applies. For
-            // undecorated popups (WS_POPUP) and child windows the adjustment
-            // is a no-op, so this stays correct for every window kind.
-            RECT       rect    = { .left   = 0,
-                                   .top    = 0,
-                                   .right  = static_cast<LONG>(bound.w),
-                                   .bottom = static_cast<LONG>(bound.h) };
-            const auto style   = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_STYLE));
-            const auto exStyle = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_EXSTYLE));
-            AdjustWindowRectExForDpi(&rect, style, FALSE, exStyle, m_dpi);
-            SetWindowPos(m_hwnd,
-                         NULL,
-                         static_cast<int>(bound.x),
-                         static_cast<int>(bound.y),
-                         rect.right - rect.left,
-                         rect.bottom - rect.top,
-                         SWP_NOZORDER);
+            // The size asked for wins over the rect WM_DPICHANGED suggests as this lands on a
+            // monitor of another DPI: those px are already that monitor's, and scaled again
+            // they are saved and scaled again by the next launch
+            const UINT dpiBefore = m_dpi;
+            m_isPlacing          = true;
+            placeFrame(bound);
+            m_isPlacing = false;
+            // That frame was worked out at the old DPI
+            if (m_dpi != dpiBefore) {
+                placeFrame(bound);
+            }
             applyRoundedCorners();
         }
     }
@@ -601,17 +592,19 @@ public:
         case WM_DPICHANGED:
             // Another monitor's DPI, or the desktop's setting changed: kept for dpi(), which
             // pollEvent's detector reads, and the rect Windows suggests taken, which keeps the
-            // window as large to the eye - its WM_SIZE follows
+            // window as large to the eye - its WM_SIZE follows. Not inside moveResize
             if (self != nullptr) {
-                self->m_dpi            = LOWORD(wParam);
-                const RECT * suggested = asRect(lParam);
-                SetWindowPos(hwnd,
-                             nullptr,
-                             suggested->left,
-                             suggested->top,
-                             suggested->right - suggested->left,
-                             suggested->bottom - suggested->top,
-                             SWP_NOZORDER | SWP_NOACTIVATE);
+                self->m_dpi = LOWORD(wParam);
+                if (!self->m_isPlacing) {
+                    const RECT * suggested = asRect(lParam);
+                    SetWindowPos(hwnd,
+                                 nullptr,
+                                 suggested->left,
+                                 suggested->top,
+                                 suggested->right - suggested->left,
+                                 suggested->bottom - suggested->top,
+                                 SWP_NOZORDER | SWP_NOACTIVATE);
+                }
                 return 0;
             }
             break;
@@ -624,6 +617,27 @@ public:
     }
 
 private:
+    // bound carries the frame origin (x, y - what screenFramePosition reports) and the CLIENT
+    // size (w, h - what WM_SIZE/session store), but SetWindowPos takes the OUTER size. Convert
+    // via the window's actual style - the same adjustment create() applies. For undecorated
+    // popups (WS_POPUP) and child windows the adjustment is a no-op, so this stays correct for
+    // every window kind
+    void placeFrame(const Ui::Res::Type::bound_t & bound)
+    {
+        RECT rect = { .left = 0, .top = 0, .right = static_cast<LONG>(bound.w), .bottom = static_cast<LONG>(bound.h) };
+        const auto style   = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_STYLE));
+        const auto exStyle = static_cast<DWORD>(GetWindowLongPtrW(m_hwnd, GWL_EXSTYLE));
+        // Asked of the OS, whose frame it is
+        AdjustWindowRectExForDpi(&rect, style, FALSE, exStyle, GetDpiForWindow(m_hwnd));
+        SetWindowPos(m_hwnd,
+                     NULL,
+                     static_cast<int>(bound.x),
+                     static_cast<int>(bound.y),
+                     rect.right - rect.left,
+                     rect.bottom - rect.top,
+                     SWP_NOZORDER);
+    }
+
     // A BITMAPV5HEADER as the BITMAPINFO whose extended first member it is, which
     // CreateDIBSection reads it through (Win32 idiom). It arrives as void* by plain conversion
     static const BITMAPINFO * asBitmapInfo(const void * header) { return static_cast<const BITMAPINFO *>(header); }
@@ -779,6 +793,7 @@ private:
     UINT  m_dpi        = USER_DEFAULT_SCREEN_DPI; // the window's, as WM_DPICHANGED last said
     fpx_t m_minWidth   = 0;                       // client floor, answered on WM_GETMINMAXINFO
     fpx_t m_minHeight  = 0;
+    bool  m_isPlacing  = false; // inside moveResize, whose size wins over WM_DPICHANGED's rect
 };
 
 } // namespace Ui::Window::Platform
