@@ -243,8 +243,9 @@ else()
     set(HAVE_WAYLAND FALSE)
 endif()
 
-# X11 is always available on Linux (already detected above)
-if(X11_FOUND)
+# X11 is always available on Linux (already detected above). One window system is built,
+# so HAVE_X11 and HAVE_WAYLAND are never both defined
+if(X11_FOUND AND NOT HAVE_WAYLAND)
     add_compile_definitions(HAVE_X11=1)
 endif()
 
@@ -378,9 +379,12 @@ if(APPLE)
     target_link_libraries(ui INTERFACE
         "-framework Foundation" "-framework AppKit" "-framework QuartzCore"
         "-framework UniformTypeIdentifiers")
+    # Its Objective-C++ is written for ARC, a window set to nil going with it: every unit that
+    # includes it, a host's too, compiles that way or leaks what it makes
+    target_compile_options(ui INTERFACE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(ui INTERFACE ${X11_LIBRARIES} ${X11_Xrandr_LIB} ${XCOMPOSITE_LIBRARY} ${XRENDER_LIBRARY})
-    if(X11_FOUND)
+    if(X11_FOUND AND NOT HAVE_WAYLAND)
         target_compile_definitions(ui INTERFACE HAVE_X11=1)
     endif()
     if(HAVE_WAYLAND)

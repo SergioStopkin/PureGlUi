@@ -253,14 +253,14 @@ public:
     {
         @autoreleasepool {
             if (m_nsWindow) {
-                // Popup NSWindows are retained by their parent via addChildWindow:; nilling our
-                // reference alone leaves the popup visible. Detach + close so the parent drops
-                // its strong reference.
+                // Popup NSWindows are retained by their parent via addChildWindow:, so detached
+                // first. Every window closed: one never closed stays in AppKit's list, and on
+                // screen, until the process ends
                 NSWindow* parent = [m_nsWindow parentWindow];
                 if (parent) {
                     [parent removeChildWindow:m_nsWindow];
-                    [m_nsWindow close];
                 }
+                [m_nsWindow close];
             } else if (m_glView) {
                 // Embedded subview: remove from superview so parent releases it.
                 [m_glView removeFromSuperview];
@@ -527,6 +527,21 @@ public:
         }
         // Embedded views have no title.
         (void)title;
+    }
+
+    // macOS's fullscreen, the green button's, Ctrl+Cmd+F's and the Window menu's: a state of its
+    // own, set from the start of AppKit's animation to the end of the one out
+    [[nodiscard]] bool isFullscreen() const override
+    {
+        return m_nsWindow != nil && Common::Bit::And([m_nsWindow styleMask], NSWindowStyleMaskFullScreen) != 0;
+    }
+
+    // Asked of AppKit, which animates it in its own time; did-enter and did-exit reach the loop
+    void setFullscreen(bool isFullscreen) override
+    {
+        if (m_nsWindow != nil && this->isFullscreen() != isFullscreen) {
+            [m_nsWindow toggleFullScreen:nil];
+        }
     }
 
     // AppKit enforces this on the live resize. contentMinSize is in POINTS, so

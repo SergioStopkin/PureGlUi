@@ -16,7 +16,11 @@ libX11-devel
 libXcomposite-devel
 libXrandr-devel
 libXrender-devel
+libxkbcommon-devel
 llvm
 mesa-libEGL-devel
 mesa-libGLU-devel
+wayland-devel
+wayland-protocols-devel
+weston
 xorg-x11-server-Xvfb

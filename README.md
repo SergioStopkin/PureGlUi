@@ -34,7 +34,7 @@
 - **Custom GL renderer:** SDF rounded shapes, SVG icons (librsvg/Cairo), FreeType text, batched draw - via **EGL directly** (no GLFW, no GLX).
 - **Data-driven:** JSON themes, layouts, menus, dialogs, and shortcuts (CSS-inspired property names), discovered from `res/`.
 - **Windowing:** custom window manager - main window + borderless popups/dialogs + host-embedded content surfaces, with Wayland compositing.
-- **Platforms:** Linux (X11 + Wayland) primary; macOS and Windows build and test in CI. Built with Clang + CMake.
+- **Platforms:** GNU/Linux (X11 + Wayland) primary; macOS and Windows build and test in CI. Built with Clang + CMake.
 
 ## Architecture
 
@@ -57,11 +57,11 @@ C++ 20
 <img height=42 src="./doc/img/logo-apple.svg"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <img height=34 src="./doc/img/logo-windows.svg">
 
-Linux &nbsp;&nbsp;&nbsp;&nbsp;
+GNU/Linux &nbsp;
 macOS* &nbsp;&nbsp;&nbsp;
 Windows*
 
-<sub>* builds and runs its test suites in CI on every push; Linux is the primary
+<sub>* builds and runs its test suites in CI on every push; GNU/Linux is the primary
 target and the other two still have known rough edges.</sub>
 
 ## Quick Start
@@ -72,7 +72,7 @@ target and the other two still have known rough edges.</sub>
 ./dependency.sh
 ```
 
-Installs all required packages for the current platform (Linux/macOS/Windows).
+Installs all required packages for the current platform (GNU/Linux, macOS, Windows).
 Package lists are in `.github/dependencies/`.
 
 On **Windows**, the single manual step is installing Git
@@ -97,10 +97,13 @@ cd PureGlUi
 ./build.sh ut                               # unit tests only
 ./build.sh ct                               # component tests only
 ./build.sh cov                              # coverage build
+./build.sh rel wl                           # any mode but cov, on native Wayland (GNU/Linux)
 ```
 
 `ut` and `ct` build one suite each, so a compile failure names the suite it came
-from; `test` builds both.
+from; `test` builds both. A build is for X11, which runs on a Wayland session too,
+through XWayland; `wl` after a mode builds it on the native Wayland backend, in a
+build dir of its own (`cmake-build-release-wayland`).
 
 ## Usage
 
@@ -110,6 +113,7 @@ from; `test` builds both.
 ./run.sh test [--gtest_filter="*TestName*"] # both suites, exit codes summed
 ./run.sh ut   [--gtest_filter="*TestName*"] # unit tests only
 ./run.sh ct   [--gtest_filter="*TestName*"] # component tests only
+./run.sh ct wl [--gtest_filter="*TestName*"] # any mode, its native Wayland build
 ```
 
 The demo opens a window with the full UI chrome (top menu, toolbars, tabs,

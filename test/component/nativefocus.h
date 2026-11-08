@@ -37,7 +37,9 @@
 #define __ICONS__
 #import <Cocoa/Cocoa.h>
 // NOLINTEND(clang-diagnostic-import-preprocessor-directive-pedantic)
-#elif !defined(HAVE_WAYLAND)
+
+#include <string>
+#elifdef HAVE_X11
 #include "common/bit.h"
 #include "ui/window/platform/x11include.h"
 #endif
@@ -91,6 +93,27 @@ namespace PureGlUi {
 [[nodiscard]] inline bool hasKeyWindow(const Ui::IWindow & window)
 {
     return waitUntil(window, [] { return [NSApp keyWindow] != nil; });
+}
+
+// The windows AppKit lists for the app, its list drained here so it keeps none alive
+[[nodiscard]] inline NSUInteger appWindowCount()
+{
+    @autoreleasepool {
+        return [[NSApp windows] count];
+    }
+}
+
+// Each of them, for a failure to say: its class, whether it is on screen, and its title
+[[nodiscard]] inline std::string appWindowsText()
+{
+    std::string text;
+    @autoreleasepool {
+        for (NSWindow * window in [NSApp windows]) {
+            text += std::string([NSStringFromClass([window class]) UTF8String])
+                  + ([window isVisible] ? " shown " : " hidden ") + std::string([[window title] UTF8String]) + "; ";
+        }
+    }
+    return text;
 }
 
 #else

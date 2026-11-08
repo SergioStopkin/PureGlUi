@@ -46,6 +46,7 @@ add_executable(
     TestTooltipBoundOf.cpp
     TestRefreshRateOf.cpp
     TestScaleFactorOf.cpp
+    TestCursorPlacementOf.cpp
     TestTime.cpp
     TestDisplaysTextOf.cpp
     TestTooltipWantedOf.cpp

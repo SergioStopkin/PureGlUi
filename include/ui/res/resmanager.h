@@ -122,10 +122,11 @@ class ResManager final {
     // Persisted main-window geometry. width/height <= 0 means "not set yet" -
     // WindowManager falls back to layout.windowWidth/Height on first launch.
     // x/y default to 0 (top-left), only meaningful once width/height are set.
-    int m_sessionWindowX      = 0;
-    int m_sessionWindowY      = 0;
-    int m_sessionWindowWidth  = 0;
-    int m_sessionWindowHeight = 0;
+    int  m_sessionWindowX            = 0;
+    int  m_sessionWindowY            = 0;
+    int  m_sessionWindowWidth        = 0;
+    int  m_sessionWindowHeight       = 0;
+    bool m_isSessionWindowFullscreen = false; // ended fullscreen; the geometry above is its window's
     Ui::Res::Type::changes_t
          m_changed;             // the pending reload mask: sub-store loads and runtime setters |= theirs into it
     bool m_isRestoring = false; // true while deserializeSession applies values
@@ -364,10 +365,21 @@ public:
         notifyPersistChange();
     }
 
-    [[nodiscard]] int sessionWindowX() const { return m_sessionWindowX; }
-    [[nodiscard]] int sessionWindowY() const { return m_sessionWindowY; }
-    [[nodiscard]] int sessionWindowWidth() const { return m_sessionWindowWidth; }
-    [[nodiscard]] int sessionWindowHeight() const { return m_sessionWindowHeight; }
+    [[nodiscard]] int  sessionWindowX() const { return m_sessionWindowX; }
+    [[nodiscard]] int  sessionWindowY() const { return m_sessionWindowY; }
+    [[nodiscard]] int  sessionWindowWidth() const { return m_sessionWindowWidth; }
+    [[nodiscard]] int  sessionWindowHeight() const { return m_sessionWindowHeight; }
+    [[nodiscard]] bool isSessionWindowFullscreen() const { return m_isSessionWindowFullscreen; }
+
+    // Whether the main window is fullscreen, diff-checked as the geometry is
+    void setSessionWindowFullscreen(bool isFullscreen)
+    {
+        if (m_isSessionWindowFullscreen == isFullscreen) {
+            return;
+        }
+        m_isSessionWindowFullscreen = isFullscreen;
+        notifyPersistChange();
+    }
 
     [[nodiscard]] const std::vector<std::string> & sessionOpenFiles() const { return m_sessionOpenFiles; }
     [[nodiscard]] const std::string &              sessionActiveFile() const { return m_sessionActiveFile; }
@@ -629,6 +641,7 @@ public:
                 { sessionKeyName(SessionKey::Y), m_sessionWindowY },
                 { sessionKeyName(SessionKey::Width), m_sessionWindowWidth },
                 { sessionKeyName(SessionKey::Height), m_sessionWindowHeight },
+                { sessionKeyName(SessionKey::Fullscreen), m_isSessionWindowFullscreen },
             };
         }
 
@@ -705,6 +718,8 @@ public:
                                      Common::Json::number(mainWindow, sessionKeyName(SessionKey::Y), 0),
                                      Common::Json::number(mainWindow, sessionKeyName(SessionKey::Width), 0),
                                      Common::Json::number(mainWindow, sessionKeyName(SessionKey::Height), 0));
+            setSessionWindowFullscreen(
+            Common::Json::boolean(mainWindow, sessionKeyName(SessionKey::Fullscreen), false));
         }
 
         for (const auto & setting : m_persistedSettings) {

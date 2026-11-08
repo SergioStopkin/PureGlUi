@@ -39,19 +39,29 @@
  *   runner: no FBOs, no shaders) -> context liveness verified, render+readback skipped.
  */
 
+#include "testconst.h"
+#include "ui/color.h"
 #include "ui/gl/glrender.h"
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/pubsub/subscribe.h"
+#include "ui/render/popup/tooltiprenderer.h"
 #include "ui/render/uirenderer.h"
 #include "ui/res/resmanager.h"
+#include "ui/res/type/alignh.h"
+#include "ui/res/type/alignv.h"
+#include "ui/type.h"
 #include "ui/window/connector.h"
 #include "ui/window/nativewindow.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <functional>
 #include <gtest/gtest.h>
 #include <memory>
+#include <vector>
 
 #ifndef TEST_RES_DIR
 #define TEST_RES_DIR "res"
@@ -129,6 +139,175 @@ TEST(GlSmoke, WindowContextAndUiRender)
 
     // Connector dtor tears the renderer down with the context current, then the
     // window - no manual destroy needed.
+}
+
+// A window's context, and a line of text drawn in it into an offscreen buffer over an opaque ground
+class TextFrameTest : public ::testing::Test {
+protected:
+    Ui::PubSub::Subscribe          m_subscribe;
+    std::unique_ptr<MainConnector> m_connector = std::make_unique<MainConnector>(m_subscribe);
+    Ui::Res::ResManager            m_resManager { TEST_RES_DIR };
+
+    void SetUp() override
+    {
+        if (!m_connector->window().create(TEXT_FRAME_W, TEXT_FRAME_H, nullptr, 0, "gl-text")) {
+            GTEST_SKIP() << "No window/GL context available (headless without a GL driver)";
+        }
+        m_connector->window().makeCurrent();
+        ASSERT_TRUE(Ui::Gl::Util::initGlLoader()) << "GL loader init failed";
+        if (!Ui::Gl::Util::hasModernGl()) {
+            GTEST_SKIP() << "modern GL (>= 3.x) unavailable - nothing is drawn to read";
+        }
+        m_resManager.loadAll();
+    }
+
+    // The frame the line leaves in a buffer of internalFormat, RGBA as stored; empty for none
+    [[nodiscard]] std::vector<uint8_t> textFrameIn(GLint internalFormat)
+    {
+        NativeWindow & window = m_connector->window();
+        return frameIn(internalFormat, [this, &window] {
+            Ui::Gl::GlRender        render([&window] { window.makeCurrent(); }, m_resManager.resPath().fontDir());
+            const Ui::font_handle_t font = render.createFont(m_resManager.theme().menuItemFont);
+            render.beginFrame(TEXT_FRAME_W, TEXT_FRAME_H);
+            glClearColor(TEXT_BACKGROUND.r() / 255.0F,
+                         TEXT_BACKGROUND.g() / 255.0F,
+                         TEXT_BACKGROUND.b() / 255.0F,
+                         1.0F);
+            glClear(GL_COLOR_BUFFER_BIT);
+            render.drawText(font,
+                            "Wiki Page System Info",
+                            { .x = 8.0F, .y = 8.0F, .w = TEXT_FRAME_W - 16.0F, .h = 40.0F },
+                            TEXT_COLOR,
+                            Ui::Res::Type::AlignH::Left,
+                            Ui::Res::Type::AlignV::Center,
+                            0.0F);
+            render.endFrame();
+        });
+    }
+
+    // The same line as the tooltip draws it, over its opaque box: the text path every popup's
+    // renderer shares, a list's and a dialog's too
+    [[nodiscard]] std::vector<uint8_t> tooltipFrameIn(GLint internalFormat)
+    {
+        NativeWindow & window = m_connector->window();
+        return frameIn(internalFormat, [this, &window] {
+            Ui::Render::Popup::TooltipRenderer tooltip([&window] { window.makeCurrent(); },
+                                                       m_resManager,
+                                                       "Wiki Page System Info");
+            tooltip.resize(TEXT_FRAME_W, TEXT_FRAME_H);
+            (void)tooltip.render();
+        });
+    }
+
+    // What draw leaves in a buffer of internalFormat, RGBA as stored; empty for none
+    [[nodiscard]] static std::vector<uint8_t> frameIn(GLint internalFormat, const std::function<void()> & draw)
+    {
+        GLuint fbo    = 0;
+        GLuint fboTex = 0;
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glGenTextures(1, &fboTex);
+        glBindTexture(GL_TEXTURE_2D, fboTex);
+        glTexImage2D(GL_TEXTURE_2D,
+                     0,
+                     internalFormat,
+                     TEXT_FRAME_W,
+                     TEXT_FRAME_H,
+                     0,
+                     GL_RGBA,
+                     GL_UNSIGNED_BYTE,
+                     nullptr);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTex, 0);
+
+        std::vector<uint8_t> rgba;
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+            draw();
+            glFinish();
+            // Read as stored, an sRGB buffer's bytes not decoded
+            glDisable(GL_FRAMEBUFFER_SRGB);
+            rgba.resize(static_cast<std::size_t>(TEXT_FRAME_W) * TEXT_FRAME_H * 4);
+            glReadPixels(0, 0, TEXT_FRAME_W, TEXT_FRAME_H, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDeleteTextures(1, &fboTex);
+        glDeleteFramebuffers(1, &fbo);
+        return rgba;
+    }
+
+    // Whether pixel idx of rgba is the text's, not the ground
+    [[nodiscard]] static bool isDrawn(const std::vector<uint8_t> & rgba, std::size_t idx)
+    {
+        return std::abs(rgba.at(idx) - TEXT_BACKGROUND.r()) > COLOR_TOLERANCE;
+    }
+};
+
+// Text over an opaque frame leaves it opaque. Alpha blended as colour leaves every soft edge of
+// a glyph part see-through, which a compositor that honours a window's alpha shows as thinner
+// text - native Wayland's does, for the main window and every list
+TEST_F(TextFrameTest, TextLeavesAnOpaqueFrameOpaque)
+{
+    const std::vector<uint8_t> rgba = textFrameIn(GL_RGBA8);
+    ASSERT_FALSE(rgba.empty()) << "no buffer to draw into";
+    int drawn      = 0;
+    int seeThrough = 0;
+    for (std::size_t idx = 0; idx + 3 < rgba.size(); idx += 4) {
+        if (isDrawn(rgba, idx)) {
+            ++drawn;
+        }
+        if (rgba.at(idx + 3) != 255) {
+            ++seeThrough;
+        }
+    }
+    EXPECT_GT(drawn, 0) << "no text was drawn";
+    EXPECT_EQ(seeThrough, 0) << "of " << drawn << " pixels the text drew";
+}
+
+// The same over a popup's opaque box, through the text path every popup's renderer shares: native
+// Wayland's thin lists were drawn there
+TEST_F(TextFrameTest, PopupTextLeavesAnOpaqueFrameOpaque)
+{
+    const std::vector<uint8_t> rgba = tooltipFrameIn(GL_RGBA8);
+    ASSERT_FALSE(rgba.empty()) << "no buffer to draw into";
+    const Ui::Color & ground     = m_resManager.theme().tooltip.bg;
+    int               drawn      = 0;
+    int               seeThrough = 0;
+    for (std::size_t idx = 0; idx + 3 < rgba.size(); idx += 4) {
+        if (std::abs(rgba.at(idx) - ground.r()) > COLOR_TOLERANCE) {
+            ++drawn;
+        }
+        if (rgba.at(idx + 3) != 255) {
+            ++seeThrough;
+        }
+    }
+    EXPECT_GT(drawn, 0) << "no text was drawn";
+    EXPECT_EQ(seeThrough, 0) << "of " << drawn << " pixels the text drew";
+}
+
+// The same line on a buffer that encodes sRGB and on one that does not: which a window gets is
+// its EGL config's, so text the surface could change would look one way on one window and
+// another way on the next - native Wayland's lists against X11's did
+TEST_F(TextFrameTest, TextLooksTheSameOnAnySurface)
+{
+    const std::vector<uint8_t> plain = textFrameIn(GL_RGBA8);
+    const std::vector<uint8_t> srgb  = textFrameIn(GL_SRGB8_ALPHA8);
+    ASSERT_FALSE(plain.empty()) << "no plain buffer to draw into";
+    ASSERT_EQ(srgb.size(), plain.size()) << "no sRGB buffer to draw into";
+    int drawn     = 0;
+    int differing = 0;
+    for (std::size_t idx = 0; idx + 3 < plain.size(); idx += 4) {
+        if (isDrawn(plain, idx)) {
+            ++drawn;
+        }
+        for (std::size_t channel = 0; channel < 3; ++channel) {
+            if (std::abs(plain.at(idx + channel) - srgb.at(idx + channel)) > SAME_TEXT) {
+                ++differing;
+                break;
+            }
+        }
+    }
+    EXPECT_GT(drawn, 0) << "no text was drawn";
+    EXPECT_EQ(differing, 0) << "of " << drawn << " pixels the text drew";
 }
 
 } // namespace PureGlUi

@@ -222,7 +222,8 @@ Pure-virtual methods:
   passthrough). Consumers gate features that stall on software GL (IBL prefilter,
   MSAA, ...).
 - `void makeCurrent()` - make this window's GL context current.
-- `void swapBuffers()` - swap front/back buffers.
+- `void swapBuffers()` - swap front/back buffers. A hidden window swaps nothing on native
+  Wayland, from `hide()` until `show()`: a swap commits a buffer, which would map it again.
 - `void clear()` - clear framebuffer with the background color.
 - `void requestRender()` - queue a render via the render-request callback (the
   coordinator produces the actual frame).

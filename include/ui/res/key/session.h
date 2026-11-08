@@ -32,6 +32,7 @@ enum class SessionKey : unsigned char {
     Y,           // mainWindow: frame origin, physical px
     Width,       // mainWindow client size / dock committed width
     Height,      // mainWindow client size
+    Fullscreen,  // mainWindow: whether it ended fullscreen; false is the geometry above
     Theme,       // view: theme name
     ThemeMode,   // view: dark/light
     LastOpenDir, // paths: last open-dialog directory
@@ -50,6 +51,7 @@ enum class SessionKey : unsigned char {
     case SessionKey::Y: return "y";
     case SessionKey::Width: return "width";
     case SessionKey::Height: return "height";
+    case SessionKey::Fullscreen: return "fullscreen";
     case SessionKey::Theme: return "theme";
     case SessionKey::ThemeMode: return "themeMode";
     case SessionKey::LastOpenDir: return "lastOpenDir";

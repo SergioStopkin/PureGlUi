@@ -107,14 +107,14 @@ public:
     // coordinates while their bound stays parent-relative
     [[nodiscard]] bool isMovable() const
     {
-#if !defined(_WIN32) && !defined(__APPLE__) && defined(HAVE_X11) && !defined(HAVE_WAYLAND)
+#ifdef HAVE_X11
         return m_followsParent || g_config.isCompositing;
 #else
         return false;
 #endif
     }
 
-#if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
+#ifdef HAVE_X11
     // Mapped on top: a popup kept between shows keeps its old place among the main
     // window's children, under a content surface made since
     void show() override
@@ -370,7 +370,7 @@ public:
 private:
 #if !defined(_WIN32) && !defined(__APPLE__)
 
-#if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
+#ifdef HAVE_X11
     /**
      * @brief Create popup window at specified screen coordinates (X11)
      *
@@ -628,13 +628,10 @@ private:
             glClearColor(bg.at(0), bg.at(1), bg.at(2), 1.0F);
         }
 
+        // Blended, never also alpha-to-coverage: that takes every glyph edge's coverage a second
+        // time and the text reads thin. Rounded's distance field already smooths the corners
         if (m_msaa) {
             glEnable(GL_MULTISAMPLE);
-#ifdef GL_SAMPLE_ALPHA_TO_COVERAGE
-            if (m_hasAlpha) {
-                glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-            }
-#endif
         }
 
         // Tell X11 not to paint any background - let GL handle everything
@@ -721,7 +718,7 @@ private:
         return XGetVisualInfo(m_display, VisualIDMask, &viTemplate, &numVisuals);
     }
 
-#endif // HAVE_X11 && !HAVE_WAYLAND
+#endif // HAVE_X11
 
 #ifdef HAVE_WAYLAND
     /**
@@ -749,6 +746,9 @@ private:
             std::cerr << "[PopupWindow] Failed to create Wayland surface" << std::endl;
             return false;
         }
+        // At its output's scale, the main window's, never the UI's: set before there is a buffer
+        // it could resize
+        handleOutputScale(m_parent->bufferScale());
 
         // Create xdg_surface for popup
         m_popupXdgSurface = xdg_wm_base_get_xdg_surface(m_parent->xdgWmBase(), m_surface);
@@ -766,18 +766,18 @@ private:
         }
 
         // Set popup size and anchor in logical (surface) coordinates
-        const int logicalW = static_cast<int>(m_bound.w / g_config.scale);
-        const int logicalH = static_cast<int>(m_bound.h / g_config.scale);
+        const int logicalW = static_cast<int>(m_bound.w / bufferScale());
+        const int logicalH = static_cast<int>(m_bound.h / bufferScale());
         xdg_positioner_set_size(positioner, logicalW, logicalH);
-        const int anchorX = static_cast<int>(m_bound.x / g_config.scale);
-        const int anchorY = static_cast<int>(m_bound.y / g_config.scale);
+        const int anchorX = static_cast<int>(m_bound.x / bufferScale());
+        const int anchorY = static_cast<int>(m_bound.y / bufferScale());
         xdg_positioner_set_anchor_rect(positioner, anchorX, anchorY, 1, 1);
         xdg_positioner_set_anchor(positioner, XDG_POSITIONER_ANCHOR_TOP_LEFT);
         xdg_positioner_set_gravity(positioner, XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT);
-        xdg_positioner_set_constraint_adjustment(
-        positioner,
-        XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_X | XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_Y
-        | XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_X | XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_Y);
+        // Where every popup stands is ours, as on X11: a list flush under its title, the tooltip
+        // clamped into the window. A compositor let slide one keeps it out of what its desktop
+        // holds - GNOME's top bar, over a fullscreen window - and moves it off that place
+        xdg_positioner_set_constraint_adjustment(positioner, XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_NONE);
 
         // Create popup
         m_xdgPopup = xdg_surface_get_popup(m_popupXdgSurface, m_parent->xdgSurface(), positioner);
@@ -788,9 +788,6 @@ private:
             return false;
         }
         xdg_popup_add_listener(m_xdgPopup, &s_xdgPopupListener, this);
-
-        // Tell compositor our buffer is pre-scaled
-        wl_surface_set_buffer_scale(m_surface, static_cast<int>(g_config.scale));
 
         // An empty input region: the pointer goes to whatever the popup covers
         if (m_isInputTransparent) {
@@ -842,11 +839,9 @@ private:
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
+        // Blended, never also alpha-to-coverage: see the X11 path
         if (m_msaa) {
             glEnable(GL_MULTISAMPLE);
-#ifdef GL_SAMPLE_ALPHA_TO_COVERAGE
-            glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-#endif
         }
 
         glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
@@ -971,11 +966,11 @@ private:
         auto * self = static_cast<PopupWindow *>(data);
         // Configure sends logical coords; convert to physical (app works in physical pixels)
         if (width > 0 && height > 0) {
-            self->m_bound.w = width * g_config.scale;
-            self->m_bound.h = height * g_config.scale;
+            self->m_bound.w = static_cast<fpx_t>(width * self->bufferScale());
+            self->m_bound.h = static_cast<fpx_t>(height * self->bufferScale());
         }
-        self->m_bound.x = x * g_config.scale;
-        self->m_bound.y = y * g_config.scale;
+        self->m_bound.x = static_cast<fpx_t>(x * self->bufferScale());
+        self->m_bound.y = static_cast<fpx_t>(y * self->bufferScale());
     }
 
     static void xdgPopupDone(void * data, xdg_popup * /*popup*/)
@@ -1003,11 +998,11 @@ private:
     bool m_isInputTransparent = false; // setInputTransparent
     bool m_isFocusable        = false; // setFocusable
 
-#if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
+#ifdef HAVE_X11
     // What the discovery that cached EglContext's config found of a compositor, for every
     // popup made from that config (survives popup destroy/recreate)
     inline static bool s_hasCompositor = false;
-#endif // HAVE_X11 && !HAVE_WAYLAND
+#endif // HAVE_X11
 
     Ui::Res::Type::border_t m_cornerRadii {};
     fpx_t                   m_borderAA = 1.0F;

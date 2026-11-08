@@ -110,7 +110,7 @@ public:
         glBindVertexArray(0);
 
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        Ui::Gl::Util::blendStraightAlpha();
 
         m_mode = Ui::Gl::BatchMode::None;
         m_textBatch.clear();
@@ -355,7 +355,6 @@ private:
                     glBindBuffer(GL_ARRAY_BUFFER, 0);
                     glBindTexture(GL_TEXTURE_2D, 0);
                     glUseProgram(0);
-                    glDisable(GL_FRAMEBUFFER_SRGB);
                 }
 
                 fr       = m_fontRenderer->font(item.hFont);
@@ -367,7 +366,6 @@ private:
                 }
 
                 glEnable(GL_BLEND);
-                glEnable(GL_FRAMEBUFFER_SRGB);
                 glUseProgram(fr->program);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, fr->atlas_tex);
@@ -419,7 +417,6 @@ private:
             glBindBuffer(GL_ARRAY_BUFFER, 0);
             glBindTexture(GL_TEXTURE_2D, 0);
             glUseProgram(0);
-            glDisable(GL_FRAMEBUFFER_SRGB);
         }
 
         m_textBatch.clear();

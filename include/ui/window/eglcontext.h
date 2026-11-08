@@ -507,7 +507,7 @@ public:
             return false;
 #endif
         } else {
-#if defined(HAVE_X11) && !defined(HAVE_WAYLAND)
+#ifdef HAVE_X11
             // For X11, window is ::Window (both ::Window and EGLNativeWindowType are unsigned long)
             (void)width;  // Not used for X11, only Wayland
             (void)height; // Not used for X11, only Wayland
@@ -605,6 +605,11 @@ public:
         if (eglMakeCurrent(m_eglDisplay, m_eglSurface, m_eglSurface, m_eglContext) == 0U) {
             std::cerr << "[EglContext] eglMakeCurrent failed: 0x" << std::hex << eglGetError() << std::dec << std::endl;
             return false;
+        }
+        // On Wayland the shell's loop paces frames, never Mesa: at interval 1 a swap first waits for
+        // the frame callback the swap before it asked for, which a surface hidden after it never gets
+        if (m_platform == EglPlatform::Wayland) {
+            eglSwapInterval(m_eglDisplay, 0);
         }
         return true;
 #else

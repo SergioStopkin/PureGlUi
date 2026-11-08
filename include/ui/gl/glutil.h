@@ -98,6 +98,14 @@ inline bool isSoftwareRenderer()
 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
 inline void * bufferOffset(size_t bytes) { return reinterpret_cast<void *>(bytes); }
 
+// Colour blended by its alpha, alpha itself as "over": drawn over an opaque pixel it stays opaque.
+// Blended as colour, every soft edge of a glyph leaves the frame part see-through, which a
+// compositor that honours a window's alpha - native Wayland's - shows as thinner text
+inline void blendStraightAlpha()
+{
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+}
+
 // Compile a single shader stage; returns 0 on failure
 inline GLuint compileShader(GLenum type, const char * source, const char * label)
 {

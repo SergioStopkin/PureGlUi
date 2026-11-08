@@ -69,7 +69,7 @@ TEST_F(ListFocusTest, AListStaysOpenAsTheOsGivesItTheFocus)
     EXPECT_EQ(openMenuId(), m_menuIds.at(0)) << m_read;
 }
 
-#if !defined(_WIN32) && !defined(__APPLE__) && !defined(HAVE_WAYLAND)
+#ifdef HAVE_X11
 
 // Where no 32-bit visual has an EGL config a list is the main window's child: the focus moving
 // into it stays inside the app, which X11 says with NotifyInferior

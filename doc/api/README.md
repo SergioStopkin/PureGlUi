@@ -142,8 +142,9 @@ See [shell-actions.md](shell-actions.md) for the full host walkthrough.
 
 ## Building
 
-- `./build.sh <dev|rel|test|ut|ct|cov>` - build (`test`/`ut`/`ct` enable `BUILD_TESTING`;
-  `ut`/`ct` build one suite each, `test` both).
-- `./run.sh <dev|rel|test|ut|ct> [args...]` - run the demo app, both suites, or one.
+- `./build.sh <dev|rel|test|ut|ct|cov> [wl]` - build (`test`/`ut`/`ct` enable `BUILD_TESTING`;
+  `ut`/`ct` build one suite each, `test` both; X11, or with `wl` native Wayland, on GNU/Linux
+  with its development libraries alone - every mode but `cov`, whose report reads the X11 build).
+- `./run.sh <dev|rel|test|ut|ct> [wl] [args...]` - run the demo app, both suites, or one.
 
 See the repo root `CLAUDE.md` for the full contributor guide.

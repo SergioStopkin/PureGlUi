@@ -28,6 +28,8 @@ fi
 BUILD_DIR_DEV=$BUILD_PREFIX_PATH-develop
 BUILD_DIR_REL=$BUILD_PREFIX_PATH-release
 BUILD_DIR_COV=$BUILD_PREFIX_PATH-coverage
+# A mode's native Wayland build, beside it (./*.sh <mode> wl)
+WAYLAND_SUFFIX=-wayland
 
 SOURCE_DIR="include src"
 TEST_DIR="test"

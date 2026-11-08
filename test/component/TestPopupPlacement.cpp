@@ -29,7 +29,7 @@
  * coordinates, and composited X11, where a list is drawn into the main window
  */
 
-#if defined(_WIN32) || defined(__APPLE__) || (defined(HAVE_X11) && !defined(HAVE_WAYLAND))
+#if defined(_WIN32) || defined(__APPLE__) || defined(HAVE_X11)
 
 #include "menubarloop.h"
 #include "nativegeometry.h"

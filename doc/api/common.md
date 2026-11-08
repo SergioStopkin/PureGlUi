@@ -120,7 +120,7 @@ Length constants (`static constexpr std::size_t`):
 - `MAX_STRING_LENGTH = 4096` - cap for locale/UI strings.
 - `MAX_URL_LENGTH = 2048` - cap for URL strings.
 - `MAX_FILE_SIZE = 65536` - cap for file content (64 KB).
-- `MAX_PATH_LENGTH = 4096` - cap for an absolute filesystem path (matches POSIX PATH_MAX on Linux).
+- `MAX_PATH_LENGTH = 4096` - cap for an absolute filesystem path (matches POSIX PATH_MAX on GNU/Linux).
 
 Methods (all `static`):
 
@@ -151,7 +151,7 @@ const std::string dir   = Common::Sanitize::path(node.value("lastOpenDir", ""), 
 
 Header: `include/common/unicode.h`
 
-Static-only conversion class (all constructors/destructor and assignment deleted). Single source of Unicode conversions. The canonical in-memory text type is `std::wstring`, which carries UTF-16 (with surrogate pairs) where `sizeof(wchar_t) == 2` (Windows) and UTF-32 codepoints where it is 4 bytes (Linux, macOS); all conversions handle surrogate encode/decode transparently. Invalid input decodes to U+FFFD (the replacement character).
+Static-only conversion class (all constructors/destructor and assignment deleted). Single source of Unicode conversions. The canonical in-memory text type is `std::wstring`, which carries UTF-16 (with surrogate pairs) where `sizeof(wchar_t) == 2` (Windows) and UTF-32 codepoints where it is 4 bytes (GNU/Linux, macOS); all conversions handle surrogate encode/decode transparently. Invalid input decodes to U+FFFD (the replacement character).
 
 Methods (all `static`):
 
@@ -203,7 +203,7 @@ for (const auto & entry : std::filesystem::directory_iterator(themeDir)) {
 
 Header: `include/common/system.h`
 
-Static-only host/system-info class (all constructors/destructor deleted). OS primitive; depends only on the platform plus `Common::Unicode`. Platform branches cover Linux, macOS (APPLE), and Windows; the header also defines the `WINDOWS`/`APPLE`/`LINUX` platform macros and (on Windows) `NOMINMAX`.
+Static-only host/system-info class (all constructors/destructor deleted). OS primitive; depends only on the platform plus `Common::Unicode`. Platform branches cover GNU/Linux, macOS (APPLE), and Windows; the header also defines the `WINDOWS`/`APPLE`/`LINUX` platform macros and (on Windows) `NOMINMAX`.
 
 Methods (all `static`):
 
@@ -218,9 +218,9 @@ static void                  setSystemName(const std::string & name);
 
 - `cpuCores` - number of hardware threads via `std::thread::hardware_concurrency()`, clamped to a minimum of 1.
 - `environmentVariable` - the variable's value as UTF-8, or an empty string when unset. Windows reads it wide, so a value outside the code page survives. The only place the process reads its environment: `getenv` races nothing but a `setenv`, and nothing in the process ever sets one - so the `concurrency-mt-unsafe` suppression lives here once instead of at every call site.
-- `homeDir` - the user's home: `%USERPROFILE%` on Windows, `$HOME` on Linux and macOS. An empty path when unset, so a path joined to it stays relative. `ResManager::sessionPath()` anchors the session under it, so where the app was started from never decides where it saves.
-- `cpuFrequency` - base CPU clock formatted as `"X.XX GHz"`, or `"N/A"` if unavailable. Linux prefers the rated frequency in `/proc/cpuinfo` `model name` (`@ ...GHz`), falling back to sysfs `cpuinfo_max_freq`; macOS uses `hw.cpufrequency_max` and falls back to parsing the CPU brand string (Apple Silicon exposes no frequency sysctl); Windows reads `~MHz` from the CPU registry key.
-- `systemRam` - total physical RAM as `"N GB"`, or `"N/A"` if unavailable. Linux reads `/proc/meminfo` `MemTotal`; macOS reads `hw.memsize`; Windows uses `GlobalMemoryStatusEx` and rounds to the nearest GB.
+- `homeDir` - the user's home: `%USERPROFILE%` on Windows, `$HOME` on GNU/Linux and macOS. An empty path when unset, so a path joined to it stays relative. `ResManager::sessionPath()` anchors the session under it, so where the app was started from never decides where it saves.
+- `cpuFrequency` - base CPU clock formatted as `"X.XX GHz"`, or `"N/A"` if unavailable. GNU/Linux prefers the rated frequency in `/proc/cpuinfo` `model name` (`@ ...GHz`), falling back to sysfs `cpuinfo_max_freq`; macOS uses `hw.cpufrequency_max` and falls back to parsing the CPU brand string (Apple Silicon exposes no frequency sysctl); Windows reads `~MHz` from the CPU registry key.
+- `systemRam` - total physical RAM as `"N GB"`, or `"N/A"` if unavailable. GNU/Linux reads `/proc/meminfo` `MemTotal`; macOS reads `hw.memsize`; Windows uses `GlobalMemoryStatusEx` and rounds to the nearest GB.
 - `setSystemName` - sets the application name shown by the OS (Windows AppUserModelID for taskbar grouping; macOS NSApplication dock name). No-op where unsupported; the `name` argument is ignored on those platforms.
 
 Notes: the frequency/RAM strings are display-oriented (used to resolve dialog placeholders such as %CPU%/%RAM%), not machine-readable numbers.
@@ -310,7 +310,7 @@ Header: `include/common/time.h`
 
 The one clock both repos read and sleep on. Every moment comes from `now()`, every span is measured between two of them, and every wait ends at one, so the clock (`std::chrono::steady_clock` today) changes in one place. Code never names a `std::chrono` clock itself, nor calls `std::this_thread::sleep_*`; the session's wall-clock `lastUpdate` (`system_clock`) is the one exception, being a date rather than a span.
 
-A sleep lasts its span to a fraction of a millisecond on every platform. On Linux and macOS that is `std::this_thread::sleep_for`, which wakes on the kernel's high-resolution timers. On Windows a plain sleep wakes on the system timer's tick, 15.6 ms unless some process asked for a finer one, so `sleepFor` waits on a high-resolution waitable timer there (`CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`, no process-wide timer change), falling back to the plain sleep where none can be made.
+A sleep lasts its span to a fraction of a millisecond on every platform. On GNU/Linux and macOS that is `std::this_thread::sleep_for`, which wakes on the kernel's high-resolution timers. On Windows a plain sleep wakes on the system timer's tick, 15.6 ms unless some process asked for a finer one, so `sleepFor` waits on a high-resolution waitable timer there (`CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`, no process-wide timer change), falling back to the plain sleep where none can be made.
 
 ```cpp
 class Time final {

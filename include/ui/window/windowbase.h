@@ -61,6 +61,11 @@ public:
     // Set window icon (platform-specific, default no-op)
     virtual void setWindowIcon(const std::string & /* mainIconPath */, const std::string & /* symbolicIconPath */) { }
 
+    // Fullscreen, where the platform needs it asked for (default no-op): on Wayland only a
+    // client's request for the state covers what its desktop keeps for itself, a size never does
+    [[nodiscard]] virtual bool isFullscreen() const { return false; }
+    virtual void               setFullscreen(bool /*isFullscreen*/) { }
+
     // -------- Geometry accessors --------
 
     [[nodiscard]] Ui::Res::Type::bound_t bound() const override { return m_bound; }

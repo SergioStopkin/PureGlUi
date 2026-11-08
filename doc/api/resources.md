@@ -88,6 +88,8 @@ State getters/setters (each setter fires the persist hook where noted):
 - `lastOpenDir()`, `setLastOpenDir(dir)`.
 - `sessionWindowX/Y/Width/Height()`; `setSessionWindowGeometry(x,y,w,h)`
   (diff-checked, fires persist hook only on real change).
+- `isSessionWindowFullscreen()`; `setSessionWindowFullscreen(isFullscreen)` - whether the main
+  window ended fullscreen (diff-checked the same way).
 - `sessionOpenFiles()`, `sessionActiveFile()`;
   `setSessionOpenFiles(files, activeFile)` (diff-checked).
 
@@ -426,8 +428,13 @@ Root scalars (file metadata, never restored):
 
 Sections:
 
-- `mainWindow` - `{x, y, width, height}`; frame origin + client size in physical
+- `mainWindow` - `{x, y, width, height, fullscreen}`; frame origin + client size in physical
   px. Written only once geometry is committed (zeros would mask layout defaults).
+  `fullscreen` is whether the window ended so, and the geometry is then the window it was
+  before. A session that ended fullscreen starts fullscreen, asked of the window
+  (`WindowBase::setFullscreen`): on native Wayland a size alone never covers what the desktop
+  keeps for itself, and on macOS fullscreen is a state of AppKit's, the window's own Space.
+  Elsewhere (X11, Win32) the window reports no state, so the flag stays false.
 - `view` - `{theme, themeMode}`.
 - `paths` - `{lastOpenDir}` (omitted when empty).
 - `files` - `{active, open[]}`; file paths in tab order, not tabs/workspaces.

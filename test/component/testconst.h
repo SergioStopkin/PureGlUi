@@ -20,6 +20,7 @@
 // Every constant the component tests hold, in one place to read and set them
 
 #include "testidkind.h"
+#include "ui/color.h"
 #include "ui/idkind.h"
 #include "ui/type.h"
 
@@ -31,6 +32,20 @@ namespace PureGlUi {
 // How long the OS is given to act on what it was asked, and the most a change of state takes
 constexpr std::chrono::milliseconds SETTLE { 100 };
 constexpr std::chrono::milliseconds MOST_WAIT { 5000 };
+
+// The most a window made, a few frames and closed take, many times over: a swap waiting for a
+// frame callback that never comes never returns. And how often the wait looks
+constexpr std::chrono::milliseconds FRAMES_MOST { 1000 };
+constexpr std::chrono::milliseconds POLL_INTERVAL { 10 };
+
+// The window a session that ended fullscreen kept, in physical px: off the layout's default and
+// over the window's least, so a window back at it is the session's
+constexpr int RESTORED_WIDTH  = 1700;
+constexpr int RESTORED_HEIGHT = 1100;
+
+// The physical px a child window, as a host's content surface, is made at
+constexpr Ui::fpx_t CHILD_WIDTH  = 320.0F;
+constexpr Ui::fpx_t CHILD_HEIGHT = 240.0F;
 
 // Passes the loop runs: the ones a test scripts, then several with nothing new, for
 // anything the shell still owes the pointer
@@ -70,6 +85,9 @@ constexpr Ui::fpx_t SCROLLBAR_DOCK_HEIGHT = 200.0F;
 constexpr Ui::fpx_t SLIDER_DOCK_HEIGHT    = 400.0F;
 constexpr Ui::id_t  SLIDER_ROW            = Ui::idOf(TestIdKind::Row, 7);
 
+// A row a host projects into a dock
+constexpr Ui::id_t PROJECTED_ROW = Ui::idOf(TestIdKind::Row, 8);
+
 // The dock TestDockRowLayout lays its rows out in
 constexpr Ui::fpx_t ROW_DOCK_HEIGHT = 300.0F;
 constexpr Ui::fpx_t ROW_DOCK_EDGE   = 400.0F;
@@ -85,5 +103,17 @@ constexpr Ui::fpx_t EPSILON = 0.01F;
 constexpr Ui::id_t SURFACE_A       = Ui::idOf(TestIdKind::Surface, 10);
 constexpr Ui::id_t SURFACE_B       = Ui::idOf(TestIdKind::Surface, 20);
 constexpr Ui::id_t UNKNOWN_SURFACE = Ui::idOf(TestIdKind::Surface, 999);
+
+// A frame text is drawn into, physical px, and its colours: a dark line on a light opaque ground
+constexpr int          TEXT_FRAME_W = 320;
+constexpr int          TEXT_FRAME_H = 64;
+inline const Ui::Color TEXT_BACKGROUND(204, 204, 191);
+inline const Ui::Color TEXT_COLOR(16, 48, 16);
+
+// Per channel: how far a pixel may stray from the ground and still read as ground
+constexpr int COLOR_TOLERANCE = 16;
+
+// Per channel: the same text drawn twice agrees to rounding
+constexpr int SAME_TEXT = 1;
 
 } // namespace PureGlUi

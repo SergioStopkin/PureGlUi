@@ -29,6 +29,12 @@
 #include "ui/shell.h"
 #include "ui/type.h"
 
+#ifdef __APPLE__
+#include "nativefocus.h"
+
+#include <iostream>
+#endif
+
 #include <gtest/gtest.h>
 #include <vector>
 
@@ -52,5 +58,39 @@ TEST(SecondMainWindow, OpensAMenuListAsTheFirstDid)
         shell.shutdown();
     }
 }
+
+#ifdef __APPLE__
+
+// A shell shut down takes its main window and its list with it, so each leaves AppKit as many
+// windows as the one before it did - a window never closed stays listed until the process ends
+TEST(SecondMainWindow, LeavesNoWindowOfItsOwnAsTheFirstDid)
+{
+    NSUInteger leftByFirst = 0;
+    for (int turn = 1; turn <= 2; ++turn) {
+        // Drained as an app's loop drains each pass: what AppKit autoreleased goes with the turn
+        @autoreleasepool {
+            Ui::Shell shell;
+            if (!shell.initialize()) {
+                GTEST_SKIP() << "no window or GL context here";
+            }
+            const std::vector<Ui::id_t> menuIds = PureGlUi::listMenuIdsOf(shell);
+            ASSERT_FALSE(menuIds.empty());
+            shell.windowManager().renderAll();
+            shell.openPopup(menuIds.front());
+            if (turn == 2) {
+                EXPECT_GT(PureGlUi::appWindowCount(), leftByFirst) << "a shell up lists no window of its own";
+            }
+            shell.shutdown();
+        }
+        if (turn == 1) {
+            leftByFirst = PureGlUi::appWindowCount();
+            std::cout << "[Windows] left by the first: " << PureGlUi::appWindowsText() << std::endl;
+        } else {
+            EXPECT_EQ(PureGlUi::appWindowCount(), leftByFirst) << PureGlUi::appWindowsText();
+        }
+    }
+}
+
+#endif
 
 } // namespace

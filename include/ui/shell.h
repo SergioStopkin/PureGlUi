@@ -591,7 +591,12 @@ public:
             int frameX = 0;
             int frameY = 0;
             m_windowManager.mainWindowScreenFramePosition(frameX, frameY);
-            m_resManager.setSessionWindowGeometry(frameX, frameY, static_cast<int>(newW), static_cast<int>(newH));
+            // Fullscreen keeps the window it was: its geometry is what a later run makes windowed
+            const bool isFullscreen = m_windowManager.mainWindow().isFullscreen();
+            m_resManager.setSessionWindowFullscreen(isFullscreen);
+            if (!isFullscreen) {
+                m_resManager.setSessionWindowGeometry(frameX, frameY, static_cast<int>(newW), static_cast<int>(newH));
+            }
 
             if (newW != m_windowWidth || newH != m_windowHeight) {
                 if constexpr (SHELL_DEBUG) {

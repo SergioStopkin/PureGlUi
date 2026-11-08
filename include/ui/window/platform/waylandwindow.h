@@ -150,6 +150,9 @@ public:
         }
     }
 
+    // Its buffer px per surface px: its output's scale, never the UI's, which PUREGLUI_SCALE is on
+    [[nodiscard]] int bufferScale() const { return m_scale; }
+
     // Its output's scale, which the output reports again when the desktop's setting changes
     [[nodiscard]] int dpi() const override { return m_scale * 96; }
 
@@ -179,10 +182,8 @@ public:
         m_bound.y = y;
 
         if (m_subsurface) {
-            // Subsurface position is in parent's surface-local (logical) coords
-            wl_subsurface_set_position(m_subsurface,
-                                       static_cast<int>(x / g_config.scale),
-                                       static_cast<int>(y / g_config.scale));
+            // Subsurface position is in parent's surface-local (logical) coords, its output's scale
+            wl_subsurface_set_position(m_subsurface, static_cast<int>(x / m_scale), static_cast<int>(y / m_scale));
             wl_surface_commit(m_surface);
         }
     }
@@ -192,6 +193,7 @@ public:
         // A wl_surface (re)maps when it next commits a buffer; the EGL swap in the
         // render loop does exactly that. Requesting a frame brings a hidden surface
         // back on screen (the counterpart to hide()'s null-buffer unmap).
+        m_isMapped = true;
         this->requestRender();
     }
 
@@ -203,6 +205,7 @@ public:
             wl_surface_attach(m_surface, nullptr, 0, 0);
             wl_surface_commit(m_surface);
         }
+        m_isMapped = false;
     }
 
     void moveResize(const Ui::Res::Type::bound_t & bound) override
@@ -221,13 +224,13 @@ public:
     }
 
     // The compositor enforces this on interactive resize. Its protocol takes
-    // window-local (logical) size, so the physical floor is scaled back down.
+    // window-local (logical) size, so the physical floor is scaled back down by the buffer's scale
     void setMinSize(fpx_t width, fpx_t height) override
     {
         if (m_xdgToplevel == nullptr) {
             return;
         }
-        xdg_toplevel_set_min_size(m_xdgToplevel, roundToInt(toCss(width)), roundToInt(toCss(height)));
+        xdg_toplevel_set_min_size(m_xdgToplevel, roundToInt(width / m_scale), roundToInt(height / m_scale));
         wl_surface_commit(m_surface);
     }
 
@@ -248,7 +251,8 @@ public:
 
     void swapBuffers() override
     {
-        if (m_context && m_context->isValid()) {
+        // A swap commits a buffer, which maps a hidden surface again
+        if (m_isMapped && m_context && m_context->isValid()) {
             m_context->swapBuffers();
         }
     }
@@ -298,18 +302,43 @@ public:
 
     void handleOutputScale(int32_t scale)
     {
-        if (scale > 0) {
-            m_scale = scale;
-            // Tell compositor our buffer is already rendered at this scale
-            if (m_surface) {
-                wl_surface_set_buffer_scale(m_surface, scale);
-            }
+        if (scale <= 0 || scale == m_scale) {
+            return;
+        }
+        // The buffer follows the scale, or the window grows or shrinks on screen with it. Before
+        // the buffer exists the size is still the one asked for at creation
+        if (m_context) {
+            m_bound.w = m_bound.w * scale / m_scale;
+            m_bound.h = m_bound.h * scale / m_scale;
+            m_context->resize(m_bound.w, m_bound.h);
+            this->requestRender();
+        }
+        m_scale = scale;
+        // Tell compositor our buffer is already rendered at this scale
+        if (m_surface) {
+            wl_surface_set_buffer_scale(m_surface, scale);
         }
     }
 
     bool shouldClose() const { return m_shouldClose; }
 
     [[nodiscard]] bool isActivated() const { return m_isActivated; }
+
+    [[nodiscard]] bool isFullscreen() const override { return m_isFullscreen; }
+
+    // Asked of the compositor, whose configure brings the state and the size
+    void setFullscreen(bool isFullscreen) override
+    {
+        if (m_xdgToplevel == nullptr) {
+            return;
+        }
+        if (isFullscreen) {
+            xdg_toplevel_set_fullscreen(m_xdgToplevel, nullptr);
+        } else {
+            xdg_toplevel_unset_fullscreen(m_xdgToplevel);
+        }
+        wl_surface_commit(m_surface);
+    }
 
     // Accessors for event handling
     wl_display *             wlDisplay() const { return m_display; }
@@ -320,6 +349,7 @@ public:
     wl_data_device_manager * wlDataDeviceManager() const { return m_dataDeviceManager; }
     wl_shm *                 wlShm() const { return m_shm; }
     xdg_surface *            xdgSurface() const { return m_xdgSurface; }
+    xdg_toplevel *           xdgToplevel() const { return m_xdgToplevel; }
 
 protected:
     wl_display *                  m_display = nullptr;
@@ -345,13 +375,21 @@ private:
     wl_subsurface * m_subsurface  = nullptr;
 
     // State
-    int  m_scale       = 1;
-    bool m_shouldClose = false;
-    bool m_isActivated = true; // as the last configure said; nothing to lose before the first
-    bool m_configured  = false;
+    int  m_scale        = 1;
+    bool m_shouldClose  = false;
+    bool m_isActivated  = true;  // as the last configure said; nothing to lose before the first
+    bool m_isFullscreen = false; // as the last configure said
+    Ui::Res::Type::bound_t
+         m_windowedBound {};  // the window before fullscreen in logical px, which a change of scale keeps
+    bool m_isMapped   = true; // false from hide() until show()
+    bool m_configured = false;
 
     // The output's name and current mode, shared across instances for the static displaysOf()
-    static inline display_t m_outputDisplay { .isPrimary = true };
+    static inline display_t m_outputDisplay { .name        = {},
+                                              .width       = 0,
+                                              .height      = 0,
+                                              .refreshRate = 0.0F,
+                                              .isPrimary   = true };
 
     // -------- Static listeners --------
 
@@ -387,16 +425,26 @@ private:
 
     static constexpr xdg_surface_listener s_xdgSurfaceListener = { xdgSurfaceConfigure };
 
-    // The window's states come with each configure: activated while the app has the focus,
-    // its own popup's grab included - unlike a keyboard leave, which that grab sends
+    // The window's states come with each configure: activated while the app has the focus
     static void
     xdgToplevelConfigure(void * data, xdg_toplevel * /*toplevel*/, int32_t width, int32_t height, wl_array * states)
     {
-        auto *                          self      = static_cast<WaylandWindow *>(data);
-        const uint32_t                  activated = XDG_TOPLEVEL_STATE_ACTIVATED;
+        auto *                          self       = static_cast<WaylandWindow *>(data);
+        const uint32_t                  activated  = XDG_TOPLEVEL_STATE_ACTIVATED;
+        const uint32_t                  fullscreen = XDG_TOPLEVEL_STATE_FULLSCREEN;
         const std::span<const uint32_t> list(static_cast<const uint32_t *>(states->data),
                                              states->size / sizeof(uint32_t));
-        self->m_isActivated = std::ranges::find(list, activated) != list.end();
+        self->m_isActivated     = std::ranges::find(list, activated) != list.end();
+        const bool isFullscreen = std::ranges::find(list, fullscreen) != list.end();
+        if (isFullscreen && !self->m_isFullscreen) {
+            self->m_windowedBound = { .w = self->m_bound.w / self->m_scale, .h = self->m_bound.h / self->m_scale };
+        }
+        // Out of fullscreen with the size left to us: the window it was, never the screen's
+        if (!isFullscreen && self->m_isFullscreen && (width <= 0 || height <= 0) && self->m_windowedBound.w > 0.0F) {
+            width  = static_cast<int32_t>(self->m_windowedBound.w);
+            height = static_cast<int32_t>(self->m_windowedBound.h);
+        }
+        self->m_isFullscreen = isFullscreen;
         self->handleConfigure(width, height);
     }
 
@@ -565,12 +613,13 @@ private:
         }
 
         wl_subsurface_set_desync(m_subsurface);
+        // The output's scale, and so the buffer's, before there is a buffer it could resize, as
+        // the main window's configure roundtrip brings it. Never g_config.scale: PUREGLUI_SCALE is the UI's
+        wl_display_roundtrip(m_display);
         // Subsurface position is in parent's surface-local (logical) coordinates
         wl_subsurface_set_position(m_subsurface,
-                                   static_cast<int>(m_bound.x / g_config.scale),
-                                   static_cast<int>(m_bound.y / g_config.scale));
-        // Tell compositor our buffer is pre-scaled
-        wl_surface_set_buffer_scale(m_surface, static_cast<int>(g_config.scale));
+                                   static_cast<int>(m_bound.x / m_scale),
+                                   static_cast<int>(m_bound.y / m_scale));
         return true;
     }
 

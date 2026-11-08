@@ -19,10 +19,11 @@
 
 #ifdef HAVE_WAYLAND
 
-#include "ui/config.h"
 #include "ui/interface/ieventos.h"
 #include "ui/interface/iwindow.h"
 #include "ui/window/clickcounter.h"
+#include "ui/window/cursorplacement.h"
+#include "ui/window/cursorplacementof.h"
 #include "ui/window/event.h"
 #include "ui/window/eventtype.h"
 #include "ui/window/platform/waylandwindow.h"
@@ -104,10 +105,8 @@ public:
         wl_display_roundtrip(wlWin->wlDisplay());
 
         // Load cursor theme for pointer display
-        const int cursorSize = 24 * static_cast<int>(g_config.scale);
-        m_cursorTheme        = wl_cursor_theme_load(nullptr, cursorSize, wlWin->wlShm());
+        loadCursorTheme(*wlWin);
         if (m_cursorTheme) {
-            m_defaultCursor = wl_cursor_theme_get_cursor(m_cursorTheme, "left_ptr");
             m_cursorSurface = wl_compositor_create_surface(wlWin->wlCompositor());
         }
 
@@ -119,6 +118,9 @@ public:
     // findChildWindowId(). WM only wires it for non-Wayland backends today, so on
     // Wayland it stays unset (findChildWindowId returns INVALID_ID), as before.
     void setChildWindowLookup(Ui::Window::child_id_fn_t lookup) override { m_childWindowLookup = std::move(lookup); }
+
+    // The seat's pointer, whose listener a test feeds as the compositor would
+    [[nodiscard]] wl_pointer * wlPointer() const { return m_pointer; }
 
     // The compositor makes the client re-set the cursor on every pointer enter,
     // so the shape is state here rather than a one-shot call. Applying it now
@@ -213,9 +215,29 @@ public:
             }
         }
 
+        // Fullscreen given or taken at a size the window already had is a resize all the same:
+        // the shell keeps the state from it
+        if (wlWin->isFullscreen() != m_isFullscreen) {
+            m_isFullscreen      = wlWin->isFullscreen();
+            event.type          = EventType::Resize;
+            event.resize.width  = currentWidth;
+            event.resize.height = currentHeight;
+            return true;
+        }
+
         // The output's scale, which its listener keeps on the window, read the same way
         if (wlWin->dpi() != m_lastDpi) {
-            m_lastDpi  = wlWin->dpi();
+            m_lastDpi = wlWin->dpi();
+            // The cursor at the new scale, the old theme's images let go once off the pointer
+            wl_cursor_theme * oldTheme = m_cursorTheme;
+            m_cursorTheme              = nullptr;
+            loadCursorTheme(*wlWin);
+            if (m_pointer != nullptr && m_focusSurface != nullptr) {
+                applyCursor(m_pointer, m_pointerSerial);
+            }
+            if (oldTheme != nullptr) {
+                wl_cursor_theme_destroy(oldTheme);
+            }
             event.type = EventType::ScaleChange;
             return true;
         }
@@ -344,9 +366,10 @@ private:
     wl_cursor_theme *        m_cursorTheme   = nullptr;
     wl_surface *             m_cursorSurface = nullptr;
     wl_cursor *              m_defaultCursor = nullptr;
-    uint32_t                 m_pointerSerial = 0;
-    wl_surface *             m_focusSurface  = nullptr;
-    wl_surface *             m_mainSurface   = nullptr;
+    int      m_bufferScale   = 1; // the window's px per surface px, its output's: the cursor theme's and the pointer's
+    uint32_t m_pointerSerial = 0;
+    wl_surface * m_focusSurface = nullptr;
+    wl_surface * m_mainSurface  = nullptr;
 
     // Clipboard selection (wl_data_source). m_clipboardText outlives copyToClipboard
     // because the source's send callback fires asynchronously when a client pastes.
@@ -372,8 +395,9 @@ private:
     // Track window size for generating resize events
     int  m_lastWidth    = 0;
     int  m_lastHeight   = 0;
-    int  m_lastDpi      = 0;    // the window's DPI last reported
-    bool m_isActivated  = true; // the window's activated state last reported
+    int  m_lastDpi      = 0;     // the window's DPI last reported
+    bool m_isActivated  = true;  // the window's activated state last reported
+    bool m_isFullscreen = false; // the window's fullscreen state last reported
     bool m_closeEmitted = false;
 
     Ui::Window::child_id_fn_t m_childWindowLookup;
@@ -497,12 +521,22 @@ private:
         auto * self           = static_cast<WaylandEvent *>(data);
         self->m_focusSurface  = surface;
         self->m_pointerSerial = serial;
-        // Wayland gives surface-local (logical) coords; scale to physical pixels
-        self->m_mouseX = toPhysFloor(wl_fixed_to_int(sx));
-        self->m_mouseY = toPhysFloor(wl_fixed_to_int(sy));
+        // Wayland gives surface-local (logical) coords; scaled to physical pixels by the buffer's
+        // scale, never the UI's, which PUREGLUI_SCALE is on
+        self->m_mouseX = wl_fixed_to_int(sx) * self->m_bufferScale;
+        self->m_mouseY = wl_fixed_to_int(sy) * self->m_bufferScale;
 
         // Set cursor - Wayland requires the client to set it on every enter
         self->applyCursor(pointer, serial);
+    }
+
+    // The theme at the window's buffer scale, its output's: a theme at another, PUREGLUI_SCALE's
+    // or an old output's, the compositor scales up or down to stand there, blurred
+    void loadCursorTheme(const WaylandWindow & window)
+    {
+        m_bufferScale   = std::max(1, window.bufferScale());
+        m_cursorTheme   = wl_cursor_theme_load(nullptr, Ui::Window::CURSOR_SIZE * m_bufferScale, window.wlShm());
+        m_defaultCursor = m_cursorTheme != nullptr ? wl_cursor_theme_get_cursor(m_cursorTheme, "left_ptr") : nullptr;
     }
 
     // Resolve the current shape against the theme and hand it to the pointer.
@@ -526,12 +560,21 @@ private:
             return;
         }
 
-        wl_cursor_image * image = cursor->images[0];
-        wl_buffer *       buf   = wl_cursor_image_get_buffer(image);
+        wl_cursor_image *                    image     = cursor->images[0];
+        wl_buffer *                          buf       = wl_cursor_image_get_buffer(image);
+        const int                            width     = static_cast<int>(image->width);
+        const int                            height    = static_cast<int>(image->height);
+        const Ui::Window::cursor_placement_t placement = Ui::Window::cursorPlacementOf(
+        width,
+        height,
+        static_cast<int>(image->hotspot_x),
+        static_cast<int>(image->hotspot_y),
+        m_bufferScale);
+        wl_surface_set_buffer_scale(m_cursorSurface, placement.bufferScale);
         wl_surface_attach(m_cursorSurface, buf, 0, 0);
-        wl_surface_damage(m_cursorSurface, 0, 0, image->width, image->height);
+        wl_surface_damage(m_cursorSurface, 0, 0, width / placement.bufferScale, height / placement.bufferScale);
         wl_surface_commit(m_cursorSurface);
-        wl_pointer_set_cursor(pointer, serial, m_cursorSurface, image->hotspot_x, image->hotspot_y);
+        wl_pointer_set_cursor(pointer, serial, m_cursorSurface, placement.hotspotX, placement.hotspotY);
     }
 
     static void pointerLeave(void * data, wl_pointer * /*pointer*/, uint32_t /*serial*/, wl_surface * surface)
@@ -548,8 +591,8 @@ private:
     static void pointerMotion(void * data, wl_pointer * /*pointer*/, uint32_t /*time*/, wl_fixed_t sx, wl_fixed_t sy)
     {
         auto * self    = static_cast<WaylandEvent *>(data);
-        self->m_mouseX = toPhysFloor(wl_fixed_to_int(sx));
-        self->m_mouseY = toPhysFloor(wl_fixed_to_int(sy));
+        self->m_mouseX = wl_fixed_to_int(sx) * self->m_bufferScale;
+        self->m_mouseY = wl_fixed_to_int(sy) * self->m_bufferScale;
 
         Event event;
         event.type    = EventType::MouseMove;

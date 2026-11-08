@@ -7,7 +7,7 @@ set -e
 
 . .cicd-config
 
-USAGE_TEXT="Usage: ./build.sh <dev|rel|test|ut|ct|cov>"
+USAGE_TEXT="Usage: ./build.sh <dev|rel|test|ut|ct|cov> [wl]"
 
 if [[ $# -eq 0 ]]; then
     PrintUsageAndExit
@@ -15,6 +15,8 @@ fi
 
 CMAKE_ARGS=""
 BUILD_ARGS=""
+# X11 unless wl: an X11 build runs on a Wayland session too, through XWayland
+WITH_WAYLAND=OFF
 
 # Platform-specific compiler and build settings
 if [[ "$OS" == "Windows_NT" ]]; then
@@ -64,7 +66,30 @@ else
     PrintUsageAndExit
 fi
 
-CMAKE_ARGS="$CMAKE_ARGS -DTARGET_SRC=$TARGET_SRC -DWITH_WAYLAND=OFF"
+# The native Wayland backend, in a dir beside the mode's: switching WITH_WAYLAND in one dir
+# would rebuild everything there each time. Linux's alone, and where its libraries are missing
+# CMake falls back to X11 with only a warning, so both are stopped here. Coverage has none: its
+# unit suite has no window, and unit-tests-coverage.sh reads the X11 build
+if [[ $2 == "wl" && $1 == "cov" ]]; then
+    echo "wl: coverage reads the X11 build - run ./build.sh cov"
+    exit 1
+elif [[ $2 == "wl" ]]; then
+    if [[ "`uname`" != "Linux" ]]; then
+        echo "wl: native Wayland builds on GNU/Linux only - build without wl here"
+        exit 1
+    fi
+    if ! pkg-config --exists wayland-client wayland-egl wayland-cursor wayland-protocols xkbcommon \
+        || ! command -v wayland-scanner >/dev/null; then
+        echo "wl: needs wayland-client, wayland-egl, wayland-cursor, wayland-protocols, xkbcommon and wayland-scanner"
+        exit 1
+    fi
+    BUILD_DIR=$BUILD_DIR$WAYLAND_SUFFIX
+    WITH_WAYLAND=ON
+elif [[ $# -gt 1 ]]; then
+    PrintUsageAndExit
+fi
+
+CMAKE_ARGS="$CMAKE_ARGS -DTARGET_SRC=$TARGET_SRC -DWITH_WAYLAND=$WITH_WAYLAND"
 
 # || exit: a failed configure must not fall through to building the stale cache
 cmake -S $CMAKE_SOURCE_DIR -B $BUILD_DIR -DPROJECT_NAME=$PROJECT_NAME $CMAKE_ARGS || exit

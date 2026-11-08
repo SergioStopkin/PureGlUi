@@ -63,6 +63,25 @@ jobs:
       - name: Run Component Tests
         run:  xvfb-run -a env PUREGLUI_SCALE=1.25 ./run.sh ct
 
+      - name: Build Component Tests on Wayland
+        run:  ./build.sh ct wl
+
+      # A headless Weston is the compositor, its desktop shell giving fullscreen, popups and an
+      # output's scale; with no GPU on the runner Mesa draws on the CPU into shared memory. At
+      # 1.25x as above, so the UI's scale stands apart from the output's buffer scale
+      - name: Run Component Tests on Wayland
+        timeout-minutes: 15
+        run: |
+          export XDG_RUNTIME_DIR=`mktemp -d`
+          weston --backend=headless --socket=wayland-ci &
+          for attempt in `seq 100`; do
+              if [[ -S $XDG_RUNTIME_DIR/wayland-ci ]]; then
+                  break
+              fi
+              sleep 0.1
+          done
+          WAYLAND_DISPLAY=wayland-ci PUREGLUI_SCALE=1.25 ./run.sh ct wl
+
       - name: Build Coverage
         run:  ./build.sh cov
 

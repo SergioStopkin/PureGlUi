@@ -379,7 +379,7 @@ Cache management: `void removeTexture(const std::string &, int w, int h)`, `void
 
 ### FontRenderer
 
-`ui/gl/fontrenderer.h` - `class FontRenderer final : private Common::NonCopyable`. FreeType-based font loading with an OpenGL texture-atlas glyph cache and a text shader. Handles font resolution (res font dir scan + system fallbacks + per-codepoint fontconfig fallback + a synthesized "tofu" glyph), atlas packing, and text vertex generation with sRGB-correct blending. `constexpr bool FONT_DEBUG` / `LOG_TEXT_LAYOUT` gate diagnostics.
+`ui/gl/fontrenderer.h` - `class FontRenderer final : private Common::NonCopyable`. FreeType-based font loading with an OpenGL texture-atlas glyph cache and a text shader. Handles font resolution (res font dir scan + system fallbacks + per-codepoint fontconfig fallback + a synthesized "tofu" glyph), atlas packing, and text vertex generation. Text blends in sRGB space, the colour as given, on every surface alike: whether a window's frame encodes sRGB is its EGL config's, and a pass that depended on it drew one way on one window and another on the next. `constexpr bool FONT_DEBUG` / `LOG_TEXT_LAYOUT` gate diagnostics.
 
 Its records, one header each in `ui/gl/`: `glyph_bitmap_t` (`glyphbitmap.h` - per-glyph size/offset/advance + atlas UVs + grayscale buffer) and `font_rec_t` (`fontrec.h` - cache key `font_t`, resolved file path, `font_metrics_t`, FreeType faces, glyph map, 1024x1024 atlas + GL texture, and the text shader program/VAO/VBO/uniforms).
 
@@ -416,6 +416,7 @@ Its records, one header each in `ui/gl/`: `glyph_bitmap_t` (`glyphbitmap.h` - pe
 - `bool hasModernGl()` - true when the current context is GL >= 3.x (required by the core-profile pipeline).
 - `bool isSoftwareRenderer()` - true when `GL_RENDERER` names a software rasterizer (llvmpipe, SwiftShader, GDI Generic, etc.).
 - `void * bufferOffset(size_t bytes)` - the sanctioned int->ptr helper for vertex-attrib offsets.
+- `void blendStraightAlpha()` - colour blended by its alpha, alpha as "over", so a soft edge drawn over an opaque pixel leaves it opaque; blended as colour it leaves the frame part see-through, which native Wayland's compositor shows as thinner text.
 - `GLuint compileShader(GLenum type, const char * source, const char * label)`, `GLuint linkProgram(GLuint vertex, GLuint fragment, const char * label)` - compile/link (0 on failure).
 - `std::array<fpx_t,16> orthoProjection(fpx_t cssWidth, fpx_t cssHeight)` - top-left-origin, Y-down ortho.
 - `void createPosUvVao(GLuint & vao, GLuint & vbo)` - VAO/VBO with vec2 pos (loc 0) + vec2 uv (loc 1).

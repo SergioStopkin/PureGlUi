@@ -78,6 +78,9 @@ public:
         // A move too, at the same size: the shell keeps where the window stands from it
         observe(NSWindowDidResizeNotification, nsWindow, ^(NSNotification *) { m_isResizeDue = true; });
         observe(NSWindowDidMoveNotification, nsWindow, ^(NSNotification *) { m_isResizeDue = true; });
+        // And fullscreen in or out, whatever the size: the shell keeps the state from a resize
+        observe(NSWindowDidEnterFullScreenNotification, nsWindow, ^(NSNotification *) { m_isResizeDue = true; });
+        observe(NSWindowDidExitFullScreenNotification, nsWindow, ^(NSNotification *) { m_isResizeDue = true; });
         observe(NSWindowDidChangeBackingPropertiesNotification, nsWindow, ^(NSNotification *) {
             m_isScaleChanged = true;
         });

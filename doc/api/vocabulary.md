@@ -64,7 +64,7 @@ enum class Ui::Codepoint : char32_t {
 [[nodiscard]] inline std::wstring Ui::wstr(Codepoint cp);
 ```
 
-`wstr(cp)` builds a `std::wstring` carrying the single codepoint. Delegates to `Common::Unicode::fromUtf32`, so the Windows 16-bit `wchar_t` case is encoded as a surrogate pair; on Linux/macOS it is a single wide char.
+`wstr(cp)` builds a `std::wstring` carrying the single codepoint. Delegates to `Common::Unicode::fromUtf32`, so the Windows 16-bit `wchar_t` case is encoded as a surrogate pair; on GNU/Linux and macOS it is a single wide char.
 
 ```cpp
 const std::wstring ellipsis = Ui::wstr(Ui::Codepoint::ThreeDotH);

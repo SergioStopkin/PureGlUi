@@ -100,7 +100,7 @@ purpose rather than spine position because the first two run on both paths:
   run ends the same however slow the machine.
   With `PUREGLUI_SCALE` set to a number from 0.25 to 8, the DPI the OS gives is multiplied by it, as
   Qt's `QT_SCALE_FACTOR` does - for a desktop that sizes the UI wrong, and for CI, whose
-  component tests run at 1.25x on Linux and Windows. A change of the OS's DPI still
+  component tests run at 1.25x on GNU/Linux and Windows. A change of the OS's DPI still
   comes through it (`ScaleChange`, laid out again by `reloadChrome()`).
 - `requestStop()` / `shutdown()` stop the loop and tear down the window manager.
 
@@ -347,9 +347,9 @@ caller; empty filters => any file (a trailing "All files" is always appended).
 main window). Only Win32 reads it: it stacks a dialog by its owner, and one with none
 went behind the main window's popups. A popup there is owned by its parent window and
 never topmost, so a dialog that window owns stands above it.
-Backends: Win32 `IFileOpenDialog`, macOS `NSOpenPanel`, Linux `zenity` then
+Backends: Win32 `IFileOpenDialog`, macOS `NSOpenPanel`, GNU/Linux `zenity` then
 `kdialog` fallback. Returns the selected absolute paths (empty on cancel or when
-no dialog tool is available on Linux).
+no dialog tool is available on GNU/Linux).
 
 ## Demo app
 

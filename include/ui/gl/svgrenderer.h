@@ -276,7 +276,7 @@ class SvgRenderer : private Common::NonCopyable {
         });
 
         if (s_svg_upload_premultiplied) {
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            Ui::Gl::Util::blendStraightAlpha();
         }
     }
 

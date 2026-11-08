@@ -38,14 +38,17 @@
  * native Wayland, whose scale is its output's
  */
 
-#if defined(_WIN32) || defined(__APPLE__) || (defined(HAVE_X11) && !defined(HAVE_WAYLAND))
+#if defined(_WIN32) || defined(__APPLE__) || defined(HAVE_X11)
 
 #include "menubarloop.h"
 #include "nativegeometry.h"
 #include "shelltest.h"
 #include "testconst.h"
 #include "ui/config.h"
+#include "ui/res/dock/config.h"
+#include "ui/res/dock/row.h"
 #include "ui/res/type/bound.h"
+#include "ui/res/type/changed.h"
 #include "ui/res/type/dialog.h"
 #include "ui/res/type/menu.h"
 #include "ui/shell.h"
@@ -58,9 +61,12 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
+using PureGlUi::PROJECTED_ROW;
 using PureGlUi::SHIFT;
 
 class ScaleChangeTest : public PureGlUi::ShellTest {
@@ -99,6 +105,27 @@ protected:
         dialog.height = 200.0F;
         m_shell.windowManager().openDialog(dialog);
     }
+
+    // Rows into the first dock, open at its default width as a double-click on its grip opens
+    // it, laid out in a frame drawn now: none clears it. With no session a dock starts closed
+    void projectRows(std::vector<Ui::Res::Dock::row_t> rows)
+    {
+        const Ui::Res::Dock::dock_config_t & dock = m_shell.resManager().layout().docks.front();
+        m_shell.resManager().setDockState(dock.name, { .width = dock.defaultWidth, .memoryX = dock.defaultWidth });
+        m_shell.windowManager().apply(Ui::Res::Type::changes_t(Ui::Res::Type::Changed::Layout));
+        m_shell.windowManager().setDockRows(dock.name, std::move(rows));
+        m_shell.windowManager().renderAll();
+    }
+
+    [[nodiscard]] static Ui::Res::Dock::row_t projectedRow()
+    {
+        Ui::Res::Dock::row_t row;
+        row.id    = PROJECTED_ROW;
+        row.label = "projected";
+        return row;
+    }
+
+    [[nodiscard]] bool isRowShown() { return m_shell.windowManager().elementBound(PROJECTED_ROW).w > 0.0F; }
 };
 
 // Half as large again as the window stood: laid out at that DPI, an open list made again
@@ -263,6 +290,77 @@ TEST_F(ScaleChangeTest, NothingOpenAcrossAChangeOfDpiStaysThatWay)
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
     EXPECT_EQ(m_shell.windowManager().popupWindow(), nullptr) << m_read;
     EXPECT_EQ(m_shell.windowManager().dialogWindow(), nullptr) << m_read;
+}
+
+// A reload builds every dock afresh, and a host is told of no change of DPI: the rows it
+// projected are the framework's to keep
+// One loop, as a stop is for good: its first pass places the docks, the next projects the row
+// and changes the DPI
+TEST_F(ScaleChangeTest, ADocksRowsAreBackAfterAChangeOfDpi)
+{
+    ASSERT_FALSE(m_shell.resManager().layout().docks.empty()) << "the shipped layout declares no dock";
+    bool wasShown = false;
+    PureGlUi::runPasses(
+    [this, &wasShown](int pass) {
+        if (pass == 1) {
+            projectRows({ projectedRow() });
+            wasShown       = isRowShown();
+            m_isDpiChanged = PureGlUi::setDpi(mainWindow(), m_dpiBefore * 3 / 2);
+        }
+    },
+    m_shell);
+    if (!m_isDpiChanged) {
+        GTEST_SKIP() << "the OS gives a window no other DPI here";
+    }
+    ASSERT_TRUE(wasShown) << "the row projected never stood in the layout: " << m_read;
+    EXPECT_EQ(m_reloads, 1) << m_read;
+    EXPECT_TRUE(isRowShown()) << m_read;
+}
+
+// A change of DPI builds no dock, its layout's CSS px the same; a theme switch or a res edit
+// builds every one afresh, and the rows are back unasked
+TEST_F(ScaleChangeTest, ADocksRowsAreBackAfterItsDockIsBuiltAgain)
+{
+    ASSERT_FALSE(m_shell.resManager().layout().docks.empty()) << "the shipped layout declares no dock";
+    bool wasShown = false;
+    PureGlUi::runPasses(
+    [this, &wasShown](int pass) {
+        if (pass == 1) {
+            projectRows({ projectedRow() });
+            wasShown = isRowShown();
+            m_shell.windowManager().apply(Ui::Res::Type::changes_t(Ui::Res::Type::Changed::Layout));
+            m_shell.windowManager().renderAll();
+        }
+    },
+    m_shell);
+    ASSERT_TRUE(wasShown) << "the row projected never stood in the layout: " << m_read;
+    EXPECT_TRUE(isRowShown()) << m_read;
+}
+
+// Negative: a row the host took back is not brought back
+TEST_F(ScaleChangeTest, ADocksRowsTakenBackStayGoneAfterAChangeOfDpi)
+{
+    ASSERT_FALSE(m_shell.resManager().layout().docks.empty()) << "the shipped layout declares no dock";
+    bool wasShown     = false;
+    bool wasTakenBack = false;
+    PureGlUi::runPasses(
+    [this, &wasShown, &wasTakenBack](int pass) {
+        if (pass == 1) {
+            projectRows({ projectedRow() });
+            wasShown = isRowShown();
+            projectRows({});
+            wasTakenBack   = !isRowShown();
+            m_isDpiChanged = PureGlUi::setDpi(mainWindow(), m_dpiBefore * 3 / 2);
+        }
+    },
+    m_shell);
+    if (!m_isDpiChanged) {
+        GTEST_SKIP() << "the OS gives a window no other DPI here";
+    }
+    ASSERT_TRUE(wasShown) << "the row projected never stood in the layout: " << m_read;
+    ASSERT_TRUE(wasTakenBack) << "the row taken back still stood in the layout: " << m_read;
+    EXPECT_EQ(m_reloads, 1) << m_read;
+    EXPECT_FALSE(isRowShown()) << m_read;
 }
 
 #if !defined(_WIN32) && !defined(__APPLE__)

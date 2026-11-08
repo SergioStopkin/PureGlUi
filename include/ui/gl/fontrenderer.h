@@ -391,27 +391,16 @@ public:
                 uniform vec4 uColor;
                 uniform int uPremultiplied;
 
-                // sRGB -> linear conversion (IEC 61966-2-1 exact)
-                float srgbToLinear(float s) {
-                    return (s <= 0.04045)
-                        ? s / 12.92
-                        : pow((s + 0.055) / 1.055, 2.4);
-                }
-
+                // The colour as given, blended in sRGB space: on every surface alike, whether
+                // or not its EGL config encodes sRGB
                 void main() {
-                    float a = texture(uTex, vUV).r;
-
-                    vec3 linearColor = vec3(
-                        srgbToLinear(uColor.r),
-                        srgbToLinear(uColor.g),
-                        srgbToLinear(uColor.b));
-
+                    float a    = texture(uTex, vUV).r;
                     float outA = uColor.a * a;
 
                     if (uPremultiplied != 0) {
-                        fragColor = vec4(linearColor * outA, outA);
+                        fragColor = vec4(uColor.rgb * outA, outA);
                     } else {
-                        fragColor = vec4(linearColor, outA);
+                        fragColor = vec4(uColor.rgb, outA);
                     }
                 }
                 )GLSL";

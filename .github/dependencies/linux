@@ -15,9 +15,13 @@ libglu1-mesa-dev
 libgtest-dev
 libjemalloc-dev
 librsvg2-dev
+libwayland-dev
 libx11-dev
 libxcomposite-dev
+libxkbcommon-dev
 libxrandr-dev
 libxrender-dev
 llvm-22
+wayland-protocols
+weston
 xvfb

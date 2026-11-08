@@ -34,9 +34,12 @@
 #include "ui/res/type/changed.h"
 #include "ui/type.h"
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <utility>
 #include <vector>
 
@@ -141,11 +144,33 @@ protected:
     void drawTextVerts(const std::vector<float> & verts, const Ui::Color & color, Ui::Gl::font_rec_t & fr) const
     {
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glEnable(GL_FRAMEBUFFER_SRGB);
+        Ui::Gl::Util::blendStraightAlpha();
         glUseProgram(fr.program);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, fr.atlas_tex);
+        // A/B: the atlas as this context holds it, once per atlas
+        if constexpr (Ui::Gl::FONT_DEBUG) {
+            static std::vector<GLuint> s_printed;
+            if (std::ranges::find(s_printed, fr.atlas_tex) == s_printed.end()) {
+                s_printed.emplace_back(fr.atlas_tex);
+                GLint atlasW = 0;
+                GLint atlasH = 0;
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &atlasW);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &atlasH);
+                std::vector<uint8_t> atlas(static_cast<std::size_t>(atlasW) * atlasH * 4);
+                glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlas.data());
+                std::int64_t sum     = 0;
+                int          nonZero = 0;
+                for (std::size_t idx = 0; idx < atlas.size(); idx += 4) {
+                    sum += atlas.at(idx);
+                    if (atlas.at(idx) != 0) {
+                        ++nonZero;
+                    }
+                }
+                std::cout << "[A/B] atlas " << fr.filePath << " size=" << fr.key.size << " " << atlasW << "x" << atlasH
+                          << " sum=" << sum << " nonzero=" << nonZero << std::endl;
+            }
+        }
         glUniform1i(fr.uTex, 0);
         glUniform1i(fr.uPremultiplied, 0);
         const auto fontProj = Ui::Gl::Util::orthoProjection(static_cast<fpx_t>(m_width), static_cast<fpx_t>(m_height));
@@ -160,13 +185,12 @@ protected:
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindTexture(GL_TEXTURE_2D, 0);
         glUseProgram(0);
-        glDisable(GL_FRAMEBUFFER_SRGB);
     }
 
     void beginSvgDraw()
     {
         m_svgRenderer.begin(m_width, m_height, 1.0F);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        Ui::Gl::Util::blendStraightAlpha();
     }
 
     static void endSvgDraw() { Ui::Gl::SvgRenderer::end(); }

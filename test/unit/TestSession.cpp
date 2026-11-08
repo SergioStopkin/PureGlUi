@@ -87,6 +87,42 @@ TEST(Session, RoundTripRestoresState)
     EXPECT_EQ(restored.sessionOpenFiles(), (std::vector<std::string> { "/tmp/a.step", "/tmp/b.step" }));
 }
 
+// A window that ended fullscreen starts fullscreen: the flag round-trips beside its geometry
+TEST(Session, FullscreenRoundTrips)
+{
+    Ui::Res::ResManager source { TEST_RES_DIR };
+    source.loadAll();
+    source.setSessionWindowGeometry(120, 240, 800, 600);
+    source.setSessionWindowFullscreen(true);
+
+    Ui::Res::ResManager restored { TEST_RES_DIR };
+    restored.loadAll();
+    restored.deserializeSession(source.serializeSession());
+
+    EXPECT_TRUE(restored.isSessionWindowFullscreen());
+    EXPECT_EQ(restored.sessionWindowWidth(), 800);
+    EXPECT_EQ(restored.sessionWindowHeight(), 600);
+}
+
+// Negative: a window that did not, and a session written before the flag, start as their geometry
+TEST(Session, NotFullscreenRoundTrips)
+{
+    Ui::Res::ResManager source { TEST_RES_DIR };
+    source.loadAll();
+    source.setSessionWindowGeometry(120, 240, 800, 600);
+
+    Ui::Res::ResManager restored { TEST_RES_DIR };
+    restored.loadAll();
+    restored.deserializeSession(source.serializeSession());
+    EXPECT_FALSE(restored.isSessionWindowFullscreen());
+
+    Ui::Res::ResManager older { TEST_RES_DIR };
+    older.loadAll();
+    older.deserializeSession(R"({"mainWindow":{"x":1,"y":2,"width":800,"height":600}})");
+    EXPECT_FALSE(older.isSessionWindowFullscreen());
+    EXPECT_EQ(older.sessionWindowWidth(), 800);
+}
+
 // The mainWindow block is written only once geometry is committed (width/height
 // > 0) - zeros would mask the layout defaults on restore.
 TEST(Session, GeometryOmittedUntilCommitted)
