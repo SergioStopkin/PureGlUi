@@ -542,6 +542,9 @@ public:
         if (!initWindow()) {
             return false;
         }
+        // The session holds the window's state from the start, as each resize keeps it: an X11 window
+        // reports none, and with no window manager no resize may come to clear what a Wayland run left
+        m_resManager.setSessionWindowFullscreen(m_windowManager.mainWindow().isFullscreen());
         m_windowManager.mainWindow().makeCurrent();
         if (m_hooks.afterWindowCreated) {
             m_hooks.afterWindowCreated();

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 . .cicd-config
 
-USAGE_TEXT="Usage: ./run.sh <dev|rel|test|ut|ct> [wl] [args...]"
+USAGE_TEXT="Usage: ./run.sh <dev|rel|test|ut|ct> [wl] [-f filter] [args...]"
 
 if [[ $# -eq 0 ]]; then
     PrintUsageAndExit
@@ -19,6 +19,21 @@ if [[ $1 == "wl" ]]; then
     shift
 fi
 BUILD_DIR=$BUILD_DIR_REL$SUFFIX
+
+# A suite's -f <pattern> is gtest's --gtest_filter=<pattern>
+if [[ $MODE == "test" || $MODE == "ut" || $MODE == "ct" ]]; then
+    ARGS=()
+    while [[ $# -gt 0 ]]; do
+        if [[ $1 == "-f" ]]; then
+            shift
+            ARGS+=("--gtest_filter=$1")
+        else
+            ARGS+=("$1")
+        fi
+        shift
+    done
+    set -- "${ARGS[@]}"
+fi
 
 # One definition per suite; `test` runs both. Windows needs Mesa deployed next to
 # the binary (software GL) and gtest's DLLs resolved from the build dir.

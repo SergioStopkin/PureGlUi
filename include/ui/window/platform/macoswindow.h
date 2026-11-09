@@ -24,6 +24,7 @@
 #include "ui/window/display.h"
 #include "ui/window/windowbase.h"
 
+#include <algorithm>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -173,8 +174,11 @@ public:
             // NSWindow frames are in POINTS, not pixels. `width`/`height` are physical pixels
             // (matching X11 semantics); divide by backingScaleFactor to get points.
             const CGFloat bsf = backingScaleFactor();
-            NSRect frame = NSMakeRect(0, 0, width / bsf, height / bsf);
             NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+            // No larger than its screen: AppKit fits a larger window as it shows it, yet brings the
+            // size asked for back as it leaves fullscreen
+            const NSRect visible = [NSWindow contentRectForFrameRect:[[NSScreen mainScreen] visibleFrame] styleMask:style];
+            NSRect frame = NSMakeRect(0, 0, std::min(width / bsf, visible.size.width), std::min(height / bsf, visible.size.height));
             m_nsWindow = [[NSWindow alloc] initWithContentRect:frame
                                                      styleMask:style
                                                        backing:NSBackingStoreBuffered

@@ -110,10 +110,10 @@ build dir of its own (`cmake-build-release-wayland`).
 ```bash
 ./run.sh rel                                # run the demo
 ./run.sh dev                                # run the development build
-./run.sh test [--gtest_filter="*TestName*"] # both suites, exit codes summed
-./run.sh ut   [--gtest_filter="*TestName*"] # unit tests only
-./run.sh ct   [--gtest_filter="*TestName*"] # component tests only
-./run.sh ct wl [--gtest_filter="*TestName*"] # any mode, its native Wayland build
+./run.sh test [-f "*TestName*"] # both suites, exit codes summed
+./run.sh ut   [-f "*TestName*"] # unit tests only
+./run.sh ct   [-f "*TestName*"] # component tests only; -f is --gtest_filter=
+./run.sh ct wl [-f "*TestName*"] # any mode, its native Wayland build
 ```
 
 The demo opens a window with the full UI chrome (top menu, toolbars, tabs,

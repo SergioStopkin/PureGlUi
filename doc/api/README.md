@@ -145,6 +145,6 @@ See [shell-actions.md](shell-actions.md) for the full host walkthrough.
 - `./build.sh <dev|rel|test|ut|ct|cov> [wl]` - build (`test`/`ut`/`ct` enable `BUILD_TESTING`;
   `ut`/`ct` build one suite each, `test` both; X11, or with `wl` native Wayland, on GNU/Linux
   with its development libraries alone - every mode but `cov`, whose report reads the X11 build).
-- `./run.sh <dev|rel|test|ut|ct> [wl] [args...]` - run the demo app, both suites, or one.
+- `./run.sh <dev|rel|test|ut|ct> [wl] [-f filter] [args...]` - run the demo app, both suites, or one; a suite's `-f` is `--gtest_filter=`.
 
 See the repo root `CLAUDE.md` for the full contributor guide.
