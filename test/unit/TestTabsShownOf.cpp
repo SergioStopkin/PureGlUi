@@ -23,6 +23,7 @@
  *        between both arrows, never fewer than one).
  */
 
+#include "testconst.h"
 #include "ui/render/tabsshownof.h"
 #include "ui/render/tabstripwidthof.h"
 #include "ui/res/type/layout.h"
@@ -34,8 +35,8 @@ using Ui::Render::tabStripWidthOf;
 
 namespace {
 
-constexpr Ui::fpx_t MIN_TAB = 100.0F;
-constexpr Ui::fpx_t ARROW   = 20.0F;
+using PureGlUi::ARROW;
+using PureGlUi::MIN_TAB;
 
 } // namespace
 

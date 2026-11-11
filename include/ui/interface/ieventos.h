@@ -103,6 +103,14 @@ public:
     virtual bool copyToClipboard(IWindow & window, const std::string & text) = 0;
 
     /**
+     * @brief While a dialog another program shows for the window is awaited - the desktop's file
+     * dialog - hand it the focus a desktop holds back from it. X11 alone needs it: the desktop
+     * takes the dialog's last input, older than the press that asked for it, for the user working
+     * elsewhere. Wayland's parent handle, Win32 and macOS give it the focus themselves
+     */
+    virtual void setDialogAwaited(IWindow & window, bool isAwaited) = 0;
+
+    /**
      * @brief Configure double-click detection thresholds (loaded from
      * res/input.json by ResManager). No-op on platforms where the OS
      * supplies a native click count (e.g. macOS NSEvent.clickCount).

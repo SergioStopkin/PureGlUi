@@ -46,7 +46,7 @@ Checks: '*,
 # GL and X11 come through our own shims, which export them by IWYU pragma
 CheckOptions:
   cppcoreguidelines-pro-bounds-avoid-unchecked-container-access.ExcludeClasses: '::std::map;::std::unordered_map;::std::flat_map;::nlohmann::basic_json'
-  misc-include-cleaner.IgnoreHeaders: 'glib/.*;gio/.*;gobject/.*;freetype/.*;ft2build\.h;EGL/.*;KHR/.*;cairo.*;librsvg/.*;wayland-.*'
+  misc-include-cleaner.IgnoreHeaders: 'glib/.*;glibconfig\.h;gio/.*;gobject/.*;freetype/.*;ft2build\.h;EGL/.*;KHR/.*;cairo.*;librsvg/.*;wayland-.*'
 
 WarningsAsErrors:   '*'
 FormatStyle:        webkit

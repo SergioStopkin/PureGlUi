@@ -941,7 +941,7 @@ public:
     // Place a content surface at the current viewport rect. On Wayland the X11
     // child is parked offscreen (avoids surface flicker) but keeps its logical
     // position for hit testing.
-    void positionContentSurface(Ui::IWindow & window) const
+    void positionContentSurface(Ui::IWindow & window)
     {
         const Ui::Res::Type::bound_t vp = viewportBound();
         if (g_config.isCompositing) {
@@ -950,6 +950,9 @@ public:
         } else {
             window.moveResize(vp);
         }
+        // A Wayland subsurface takes its place with the main window's next commit, which only a
+        // frame of its own brings
+        requestMainRender();
     }
 
     [[nodiscard]] const Event &                       currentEvent() const { return m_currentEvent; }
@@ -2475,10 +2478,14 @@ public:
     /** @brief Force main window GL flush (makeCurrent + swap) for EGL surface resize */
     void flushMainWindow()
     {
+        // X11's EGL surface takes a new size at its next swap. A wl_egl_window has it already, and
+        // swapping the frame drawn before it copies the old size into the new buffer
+#ifndef HAVE_WAYLAND
         if (m_main) {
             m_main->window().makeCurrent();
             m_main->window().swapBuffers();
         }
+#endif
     }
 
     /**
@@ -3027,6 +3034,15 @@ public:
         return false;
     }
 
+    // While true, a dialog another program shows for the main window - the desktop's file
+    // dialog - is handed the focus a desktop holds back from it
+    void setDialogAwaited(bool isAwaited)
+    {
+        if (m_eventHandler && m_main) {
+            m_eventHandler->setDialogAwaited(m_main->window(), isAwaited);
+        }
+    }
+
     /**
      * @brief Resize all child windows when main window resizes
      *
@@ -3544,6 +3560,12 @@ public:
             if (rendered) {
                 entry.window->makeCurrent();
                 entry.window->swapBuffers();
+                // A resize made while the surface held its next buffer comes with this swap, so the
+                // frame it showed is the old size: drawn again at the new one
+                if (!entry.window->isShownAtItsSize() && entry.pairing->render()) {
+                    entry.window->makeCurrent();
+                    entry.window->swapBuffers();
+                }
             }
 #endif
 

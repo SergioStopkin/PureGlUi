@@ -19,6 +19,7 @@
 
 #ifdef HAVE_WAYLAND
 
+#include "common/cfree.h"
 #include "ui/interface/ieventos.h"
 #include "ui/interface/iwindow.h"
 #include "ui/window/clickcounter.h"
@@ -189,10 +190,16 @@ public:
 
         // Flush outgoing requests first
         if (wl_display_flush(display) == -1) {
-            // Error flushing - check for protocol error
+            // A protocol error: the compositor closed the connection and the window with it, so
+            // the run ends as a close does, once
             if (wl_display_get_error(display) != 0) {
+                if (m_closeEmitted) {
+                    return false;
+                }
                 std::cerr << "[WaylandEvent] Display error: " << wl_display_get_error(display) << std::endl;
-                return false;
+                m_closeEmitted = true;
+                event.type     = EventType::CloseRequested;
+                return true;
             }
         }
 
@@ -321,6 +328,10 @@ public:
         m_clickCounter.configure(intervalMs, distancePx);
     }
 
+    // The portal parents its dialog through the xdg-foreign handle, and the compositor gives a
+    // modal child of the focused window the focus itself
+    void setDialogAwaited(Ui::IWindow & /*window*/, bool /*isAwaited*/) override { }
+
     bool copyToClipboard(Ui::IWindow & window, const std::string & text) override
     {
         auto * wlWin = dynamic_cast<WaylandWindow *>(&window);
@@ -334,26 +345,22 @@ public:
         m_clipboardText = text;
 
         // One data-device per seat; create it lazily and reuse it.
-        if (m_dataDevice == nullptr) {
-            m_dataDevice = wl_data_device_manager_get_data_device(manager, m_seat);
-            if (m_dataDevice == nullptr) {
+        if (!m_dataDevice) {
+            m_dataDevice.reset(wl_data_device_manager_get_data_device(manager, m_seat));
+            if (!m_dataDevice) {
                 return false;
             }
         }
 
         // Replace any previous selection source.
-        if (m_dataSource != nullptr) {
-            wl_data_source_destroy(m_dataSource);
-            m_dataSource = nullptr;
-        }
-        m_dataSource = wl_data_device_manager_create_data_source(manager);
-        if (m_dataSource == nullptr) {
+        m_dataSource.reset(wl_data_device_manager_create_data_source(manager));
+        if (!m_dataSource) {
             return false;
         }
-        wl_data_source_offer(m_dataSource, "text/plain;charset=utf-8");
-        wl_data_source_offer(m_dataSource, "text/plain");
-        wl_data_source_add_listener(m_dataSource, &s_dataSourceListener, this);
-        wl_data_device_set_selection(m_dataDevice, m_dataSource, m_pointerSerial);
+        wl_data_source_offer(m_dataSource.get(), "text/plain;charset=utf-8");
+        wl_data_source_offer(m_dataSource.get(), "text/plain");
+        wl_data_source_add_listener(m_dataSource.get(), &s_dataSourceListener, this);
+        wl_data_device_set_selection(m_dataDevice.get(), m_dataSource.get(), m_pointerSerial);
         wl_display_flush(wlWin->wlDisplay());
         return true;
     }
@@ -373,9 +380,9 @@ private:
 
     // Clipboard selection (wl_data_source). m_clipboardText outlives copyToClipboard
     // because the source's send callback fires asynchronously when a client pastes.
-    wl_data_device * m_dataDevice = nullptr;
-    wl_data_source * m_dataSource = nullptr;
-    std::string      m_clipboardText;
+    Common::c_ptr_t<wl_data_device, wl_data_device_destroy> m_dataDevice;
+    Common::c_ptr_t<wl_data_source, wl_data_source_destroy> m_dataSource;
+    std::string                                             m_clipboardText;
 
     // XKB keyboard state
     xkb_context * m_xkbContext = nullptr;
@@ -404,6 +411,8 @@ private:
 
     void cleanup()
     {
+        m_dataSource.reset();
+        m_dataDevice.reset();
         if (m_cursorSurface) {
             wl_surface_destroy(m_cursorSurface);
             m_cursorSurface = nullptr;
@@ -492,13 +501,10 @@ private:
         }
         ::close(fd);
     }
-    static void dataSourceCancelled(void * data, wl_data_source * source)
+    // Always ours: one replaced was destroyed, and its events with it
+    static void dataSourceCancelled(void * data, wl_data_source * /*source*/)
     {
-        auto * self = static_cast<WaylandEvent *>(data);
-        wl_data_source_destroy(source);
-        if (self->m_dataSource == source) {
-            self->m_dataSource = nullptr;
-        }
+        static_cast<WaylandEvent *>(data)->m_dataSource.reset();
     }
     static void dataSourceTarget(void * /*data*/, wl_data_source * /*source*/, const char * /*mimeType*/) { }
     static void dataSourceDndDropPerformed(void * /*data*/, wl_data_source * /*source*/) { }

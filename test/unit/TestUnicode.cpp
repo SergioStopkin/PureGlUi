@@ -24,6 +24,7 @@
  */
 
 #include "common/unicode.h"
+#include "testconst.h"
 
 #include <cstdint>
 #include <gtest/gtest.h>
@@ -32,9 +33,9 @@
 using Common::Unicode;
 
 namespace {
-constexpr std::uint32_t REPLACEMENT = 0xFFFDU;
-const std::string       kEuro       = "\xE2\x82\xAC";     // U+20AC, 3-byte
-const std::string       kEmoji      = "\xF0\x9F\x98\x80"; // U+1F600, 4-byte
+using PureGlUi::EMOJI;
+using PureGlUi::EURO;
+using PureGlUi::REPLACEMENT;
 } // namespace
 
 TEST(Unicode, AsciiRoundTrip)
@@ -49,29 +50,29 @@ TEST(Unicode, TwoAndThreeByteRoundTrip)
 {
     const std::string accented = "caf\xC3\xA9"; // "cafe" with U+00E9
     EXPECT_EQ(Unicode::toUtf8(Unicode::fromUtf8(accented)), accented);
-    EXPECT_EQ(Unicode::toUtf8(Unicode::fromUtf8(kEuro)), kEuro);
+    EXPECT_EQ(Unicode::toUtf8(Unicode::fromUtf8(EURO)), EURO);
 }
 
 TEST(Unicode, FourByteToUtf32)
 {
-    const std::u32string cp = Unicode::toUtf32(Unicode::fromUtf8(kEmoji));
+    const std::u32string cp = Unicode::toUtf32(Unicode::fromUtf8(EMOJI));
     ASSERT_EQ(cp.size(), 1U);
     EXPECT_EQ(static_cast<std::uint32_t>(cp[0]), 0x1F600U);
-    EXPECT_EQ(Unicode::toUtf8(Unicode::fromUtf8(kEmoji)), kEmoji);
+    EXPECT_EQ(Unicode::toUtf8(Unicode::fromUtf8(EMOJI)), EMOJI);
 }
 
 TEST(Unicode, Utf16SurrogatePairRoundTrip)
 {
-    const std::u16string u16 = Unicode::toUtf16(Unicode::fromUtf8(kEmoji));
+    const std::u16string u16 = Unicode::toUtf16(Unicode::fromUtf8(EMOJI));
     EXPECT_EQ(u16.size(), 2U); // astral codepoint -> surrogate pair
-    EXPECT_EQ(Unicode::toUtf8(Unicode::fromUtf16(u16)), kEmoji);
+    EXPECT_EQ(Unicode::toUtf8(Unicode::fromUtf16(u16)), EMOJI);
 }
 
 TEST(Unicode, Utf32SourceRoundTrip)
 {
     std::u32string src;
     src.push_back(static_cast<char32_t>(0x1F600));
-    EXPECT_EQ(Unicode::toUtf8(Unicode::fromUtf32(src)), kEmoji);
+    EXPECT_EQ(Unicode::toUtf8(Unicode::fromUtf32(src)), EMOJI);
 }
 
 TEST(Unicode, InvalidLeadByteBecomesReplacement)

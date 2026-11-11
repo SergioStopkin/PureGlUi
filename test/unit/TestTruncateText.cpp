@@ -26,6 +26,7 @@
  * known number of pixels and every expectation below is exact.
  */
 
+#include "testconst.h"
 #include "ui/interface/irender.h"
 #include "ui/render/truncate.h"
 
@@ -39,10 +40,8 @@ using Ui::Render::truncateText;
 
 namespace {
 
-// Every glyph is one unit wide, so "abcd" measures 4 and the arithmetic in the
-// expectations below is the same a reader can do by hand. The ellipsis is a
-// glyph like any other, so it also costs 1.
-constexpr fpx_t GLYPH = 1.0F;
+using PureGlUi::FONT;
+using PureGlUi::GLYPH;
 
 class MeasuringRender final : public Ui::IRender {
 public:
@@ -96,8 +95,6 @@ public:
 
     [[nodiscard]] Ui::font_handle_t createFont(const Ui::Res::Type::font_t & /*font*/) override { return 1; }
 };
-
-constexpr Ui::font_handle_t FONT = 1;
 
 std::string cut(const std::string & text, fpx_t maxW)
 {

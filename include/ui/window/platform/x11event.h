@@ -19,6 +19,7 @@
 
 #include "common/bit.h"
 #include "common/bytes.h"
+#include "common/cfree.h"
 #include "ui/interface/ieventos.h"
 #include "ui/interface/iwindow.h"
 #include "ui/window/clickcounter.h"
@@ -29,11 +30,16 @@
 #include "ui/window/nativewindowhandle.h"
 #include "ui/window/platform/x11include.h"
 
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <string>
+#include <unistd.h>
 #include <utility>
+#include <vector>
 
 // X11 protocol event types (values from X.h). SCREAMING_CASE constexpr so the
 // names don't collide with X.h's ButtonPress/SelectionNotify/... macros - no _
@@ -46,6 +52,7 @@ constexpr int BUTTON_RELEASE    = 5;
 constexpr int MOTION_NOTIFY     = 6;
 constexpr int LEAVE_NOTIFY      = 8;
 constexpr int FOCUS_OUT         = 10;
+constexpr int MAP_NOTIFY        = 19;
 constexpr int CONFIGURE_NOTIFY  = 22;
 constexpr int PROPERTY_NOTIFY   = 28;
 constexpr int SELECTION_REQUEST = 30;
@@ -73,11 +80,13 @@ public:
      */
     void init(Ui::IWindow & window) override
     {
-        auto * display  = window.nativeDisplay();
-        m_wmDeleteAtom  = XInternAtom(display, "WM_DELETE_WINDOW", X11::False);
-        m_clipboardAtom = XInternAtom(display, "CLIPBOARD", X11::False);
-        m_targetsAtom   = XInternAtom(display, "TARGETS", X11::False);
-        m_utf8Atom      = XInternAtom(display, "UTF8_STRING", X11::False);
+        auto * display     = window.nativeDisplay();
+        m_wmDeleteAtom     = XInternAtom(display, "WM_DELETE_WINDOW", X11::False);
+        m_clipboardAtom    = XInternAtom(display, "CLIPBOARD", X11::False);
+        m_targetsAtom      = XInternAtom(display, "TARGETS", X11::False);
+        m_utf8Atom         = XInternAtom(display, "UTF8_STRING", X11::False);
+        m_activeWindowAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW", X11::False);
+        m_pidAtom          = XInternAtom(display, "_NET_WM_PID", X11::False);
 
         // Xft.dpi lives in the root window's RESOURCE_MANAGER, which xrdb and every
         // desktop's scale setting rewrite: each rewrite is a scale the UI may follow
@@ -150,13 +159,37 @@ public:
         return XGetSelectionOwner(display, m_clipboardAtom) == win;
     }
 
+    // Every top-level window's map is watched while a dialog is awaited, to hand the dialog the
+    // focus: the desktop holds it back, the dialog's own last input older than ours that asked
+    void setDialogAwaited(Ui::IWindow & window, bool isAwaited) override
+    {
+        if (isAwaited == m_isDialogAwaited) {
+            return;
+        }
+        m_isDialogAwaited  = isAwaited;
+        auto *     display = window.nativeDisplay();
+        const auto mask = isAwaited ? Common::Bit::Or(PropertyChangeMask, SubstructureNotifyMask) : PropertyChangeMask;
+        XSelectInput(display, DefaultRootWindow(display), mask);
+    }
+
 private:
+    static constexpr int       LONGS    = 32; // a property's or client message's format: longs
+    static constexpr X11::Long ONE_LONG = 1;  // what a property read asks for, in longs
+    static constexpr X11::Long FROM_APPLICATION =
+    1;                                         // _NET_ACTIVE_WINDOW's source: an application, held to the focus rules
+    static constexpr X11::Long FROM_FIRST = 0; // a property read's offset
+    static constexpr ::Window  NO_WINDOW {};   // none found
+
     Atom        m_wmDeleteAtom        = 0;
     Atom        m_clipboardAtom       = 0;
     Atom        m_targetsAtom         = 0;
     Atom        m_utf8Atom            = 0;
     Atom        m_resourceManagerAtom = 0;
+    Atom        m_activeWindowAtom    = 0;
+    Atom        m_pidAtom             = 0;
     std::string m_clipboardText;
+    Time        m_inputTime = CurrentTime; // our latest key or button, which a dialog asked by it is activated with
+    bool        m_isDialogAwaited = false;
 
     // Double-click reconstruction (X11 has no native double-click signal).
     ClickCounter m_clickCounter;
@@ -174,12 +207,18 @@ private:
         ::Window eventWindow = 0;
         switch (xev.type) {
         case X11EventTypes::BUTTON_PRESS:
-        case X11EventTypes::BUTTON_RELEASE: eventWindow = xev.xbutton.window; break;
+        case X11EventTypes::BUTTON_RELEASE:
+            eventWindow = xev.xbutton.window;
+            m_inputTime = xev.xbutton.time;
+            break;
         case X11EventTypes::MOTION_NOTIFY: eventWindow = xev.xmotion.window; break;
         case X11EventTypes::LEAVE_NOTIFY: eventWindow = xev.xcrossing.window; break;
         case X11EventTypes::CONFIGURE_NOTIFY: eventWindow = xev.xconfigure.window; break;
         case X11EventTypes::KEY_PRESS:
-        case X11EventTypes::KEY_RELEASE: eventWindow = xev.xkey.window; break;
+        case X11EventTypes::KEY_RELEASE:
+            eventWindow = xev.xkey.window;
+            m_inputTime = xev.xkey.time;
+            break;
         default: eventWindow = mainWin; break;
         }
 
@@ -205,8 +244,9 @@ private:
             }
         } break;
 
+        // The main window's own, never its copy the root's watch brings while a dialog is awaited
         case X11EventTypes::CONFIGURE_NOTIFY:
-            if (xev.xconfigure.window == mainWin) {
+            if (xev.xconfigure.window == mainWin && xev.xconfigure.event == mainWin) {
                 event.type          = EventType::Resize;
                 event.resize.width  = xev.xconfigure.width;
                 event.resize.height = xev.xconfigure.height;
@@ -221,6 +261,15 @@ private:
                 && (xev.xfocus.mode == NotifyNormal || xev.xfocus.mode == NotifyWhileGrabbed)
                 && xev.xfocus.detail != NotifyInferior && xev.xfocus.detail != NotifyPointer) {
                 event.type = EventType::FocusLost;
+            }
+            break;
+
+        // A top-level window mapped, seen through the root while a dialog is awaited; never a
+        // menu or tooltip, which a window manager does not focus
+        case X11EventTypes::MAP_NOTIFY:
+            if (m_isDialogAwaited && xev.xmap.event == DefaultRootWindow(xev.xmap.display)
+                && xev.xmap.override_redirect == X11::False) {
+                activateDialogIn(xev.xmap.display, xev.xmap.window, mainWin);
             }
             break;
 
@@ -347,6 +396,108 @@ private:
         }
 
         return event;
+    }
+
+    // The dialog another program made transient for the main window, asked to the front with the
+    // focus. Its window can be gone by the time it is asked about, an error the default handler
+    // ends the app on, so errors are ignored for these few requests
+    void activateDialogIn(Display * display, ::Window mapped, ::Window mainWin) const
+    {
+        XSync(display, X11::False);
+        const XErrorHandler previous = XSetErrorHandler(ignoreError);
+        const ::Window      dialog   = dialogIn(display, mapped, mainWin);
+        XSync(display, X11::False);
+        XSetErrorHandler(previous);
+        if (dialog != NO_WINDOW) {
+            sendActivation(display, dialog, mainWin);
+        }
+    }
+
+    // The window mapped, or the client a window manager's frame holds, when another program made
+    // it transient for the main window
+    [[nodiscard]] ::Window dialogIn(Display * display, ::Window mapped, ::Window mainWin) const
+    {
+        ::Window   root {};
+        ::Window   parent {};
+        ::Window * children = nullptr;
+        unsigned   count {};
+        if (XQueryTree(display, mapped, &root, &parent, &children, &count) == X11::False) {
+            return NO_WINDOW;
+        }
+        const Common::c_ptr_t<::Window, XFree> framed(children);
+        const std::span<::Window>              framedWindows(children, count);
+        std::vector<::Window>                  candidates { mapped };
+        candidates.insert(candidates.end(), framedWindows.begin(), framedWindows.end());
+        for (const ::Window candidate : candidates) {
+            ::Window owner {};
+            if (XGetTransientForHint(display, candidate, &owner) != X11::False && owner == mainWin
+                && isAnotherProgramsWindow(display, candidate)) {
+                return candidate;
+            }
+        }
+        return NO_WINDOW;
+    }
+
+    static int ignoreError(Display * /*display*/, XErrorEvent * /*error*/) { return {}; }
+
+    // Another program's window, by the process it names: ours name none, so a popup of ours,
+    // transient for the main window too, is never taken for the dialog
+    [[nodiscard]] bool isAnotherProgramsWindow(Display * display, ::Window window) const
+    {
+        Atom            actualType {};
+        int             actualFormat {};
+        X11::Cardinal   count {};
+        X11::Cardinal   bytesAfter {};
+        unsigned char * data = nullptr;
+        if (XGetWindowProperty(display,
+                               window,
+                               m_pidAtom,
+                               FROM_FIRST,
+                               ONE_LONG,
+                               X11::False,
+                               XA_CARDINAL,
+                               &actualType,
+                               &actualFormat,
+                               &count,
+                               &bytesAfter,
+                               &data)
+            != Success) {
+            return false;
+        }
+        const Common::c_ptr_t<unsigned char, XFree> owned(data);
+        if (data == nullptr || actualFormat != LONGS || count == X11::Cardinal {}) {
+            return false;
+        }
+        // Format 32 comes as a C long
+        std::array<unsigned char, sizeof(X11::Long)> bytes {};
+        std::copy_n(data, bytes.size(), bytes.begin());
+        return std::bit_cast<X11::Long>(bytes) != getpid();
+    }
+
+    // _NET_ACTIVE_WINDOW as an application asks it, timed by the input that asked for the dialog:
+    // the desktop honours it unless the user has gone on to something else since
+    void sendActivation(Display * display, ::Window dialog, ::Window mainWin) const
+    {
+        if (m_inputTime == CurrentTime) {
+            return;
+        }
+        XEvent                message {};
+        XClientMessageEvent & request = message.xclient;
+        request.type                  = X11EventTypes::CLIENT_MESSAGE;
+        request.window                = dialog;
+        request.message_type          = m_activeWindowAtom;
+        request.format                = LONGS;
+        const std::array data { FROM_APPLICATION,
+                                static_cast<X11::Long>(m_inputTime),
+                                static_cast<X11::Long>(mainWin) };
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
+        std::ranges::copy(data, std::begin(request.data.l));
+        XSendEvent(display,
+                   DefaultRootWindow(display),
+                   X11::False,
+                   Common::Bit::Or(SubstructureRedirectMask, SubstructureNotifyMask),
+                   &message);
+        XFlush(display);
     }
 
     /**

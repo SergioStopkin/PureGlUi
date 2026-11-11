@@ -27,6 +27,7 @@
  * thumbBound() the renderer calls, so the two cannot drift apart again.
  */
 
+#include "testconst.h"
 #include "ui/render/axis.h"
 #include "ui/render/slider.h"
 #include "ui/render/thumbtrack.h"
@@ -42,13 +43,9 @@ using Ui::Res::Type::bound_t;
 
 namespace {
 
-// One track for every test, offset from the origin on both axes so a mapping that
-// forgets to subtract the track's own start shows up
-constexpr bound_t TRACK { 100.0F, 50.0F, 200.0F, 10.0F };
-// res states the thumb's length in production, so the test owns it too rather
-// than deriving it from the track - that coupling is exactly what moved out
-constexpr fpx_t THUMB  = 20.0F;
-constexpr fpx_t TRAVEL = TRACK.w - THUMB;
+using PureGlUi::THUMB;
+using PureGlUi::TRACK;
+using PureGlUi::TRAVEL;
 
 // Where the thumb's middle sits for a value, which is what a pointer aims at
 [[nodiscard]] fpx_t thumbCentre(const thumb_metrics_t & metrics, fpx_t value)

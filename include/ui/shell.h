@@ -23,6 +23,7 @@
 #include "common/unicode.h"
 #include "sig.h"
 #include "ui/action/actionmap.h"
+#include "ui/action/openpickedfiles.h"
 #include "ui/action/registry.h"
 #include "ui/config.h"
 #include "ui/gl/glutil.h"
@@ -32,6 +33,7 @@
 #include "ui/inithooks.h"
 #include "ui/intent.h"
 #include "ui/interface/ichromecommands.h"
+#include "ui/io/filedialog.h"
 #include "ui/render/context.h"
 #include "ui/render/elementevent.h"
 #include "ui/render/renderscope.h"
@@ -66,6 +68,7 @@
 #include <exception>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -115,6 +118,8 @@ public:
 
     [[nodiscard]] Ui::Window::WindowManager &       windowManager() { return m_windowManager; }
     [[nodiscard]] const Ui::Window::WindowManager & windowManager() const { return m_windowManager; }
+
+    [[nodiscard]] Ui::Io::FileDialog & fileDialog() { return m_fileDialog; }
 
     [[nodiscard]] Ui::Render::Context &       context() { return m_context; }
     [[nodiscard]] const Ui::Render::Context & context() const { return m_context; }
@@ -985,6 +990,7 @@ public:
             if (m_frameTasks) {
                 m_frameTasks();
             }
+            takePickedFiles();
 
             bool              hadEvents = false;
             Ui::Window::Event event;
@@ -1064,6 +1070,7 @@ private:
     // Per-extension file loaders (host-registered; empty on a standalone shell,
     // so OpenFile warns for every file type).
     std::unordered_map<std::string, Ui::action_fn_t> m_fileHandlers;
+    Ui::Io::FileDialog                               m_fileDialog; // OpenFile's, asked after each pass
 
     // Temporary status bar message (auto-expires).
     Common::Time::point_t m_tempStatusExpiry;
@@ -1172,6 +1179,17 @@ private:
         }
         if (auto * submenu = m_windowManager.submenuWindow(); submenu != nullptr) {
             submenu->move(submenu->bound().x + deltaX, submenu->bound().y + deltaY);
+        }
+    }
+
+    // The files OpenFile's dialog picked, once it has closed: Linux's stays open beside the loop
+    void takePickedFiles()
+    {
+        const std::optional<std::vector<std::string>> files = m_fileDialog.takeFiles();
+        // On X11 the desktop holds the focus back from the portal's dialog, so it is handed over
+        m_windowManager.setDialogAwaited(m_fileDialog.isOpen());
+        if (files.has_value()) {
+            Ui::Action::openPickedFiles(*this, *files);
         }
     }
 

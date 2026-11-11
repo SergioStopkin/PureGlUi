@@ -19,8 +19,10 @@
 
 #ifdef HAVE_WAYLAND
 
+#include "common/cfree.h"
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
+#include "ui/io/platform/portalconst.h"
 #include "ui/window/display.h"
 #include "ui/window/eglcontext.h"
 #include "ui/window/windowbase.h"
@@ -35,6 +37,7 @@
 #include <vector>
 #include <wayland-client.h>
 #include <wayland-egl.h>
+#include <xdg-foreign-unstable-v2-client-protocol.h>
 #include <xdg-shell-client-protocol.h>
 
 namespace Ui::Window::Platform {
@@ -122,12 +125,20 @@ public:
 
     NativeWindowHandle nativeHandle() const override { return m_surface; }
 
+    // The handle the compositor exported it as, where it offers xdg-foreign: the main window's alone
+    [[nodiscard]] std::string windowIdentifier() const override
+    {
+        return m_exportHandle.empty() ? std::string {} : Ui::Io::Platform::Portal::WAYLAND_PREFIX + m_exportHandle;
+    }
+
     void destroy() override
     {
         if (m_context) {
             m_context->cleanup();
             m_context.reset();
         }
+        m_exported.reset();
+        m_exportHandle.clear();
         if (m_xdgToplevel) {
             xdg_toplevel_destroy(m_xdgToplevel);
             m_xdgToplevel = nullptr;
@@ -144,6 +155,18 @@ public:
             wl_surface_destroy(m_surface);
             m_surface = nullptr;
         }
+        // Every global this window bound: a disconnect frees no proxy, and a child's stand on
+        // the connection it shares with the main window
+        m_outputs.clear();
+        m_dataDeviceManager.reset();
+        m_shm.reset();
+        m_exporter.reset();
+        m_subcompositor.reset();
+        m_seat.reset();
+        // Last of what it made: xdg-shell refuses it while a surface it gave a role stands
+        m_xdgWmBase.reset();
+        m_compositor.reset();
+        m_registry.reset();
         if (m_display && m_ownsDisplay) {
             wl_display_disconnect(m_display);
             m_display = nullptr;
@@ -257,6 +280,11 @@ public:
         }
     }
 
+    [[nodiscard]] bool isShownAtItsSize() const override
+    {
+        return m_context == nullptr || m_context->isShownAt(m_bound.w, m_bound.h);
+    }
+
     void clear() override
     {
         makeCurrent();
@@ -343,11 +371,11 @@ public:
     // Accessors for event handling
     wl_display *             wlDisplay() const { return m_display; }
     wl_surface *             wlSurface() const { return m_surface; }
-    xdg_wm_base *            xdgWmBase() const { return m_xdgWmBase; }
-    wl_seat *                wlSeat() const { return m_seat; }
-    wl_compositor *          wlCompositor() const { return m_compositor; }
-    wl_data_device_manager * wlDataDeviceManager() const { return m_dataDeviceManager; }
-    wl_shm *                 wlShm() const { return m_shm; }
+    xdg_wm_base *            xdgWmBase() const { return m_xdgWmBase.get(); }
+    wl_seat *                wlSeat() const { return m_seat.get(); }
+    wl_compositor *          wlCompositor() const { return m_compositor.get(); }
+    wl_data_device_manager * wlDataDeviceManager() const { return m_dataDeviceManager.get(); }
+    wl_shm *                 wlShm() const { return m_shm.get(); }
     xdg_surface *            xdgSurface() const { return m_xdgSurface; }
     xdg_toplevel *           xdgToplevel() const { return m_xdgToplevel; }
 
@@ -359,15 +387,19 @@ protected:
 
 private:
     // Wayland globals
-    wl_registry *      m_registry      = nullptr;
-    wl_compositor *    m_compositor    = nullptr;
-    xdg_wm_base *      m_xdgWmBase     = nullptr;
-    wl_seat *          m_seat          = nullptr;
-    wl_output *        m_output        = nullptr;
-    wl_subcompositor * m_subcompositor = nullptr;
-    wl_shm *           m_shm           = nullptr;
+    Common::c_ptr_t<wl_registry, wl_registry_destroy>           m_registry;
+    Common::c_ptr_t<wl_compositor, wl_compositor_destroy>       m_compositor;
+    Common::c_ptr_t<xdg_wm_base, xdg_wm_base_destroy>           m_xdgWmBase;
+    Common::c_ptr_t<wl_seat, wl_seat_destroy>                   m_seat;
+    std::vector<Common::c_ptr_t<wl_output, wl_output_destroy>>  m_outputs; // one per display
+    Common::c_ptr_t<wl_subcompositor, wl_subcompositor_destroy> m_subcompositor;
+    Common::c_ptr_t<wl_shm, wl_shm_destroy>                     m_shm;
     // Clipboard selection source manager (bound if the compositor advertises it).
-    wl_data_device_manager * m_dataDeviceManager = nullptr;
+    Common::c_ptr_t<wl_data_device_manager, wl_data_device_manager_destroy> m_dataDeviceManager;
+    // xdg-foreign: the main window exported for another client's dialog to parent to
+    Common::c_ptr_t<zxdg_exporter_v2, zxdg_exporter_v2_destroy> m_exporter;
+    Common::c_ptr_t<zxdg_exported_v2, zxdg_exported_v2_destroy> m_exported;
+    std::string                                                 m_exportHandle; // the compositor's name for it
 
     // Window surfaces
     xdg_surface *   m_xdgSurface  = nullptr;
@@ -415,12 +447,21 @@ private:
 
     static constexpr xdg_wm_base_listener s_xdgWmBaseListener = { xdgWmBasePing };
 
+    static void exportedHandle(void * data, zxdg_exported_v2 * /*exported*/, const char * handle)
+    {
+        static_cast<WaylandWindow *>(data)->m_exportHandle = handle;
+    }
+
+    static constexpr zxdg_exported_v2_listener s_exportedListener = { .handle = exportedHandle };
+
     static void xdgSurfaceConfigure(void * data, xdg_surface * surface, uint32_t serial)
     {
         auto * self = static_cast<WaylandWindow *>(data);
         xdg_surface_ack_configure(surface, serial);
         self->m_configured = true;
-        wl_surface_commit(self->m_surface);
+        // Applied by the next frame's commit, its buffer at the size configured: committed now it
+        // carries the old one, which a compositor refuses for a fullscreen or maximized state
+        self->requestRender();
     }
 
     static constexpr xdg_surface_listener s_xdgSurfaceListener = { xdgSurfaceConfigure };
@@ -522,27 +563,32 @@ private:
     void handleRegistryGlobal(wl_registry * registry, uint32_t name, std::string_view interface, uint32_t version)
     {
         if (interface == wl_compositor_interface.name) {
-            m_compositor = static_cast<wl_compositor *>(
-            wl_registry_bind(registry, name, &wl_compositor_interface, std::min(version, 4U)));
+            m_compositor.reset(static_cast<wl_compositor *>(
+            wl_registry_bind(registry, name, &wl_compositor_interface, std::min(version, 4U))));
         } else if (interface == xdg_wm_base_interface.name) {
-            m_xdgWmBase = static_cast<xdg_wm_base *>(
-            wl_registry_bind(registry, name, &xdg_wm_base_interface, std::min(version, 3U)));
-            xdg_wm_base_add_listener(m_xdgWmBase, &s_xdgWmBaseListener, this);
-        } else if (interface == wl_seat_interface.name) {
-            m_seat = static_cast<wl_seat *>(
-            wl_registry_bind(registry, name, &wl_seat_interface, std::min(version, 5U)));
+            m_xdgWmBase.reset(static_cast<xdg_wm_base *>(
+            wl_registry_bind(registry, name, &xdg_wm_base_interface, std::min(version, 3U))));
+            xdg_wm_base_add_listener(m_xdgWmBase.get(), &s_xdgWmBaseListener, this);
+        } else if (interface == wl_seat_interface.name && !m_seat) {
+            // The first seat alone: the event handler holds it, and another would free it
+            m_seat.reset(
+            static_cast<wl_seat *>(wl_registry_bind(registry, name, &wl_seat_interface, std::min(version, 5U))));
         } else if (interface == wl_output_interface.name) {
-            m_output = static_cast<wl_output *>(
+            auto * output = static_cast<wl_output *>(
             wl_registry_bind(registry, name, &wl_output_interface, std::min(version, 4U)));
-            wl_output_add_listener(m_output, &s_outputListener, this);
+            wl_output_add_listener(output, &s_outputListener, this);
+            m_outputs.emplace_back(output);
         } else if (interface == wl_subcompositor_interface.name) {
-            m_subcompositor = static_cast<wl_subcompositor *>(
-            wl_registry_bind(registry, name, &wl_subcompositor_interface, 1));
+            m_subcompositor.reset(
+            static_cast<wl_subcompositor *>(wl_registry_bind(registry, name, &wl_subcompositor_interface, 1)));
         } else if (interface == wl_shm_interface.name) {
-            m_shm = static_cast<wl_shm *>(wl_registry_bind(registry, name, &wl_shm_interface, 1));
+            m_shm.reset(static_cast<wl_shm *>(wl_registry_bind(registry, name, &wl_shm_interface, 1)));
         } else if (interface == wl_data_device_manager_interface.name) {
-            m_dataDeviceManager = static_cast<wl_data_device_manager *>(
-            wl_registry_bind(registry, name, &wl_data_device_manager_interface, std::min(version, 3U)));
+            m_dataDeviceManager.reset(static_cast<wl_data_device_manager *>(
+            wl_registry_bind(registry, name, &wl_data_device_manager_interface, std::min(version, 3U))));
+        } else if (interface == zxdg_exporter_v2_interface.name) {
+            m_exporter.reset(
+            static_cast<zxdg_exporter_v2 *>(wl_registry_bind(registry, name, &zxdg_exporter_v2_interface, 1)));
         }
     }
 
@@ -567,13 +613,13 @@ private:
 
     bool initRegistry()
     {
-        m_registry = wl_display_get_registry(m_display);
+        m_registry.reset(wl_display_get_registry(m_display));
         if (!m_registry) {
             std::cerr << "[WaylandWindow] Failed to get registry" << std::endl;
             return false;
         }
 
-        wl_registry_add_listener(m_registry, &s_registryListener, this);
+        wl_registry_add_listener(m_registry.get(), &s_registryListener, this);
         wl_display_roundtrip(m_display);
 
         if (!m_compositor) {
@@ -591,7 +637,7 @@ private:
 
     bool createSurface()
     {
-        m_surface = wl_compositor_create_surface(m_compositor);
+        m_surface = wl_compositor_create_surface(m_compositor.get());
         if (!m_surface) {
             std::cerr << "[WaylandWindow] Failed to create surface" << std::endl;
             return false;
@@ -606,7 +652,7 @@ private:
             return false;
         }
 
-        m_subsurface = wl_subcompositor_get_subsurface(m_subcompositor, m_surface, parentSurface);
+        m_subsurface = wl_subcompositor_get_subsurface(m_subcompositor.get(), m_surface, parentSurface);
         if (!m_subsurface) {
             std::cerr << "[WaylandWindow] Failed to create subsurface" << std::endl;
             return false;
@@ -625,7 +671,7 @@ private:
 
     bool createXdgSurface(const std::string & title)
     {
-        m_xdgSurface = xdg_wm_base_get_xdg_surface(m_xdgWmBase, m_surface);
+        m_xdgSurface = xdg_wm_base_get_xdg_surface(m_xdgWmBase.get(), m_surface);
         if (!m_xdgSurface) {
             std::cerr << "[WaylandWindow] Failed to create xdg_surface" << std::endl;
             return false;
@@ -648,12 +694,23 @@ private:
         // Commit to trigger initial configure
         wl_surface_commit(m_surface);
 
-        // Wait for initial configure event
+        // Wait for initial configure event, which a connection the compositor closed never brings
         while (!m_configured) {
-            wl_display_roundtrip(m_display);
+            if (wl_display_roundtrip(m_display) == -1) {
+                std::cerr << "[WaylandWindow] Display error before the first configure: "
+                          << wl_display_get_error(m_display) << std::endl;
+                return false;
+            }
         }
 
         std::cout << "[WaylandWindow] Initial size after configure: " << m_bound.w << "x" << m_bound.h << std::endl;
+
+        // Exported for the desktop's portal to parent its dialogs to; the handle comes with
+        // create's last roundtrip, and lasts until the export is destroyed
+        if (m_exporter) {
+            m_exported.reset(zxdg_exporter_v2_export_toplevel(m_exporter.get(), m_surface));
+            zxdg_exported_v2_add_listener(m_exported.get(), &s_exportedListener, this);
+        }
 
         return true;
     }
@@ -669,7 +726,9 @@ private:
         // (popups reuse the parent's wl_display).
         m_context->setOwnsDisplay(m_ownsDisplay);
 
-        if (!m_context->chooseConfig(true, true)) { // want alpha + MSAA
+        // A content surface's renderer smooths its own edges and resolves its samples into this
+        // surface, a copy GL allows only into a single-sampled one: samples for the main window alone
+        if (!m_context->chooseConfig(true, m_subsurface == nullptr)) {
             std::cerr << "[WaylandWindow] Failed to choose EGL config" << std::endl;
             return false;
         }

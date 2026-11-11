@@ -4,6 +4,7 @@ clang-format-22
 clang-tidy-22
 cmake-format
 cppcheck
+dbus-daemon
 flatpak
 lcov
 libcairo2-dev

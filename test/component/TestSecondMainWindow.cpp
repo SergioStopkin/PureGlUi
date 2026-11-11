@@ -25,6 +25,7 @@
  * shell again - can open no popup at all
  */
 
+#include "isdisplayset.h"
 #include "menubarloop.h"
 #include "ui/shell.h"
 #include "ui/type.h"
@@ -45,6 +46,7 @@ TEST(SecondMainWindow, OpensAMenuListAsTheFirstDid)
     for (int turn = 1; turn <= 2; ++turn) {
         Ui::Shell shell;
         if (!shell.initialize()) {
+            ASSERT_FALSE(PureGlUi::isDisplaySet()) << PureGlUi::DISPLAY_UNREACHABLE;
             GTEST_SKIP() << "no window or GL context here";
         }
         const std::vector<Ui::id_t> menuIds = PureGlUi::listMenuIdsOf(shell);

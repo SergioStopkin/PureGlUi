@@ -17,16 +17,19 @@
 
 #pragma once
 
+#include "common/noncopyable.h"
+#include "ui/interface/iwindow.h"
 #include "ui/io/filefilter.h"
-#include "ui/window/nativewindowhandle.h"
 
-#include <algorithm>
 #include <array>
 #include <iostream>
+#include <optional>
 #include <string>
-#include <string_view>
-#include <utility>
 #include <vector>
+
+#if defined(_WIN32) || defined(__APPLE__)
+#include <utility>
+#endif
 
 #ifdef _WIN32
 #include "common/unicode.h"
@@ -44,13 +47,14 @@
 #define __ICONS__
 #import <Cocoa/Cocoa.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#include <string_view>
 #elifdef __linux__
-#include <cstddef>
-#include <fcntl.h>
-#include <spawn.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "ui/io/platform/childprocess.h"
+#include "ui/io/platform/command.h"
+#include "ui/io/platform/dialogcommandsof.h"
+#include "ui/io/platform/linesof.h"
+#include "ui/io/platform/listedfiltersof.h"
+#include "ui/io/platform/portalfilechooser.h"
 #endif
 
 namespace Ui::Io {
@@ -58,42 +62,80 @@ namespace Ui::Io {
 // Native open-file dialog. Domain-blind: the title and file-type filters are
 // supplied by the caller (loaded from res JSON), so the framework bakes in no
 // app-specific extensions. Empty filters => any file.
-class FileDialog final {
+//
+// Linux's is the desktop's own through its portal, modal to the window, else zenity or kdialog:
+// each runs beside the loop, which asks after it (takeFiles) rather than waits on it, or the
+// window could not answer the compositor's ping while it is open and would be taken for hung.
+// Win32's and macOS's run their own loop inside open, which keeps the window answering
+class FileDialog final : private Common::NonCopyable {
 public:
-    FileDialog()  = delete;
-    ~FileDialog() = delete;
+    FileDialog() = default;
 
-    FileDialog(const FileDialog &)             = delete;
-    FileDialog(FileDialog &&)                  = delete;
-    FileDialog & operator=(const FileDialog &) = delete;
-    FileDialog & operator=(FileDialog &&)      = delete;
-
-    // `owner` is the window the dialog is modal to and stands above: Win32 stacks a dialog
-    // by its owner, and one of none went behind that window's popups. macOS and Linux
-    // stack theirs above the app themselves
-    static std::vector<std::string> openFiles([[maybe_unused]] Ui::Window::NativeWindowHandle owner,
-                                              const std::string &                             startDir,
-                                              const std::string &                             title,
-                                              const std::vector<file_filter_t> &              filters)
+    // `owner` is the window the dialog is modal to and stands above: Win32 stacks a dialog by
+    // its owner, and one of none went behind that window's popups; the portal parents its
+    // dialog to the window its identifier names. macOS stacks its own above the app. One at a
+    // time: an open while one is up does nothing
+    void open([[maybe_unused]] const Ui::IWindow & owner,
+              const std::string &                  startDir,
+              const std::string &                  title,
+              const std::vector<file_filter_t> &   filters)
     {
 #ifdef _WIN32
-        return openFilesWin32(owner, startDir, title, filters);
+        m_files = openFilesWin32(owner.nativeHandle(), startDir, title, filters);
 #elifdef __APPLE__
-        return openFilesMacOs(startDir, title, filters);
+        m_files = openFilesMacOs(startDir, title, filters);
 #else
-        return openFilesLinux(startDir, title, filters);
+        if (isOpen()) {
+            return;
+        }
+        const std::string                parentWindow = owner.windowIdentifier();
+        const std::vector<file_filter_t> listed       = Ui::Io::Platform::listedFiltersOf(filters);
+        m_commands = Ui::Io::Platform::dialogCommandsOf(parentWindow, startDir, title, listed);
+        m_portal.open(parentWindow, startDir, title, listed);
+#endif
+    }
+
+    // A dialog asked for and not closed yet, the portal's or a fallback's. Win32's and macOS's
+    // close before open returns
+    [[nodiscard]] bool isOpen() const
+    {
+#if defined(_WIN32) || defined(__APPLE__)
+        return false;
+#else
+        return m_portal.isOpen() || m_process.isRunning();
+#endif
+    }
+
+    // The files picked once the dialog has closed, none when it was cancelled; nothing while it
+    // is open or none was. Never waits
+    std::optional<std::vector<std::string>> takeFiles()
+    {
+#if defined(_WIN32) || defined(__APPLE__)
+        return std::exchange(m_files, std::nullopt);
+#else
+        std::optional<std::vector<std::string>> files = m_portal.takeFiles();
+        if (m_portal.takeIsUnavailable()) {
+            startFallback();
+        }
+        if (files.has_value()) {
+            return files;
+        }
+        std::optional<std::string> output = m_process.takeResult();
+        if (!output.has_value()) {
+            return std::nullopt;
+        }
+        return Ui::Io::Platform::linesOf(*output);
 #endif
     }
 
 private:
-    // Canonical spec is semicolon-separated globs ("*.step;*.iges"). Most native
-    // dialogs want space-separated; macOS wants bare extensions.
-    static std::string specToSpaces(const std::string & spec)
-    {
-        std::string out = spec;
-        std::ranges::replace(out, ';', ' ');
-        return out;
-    }
+#if defined(_WIN32) || defined(__APPLE__)
+    std::optional<std::vector<std::string>> m_files; // what a closed dialog picked, until taken
+#else
+    Ui::Io::Platform::PortalFileChooser        m_portal;   // the desktop's own dialog
+    Ui::Io::Platform::ChildProcess             m_process;  // zenity's or kdialog's, where no portal answers
+    std::array<Ui::Io::Platform::command_t, 2> m_commands; // theirs for the dialog asked for
+#endif
 
 #ifdef _WIN32
     static std::vector<std::string> openFilesWin32(HWND                               owner,
@@ -232,102 +274,16 @@ private:
         return files;
     }
 #else
-    static std::vector<std::string> openFilesLinux(const std::string &                startDir,
-                                                   const std::string &                title,
-                                                   const std::vector<file_filter_t> & filters)
+    // Where no portal answers: zenity, else kdialog where zenity cannot be started or fails to
+    // run - one cancelled is the user's answer
+    void startFallback()
     {
-        const std::string dir      = startDir.empty() ? "." : startDir;
-        const std::string dlgTitle = title.empty() ? "Open File" : title;
-
-        // zenity (GNOME/GTK) and kdialog (KDE), each an argv of its own: no shell runs
-        // them, so a quote in a folder or a title is one more character of its argument.
-        // Both take the supplied filters plus a trailing "All files"
-        std::vector<std::string> zenity = { "zenity",     "--file-selection", "--title=" + dlgTitle,
-                                            "--multiple", "--separator=\n",   "--filename=" + dir + "/" };
-        std::string              kdialogFilter;
-        for (const auto & filter : filters) {
-            const std::string patterns = specToSpaces(filter.spec);
-            zenity.emplace_back("--file-filter=" + filter.name + "|" + patterns);
-            kdialogFilter += patterns + "|" + filter.name + "\n";
+        if (!m_process.start(m_commands)) {
+            std::cerr << "[FileDialog] No file dialog available (install xdg-desktop-portal, zenity or kdialog)"
+                      << std::endl;
         }
-        zenity.emplace_back("--file-filter=All files|*");
-        kdialogFilter += "*|All files";
-
-        // Both support multi-selection (Ctrl+click, Shift+click)
-        const std::array<std::vector<std::string>, 2> commands = {
-            std::move(zenity),
-            std::vector<std::string> { "kdialog", "--getopenfilename", "--multiple", dir, kdialogFilter },
-        };
-        for (const auto & command : commands) {
-            std::string result = outputOf(command);
-            if (!result.empty()) {
-                return splitLines(result);
-            }
-        }
-
-        std::cerr << "[FileDialog] No file dialog available (install zenity or kdialog)" << std::endl;
-        return {};
-    }
-
-    // A program's stdout, run straight from its argv with no shell; empty when it is
-    // missing, fails or is cancelled. Its stderr goes nowhere
-    static std::string outputOf(std::vector<std::string> args)
-    {
-        std::vector<char *> argv;
-        argv.reserve(args.size() + 1);
-        for (std::string & arg : args) {
-            argv.emplace_back(arg.data());
-        }
-        argv.emplace_back(nullptr);
-
-        // Both ends close on exec, so the child keeps only the copy made its stdout
-        std::array<int, 2> pipeEnds {};
-        if (pipe2(pipeEnds.data(), O_CLOEXEC) != 0) {
-            return {};
-        }
-        posix_spawn_file_actions_t actions {};
-        posix_spawn_file_actions_init(&actions);
-        posix_spawn_file_actions_adddup2(&actions, pipeEnds.at(1), STDOUT_FILENO);
-        posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
-        pid_t      child     = 0;
-        const bool isSpawned = posix_spawnp(&child, argv.at(0), &actions, nullptr, argv.data(), environ) == 0;
-        posix_spawn_file_actions_destroy(&actions);
-        close(pipeEnds.at(1));
-
-        std::string           output;
-        std::array<char, 256> buffer {};
-        while (isSpawned) {
-            const ssize_t count = read(pipeEnds.at(0), buffer.data(), buffer.size());
-            if (count <= 0) {
-                break;
-            }
-            output.append(buffer.data(), static_cast<std::size_t>(count));
-        }
-        close(pipeEnds.at(0));
-
-        // A wait status of 0 is a normal exit with code 0
-        int status = 0;
-        if (!isSpawned || waitpid(child, &status, 0) != child || status != 0) {
-            return {};
-        }
-        return output;
     }
 #endif
-
-    static std::vector<std::string> splitLines(std::string & text)
-    {
-        if (!text.empty() && text.back() == '\n') {
-            text.pop_back();
-        }
-        std::vector<std::string> files;
-        std::string_view         sv(text);
-        while (!sv.empty()) {
-            const auto pos = sv.find('\n');
-            files.emplace_back(sv.substr(0, pos));
-            sv = (pos == std::string_view::npos) ? std::string_view {} : sv.substr(pos + 1);
-        }
-        return files;
-    }
 };
 
 } // namespace Ui::Io

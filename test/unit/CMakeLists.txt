@@ -52,7 +52,14 @@ add_executable(
     TestTooltipWantedOf.cpp
     TestTabsShownOf.cpp
     TestCycleTab.cpp
+    TestOpenPickedFiles.cpp
     TestIdKind.cpp
+    TestChildProcess.cpp
+    TestSystem.cpp
+    TestPortalFileChooser.cpp
+    TestDialogCommandsOf.cpp
+    TestListedFiltersOf.cpp
+    TestLinesOf.cpp
     TestSig.cpp
 )
 
@@ -75,4 +82,9 @@ target_link_libraries(${TARGET} GTest::gtest_main)
 # pthread.lib and needs none (Windows threading is in the CRT), so link it only off Windows.
 if(NOT WIN32)
     target_link_libraries(${TARGET} pthread)
+endif()
+
+# TestPortalFileChooser stands a portal up on a private session bus (GTestDBus, which runs dbus-daemon)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(${TARGET} PkgConfig::GIO)
 endif()

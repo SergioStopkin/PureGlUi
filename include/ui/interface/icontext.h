@@ -125,6 +125,12 @@ public:
     virtual void resize(fpx_t width, fpx_t height) = 0;
 
     /**
+     * @brief Whether the frame last swapped stands at this size. Only a wl_egl_window's can not:
+     * resized while it holds its next buffer, it takes the size at the swap after it
+     */
+    [[nodiscard]] virtual bool isShownAt(fpx_t width, fpx_t height) const = 0;
+
+    /**
      * @brief Release context (make none current)
      */
     virtual void release() = 0;

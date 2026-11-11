@@ -22,6 +22,7 @@
  *        never cut off at the window's edge.
  */
 
+#include "testconst.h"
 #include "ui/res/type/bound.h"
 #include "ui/res/type/region.h"
 #include "ui/type.h"
@@ -36,9 +37,9 @@ using Ui::Window::tooltipBoundOf;
 
 namespace {
 
-constexpr fpx_t WINDOW_W = 800.0F;
-constexpr fpx_t WINDOW_H = 600.0F;
-constexpr fpx_t WIDTH    = 100.0F; // the tooltip's
+using PureGlUi::TOOLTIP_W;
+using PureGlUi::WINDOW_H;
+using PureGlUi::WINDOW_W;
 
 region_t box()
 {
@@ -52,51 +53,51 @@ region_t box()
 
 TEST(TooltipBoundOfTest, StandsAfterItsAnchorCentredOnIt)
 {
-    const bound_t bound = tooltipBoundOf({ 100.0F, 200.0F, 40.0F, 40.0F }, box(), WIDTH, WINDOW_W, WINDOW_H);
+    const bound_t bound = tooltipBoundOf({ 100.0F, 200.0F, 40.0F, 40.0F }, box(), TOOLTIP_W, WINDOW_W, WINDOW_H);
     EXPECT_FLOAT_EQ(bound.x, 148.0F);
     EXPECT_FLOAT_EQ(bound.y, 204.0F);
-    EXPECT_FLOAT_EQ(bound.w, WIDTH);
+    EXPECT_FLOAT_EQ(bound.w, TOOLTIP_W);
     EXPECT_FLOAT_EQ(bound.h, 32.0F);
 }
 
 // As on the right toolbar
 TEST(TooltipBoundOfTest, FlipsBeforeItsAnchorWhereAfterWouldRunPastTheWindow)
 {
-    const bound_t bound = tooltipBoundOf({ 700.0F, 200.0F, 40.0F, 40.0F }, box(), WIDTH, WINDOW_W, WINDOW_H);
+    const bound_t bound = tooltipBoundOf({ 700.0F, 200.0F, 40.0F, 40.0F }, box(), TOOLTIP_W, WINDOW_W, WINDOW_H);
     EXPECT_FLOAT_EQ(bound.x, 592.0F);
 }
 
 // Ending exactly at the window's edge is not past it: 652 + 40 + 8 + 100 = 800
 TEST(TooltipBoundOfTest, StaysAfterItsAnchorEndingAtTheWindowsEdge)
 {
-    const bound_t bound = tooltipBoundOf({ 652.0F, 200.0F, 40.0F, 40.0F }, box(), WIDTH, WINDOW_W, WINDOW_H);
+    const bound_t bound = tooltipBoundOf({ 652.0F, 200.0F, 40.0F, 40.0F }, box(), TOOLTIP_W, WINDOW_W, WINDOW_H);
     EXPECT_FLOAT_EQ(bound.x, 700.0F);
 }
 
 // Flipped in a window too narrow for either side, it would start at -48
 TEST(TooltipBoundOfTest, NeverLeavesTheWindowOnTheLeft)
 {
-    const bound_t bound = tooltipBoundOf({ 60.0F, 200.0F, 40.0F, 40.0F }, box(), WIDTH, 150.0F, WINDOW_H);
+    const bound_t bound = tooltipBoundOf({ 60.0F, 200.0F, 40.0F, 40.0F }, box(), TOOLTIP_W, 150.0F, WINDOW_H);
     EXPECT_FLOAT_EQ(bound.x, 0.0F);
 }
 
 // A snap on the window's top edge: centred, it would start at -11
 TEST(TooltipBoundOfTest, NeverLeavesTheWindowAtTheTop)
 {
-    const bound_t bound = tooltipBoundOf({ 100.0F, 0.0F, 10.0F, 10.0F }, box(), WIDTH, WINDOW_W, WINDOW_H);
+    const bound_t bound = tooltipBoundOf({ 100.0F, 0.0F, 10.0F, 10.0F }, box(), TOOLTIP_W, WINDOW_W, WINDOW_H);
     EXPECT_FLOAT_EQ(bound.y, 0.0F);
 }
 
 // Centred, it would end at 616
 TEST(TooltipBoundOfTest, NeverLeavesTheWindowAtTheBottom)
 {
-    const bound_t bound = tooltipBoundOf({ 100.0F, 595.0F, 10.0F, 10.0F }, box(), WIDTH, WINDOW_W, WINDOW_H);
+    const bound_t bound = tooltipBoundOf({ 100.0F, 595.0F, 10.0F, 10.0F }, box(), TOOLTIP_W, WINDOW_W, WINDOW_H);
     EXPECT_FLOAT_EQ(bound.y, WINDOW_H - 32.0F);
 }
 
 // No room for it at all: pinned to the left edge rather than anywhere past it
 TEST(TooltipBoundOfTest, AWindowNarrowerThanItPinsItToTheLeftEdge)
 {
-    const bound_t bound = tooltipBoundOf({ 10.0F, 200.0F, 20.0F, 20.0F }, box(), WIDTH, 80.0F, WINDOW_H);
+    const bound_t bound = tooltipBoundOf({ 10.0F, 200.0F, 20.0F, 20.0F }, box(), TOOLTIP_W, 80.0F, WINDOW_H);
     EXPECT_FLOAT_EQ(bound.x, 0.0F);
 }

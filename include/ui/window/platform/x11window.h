@@ -23,6 +23,7 @@
 #include "common/system.h"
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
+#include "ui/io/platform/portalconst.h"
 #include "ui/pubsub/subscribe.h"
 #include "ui/type.h"
 #include "ui/window/display.h"
@@ -43,10 +44,12 @@
 #include <cstring>
 #include <glib-object.h>
 #include <glib.h>
+#include <ios>
 #include <iostream>
 #include <librsvg/rsvg.h>
 #include <memory>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -129,6 +132,14 @@ public:
     [[nodiscard]] bool isValid() const override { return m_xWindow != 0U; }
 
     [[nodiscard]] NativeWindowHandle nativeHandle() const override { return m_xWindow; }
+
+    // Its id in hex, the way the portal reads an X11 parent
+    [[nodiscard]] std::string windowIdentifier() const override
+    {
+        std::ostringstream identifier;
+        identifier << Ui::Io::Platform::Portal::X11_PREFIX << std::hex << m_xWindow;
+        return identifier.str();
+    }
 
     void updateNativeBackground()
     {

@@ -25,14 +25,17 @@
  * case asks the OS directly (nativegeometry.h), windowed and again in the largest state the
  * OS gives a window: macOS's fullscreen is where a list stood a point below its button
  *
- * Skipped where a list is no window to ask about: native Wayland, which has no global
- * coordinates, and composited X11, where a list is drawn into the main window
+ * Skipped on native Wayland, which has no global coordinates to ask about. On X11 a list is a
+ * window of its own on a Wayland session too, where XWayland would have it drawn into the main
+ * window (popupsaswindows.h)
  */
 
 #if defined(_WIN32) || defined(__APPLE__) || defined(HAVE_X11)
 
+#include "isdisplayset.h"
 #include "menubarloop.h"
 #include "nativegeometry.h"
+#include "popupsaswindows.h"
 #include "testconst.h"
 #include "ui/color.h"
 #include "ui/config.h"
@@ -69,19 +72,18 @@ void tracePlacement(const Ui::IWindow & popup, const char * step)
 
 class PopupPlacementTest : public ::testing::TestWithParam<bool> {
 protected:
-    Ui::Shell m_shell;
-    bool      m_isInitialized = false;
-    bool      m_isEnlarged    = false;
+    PureGlUi::PopupsAsWindows m_popupsAsWindows; // before the shell starts
+    Ui::Shell                 m_shell;
+    bool                      m_isInitialized = false;
+    bool                      m_isEnlarged    = false;
 
     void SetUp() override
     {
         if (!m_shell.initialize()) {
+            ASSERT_FALSE(PureGlUi::isDisplaySet()) << PureGlUi::DISPLAY_UNREACHABLE;
             GTEST_SKIP() << "no window or GL context here";
         }
         m_isInitialized = true;
-        if (Ui::g_config.isCompositing) {
-            GTEST_SKIP() << "composited: a list is drawn into the main window, not placed as a window of its own";
-        }
         if (GetParam()) {
             m_isEnlarged = PureGlUi::setEnlarged(mainWindow(), true);
             if (!m_isEnlarged) {

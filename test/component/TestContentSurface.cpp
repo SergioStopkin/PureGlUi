@@ -30,14 +30,17 @@
 #ifdef HAVE_X11
 
 #include "testconst.h"
+#include "ui/idkind.h"
 #include "ui/interface/irenderer.h"
 #include "ui/interface/iwindow.h"
 #include "ui/res/resmanager.h"
 #include "ui/type.h"
 #include "ui/window/pointershape.h"
+#include "ui/window/renderqueue.h"
 #include "ui/window/windowmanager.h"
 
 #include <gtest/gtest.h>
+#include <set>
 #include <string>
 
 #ifndef TEST_RES_DIR
@@ -86,6 +89,8 @@ public:
     [[nodiscard]] bool                   isHardwareGl() const override { return false; }
     void                                 makeCurrent() override { }
     void                                 swapBuffers() override { }
+    [[nodiscard]] bool                   isShownAtItsSize() const override { return true; }
+    [[nodiscard]] std::string            windowIdentifier() const override { return {}; }
     void                                 clear() override { }
     void                                 requestRender() override { }
     void                                 setRenderRequest(Ui::task_fn_t /*fn*/) override { }
@@ -225,6 +230,18 @@ TEST_F(ContentSurfaceTest, RemovingTheOneUnderThePointerForgetsIt)
     windowManager.setActiveContentSurface(SURFACE_B);
     EXPECT_EQ(rendererA.leaveCount(), 0);
     EXPECT_EQ(rendererB.leaveCount(), 0);
+}
+
+// A surface placed asks for a main frame: a Wayland subsurface takes its place only when the
+// main window next commits, so a move with nothing else to draw would leave it where it was
+TEST_F(ContentSurfaceTest, PlacingASurfaceAsksForAMainFrame)
+{
+    FakeWindow   window { 1001 };
+    FakeRenderer renderer;
+    windowManager.renderQueue().clear();
+
+    windowManager.addContentSurface(SURFACE_A, window, renderer);
+    EXPECT_TRUE(windowManager.renderQueue().pending().contains(Ui::MAIN_WINDOW_ID));
 }
 
 // A tooltip or pointer for an id never registered makes no surface of it

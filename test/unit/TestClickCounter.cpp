@@ -25,6 +25,7 @@
  * button predicate that defines a click burst.
  */
 
+#include "testconst.h"
 #include "ui/window/clickcounter.h"
 
 #include <gtest/gtest.h>
@@ -33,16 +34,15 @@ using Ui::Window::ClickCounter;
 
 namespace {
 
-constexpr uint32_t LMB = 1; // arbitrary button id, content-agnostic to the counter
-constexpr uint32_t RMB = 3;
-
-constexpr uint32_t kIntervalMs = 400;
-constexpr int      kDistancePx = 5;
+using PureGlUi::CLICK_DISTANCE_PX;
+using PureGlUi::CLICK_INTERVAL_MS;
+using PureGlUi::LMB;
+using PureGlUi::RMB;
 
 ClickCounter makeCounter()
 {
     ClickCounter c;
-    c.configure(kIntervalMs, kDistancePx);
+    c.configure(CLICK_INTERVAL_MS, CLICK_DISTANCE_PX);
     return c;
 }
 
@@ -78,7 +78,7 @@ TEST(ClickCounter, IntervalBoundaryInclusive)
     // Elapsed == intervalMs counts as "within"
     ClickCounter c = makeCounter();
     EXPECT_EQ(c.next(1000, 100, 100, LMB), 1);
-    EXPECT_EQ(c.next(1000 + kIntervalMs, 100, 100, LMB), 2);
+    EXPECT_EQ(c.next(1000 + CLICK_INTERVAL_MS, 100, 100, LMB), 2);
 }
 
 TEST(ClickCounter, DistanceBoundaryInclusive)
@@ -86,7 +86,7 @@ TEST(ClickCounter, DistanceBoundaryInclusive)
     // dx^2 + dy^2 == distancePx^2 counts as "near"
     ClickCounter c = makeCounter();
     EXPECT_EQ(c.next(1000, 100, 100, LMB), 1);
-    EXPECT_EQ(c.next(1100, 100 + kDistancePx, 100, LMB), 2);
+    EXPECT_EQ(c.next(1100, 100 + CLICK_DISTANCE_PX, 100, LMB), 2);
 }
 
 TEST(ClickCounter, DistanceDiagonalWithin)
@@ -102,7 +102,7 @@ TEST(ClickCounter, ConfigureUpdatesThresholds)
     ClickCounter c = makeCounter();
     EXPECT_EQ(c.next(1000, 100, 100, LMB), 1);
     // After widening the interval, a normally-too-slow second press pairs up.
-    c.configure(1000, kDistancePx);
+    c.configure(1000, CLICK_DISTANCE_PX);
     EXPECT_EQ(c.next(1900, 100, 100, LMB), 2);
 }
 
@@ -135,14 +135,14 @@ TEST(ClickCounter, ExceedsIntervalResetsToOne)
 {
     ClickCounter c = makeCounter();
     EXPECT_EQ(c.next(1000, 100, 100, LMB), 1);
-    EXPECT_EQ(c.next(1000 + kIntervalMs + 1, 100, 100, LMB), 1);
+    EXPECT_EQ(c.next(1000 + CLICK_INTERVAL_MS + 1, 100, 100, LMB), 1);
 }
 
 TEST(ClickCounter, ExceedsDistanceResetsToOne)
 {
     ClickCounter c = makeCounter();
     EXPECT_EQ(c.next(1000, 100, 100, LMB), 1);
-    EXPECT_EQ(c.next(1100, 100 + kDistancePx + 1, 100, LMB), 1);
+    EXPECT_EQ(c.next(1100, 100 + CLICK_DISTANCE_PX + 1, 100, LMB), 1);
 }
 
 TEST(ClickCounter, DifferentButtonResetsToOne)
@@ -157,7 +157,7 @@ TEST(ClickCounter, TripleBrokenByIntervalGoesOneTwoOne)
     ClickCounter c = makeCounter();
     EXPECT_EQ(c.next(1000, 100, 100, LMB), 1);
     EXPECT_EQ(c.next(1200, 100, 100, LMB), 2);
-    EXPECT_EQ(c.next(1200 + kIntervalMs + 1, 100, 100, LMB), 1);
+    EXPECT_EQ(c.next(1200 + CLICK_INTERVAL_MS + 1, 100, 100, LMB), 1);
 }
 
 TEST(ClickCounter, TripleBrokenByDistanceGoesOneTwoOne)
@@ -165,13 +165,13 @@ TEST(ClickCounter, TripleBrokenByDistanceGoesOneTwoOne)
     ClickCounter c = makeCounter();
     EXPECT_EQ(c.next(1000, 100, 100, LMB), 1);
     EXPECT_EQ(c.next(1100, 100, 100, LMB), 2);
-    EXPECT_EQ(c.next(1200, 100 + kDistancePx + 1, 100, LMB), 1);
+    EXPECT_EQ(c.next(1200, 100 + CLICK_DISTANCE_PX + 1, 100, LMB), 1);
 }
 
 TEST(ClickCounter, ZeroIntervalNeverPairs)
 {
     ClickCounter c;
-    c.configure(0, kDistancePx);
+    c.configure(0, CLICK_DISTANCE_PX);
     // First press always returns 1 regardless of thresholds; we expect the
     // second to stay at 1 because any positive elapsed > 0 fails the test.
     EXPECT_EQ(c.next(1000, 100, 100, LMB), 1);
@@ -181,7 +181,7 @@ TEST(ClickCounter, ZeroIntervalNeverPairs)
 TEST(ClickCounter, ZeroDistanceRequiresExactPosition)
 {
     ClickCounter c;
-    c.configure(kIntervalMs, 0);
+    c.configure(CLICK_INTERVAL_MS, 0);
     EXPECT_EQ(c.next(1000, 100, 100, LMB), 1);
     // 1 px off -> dist^2 = 1 > 0^2, fails the near test.
     EXPECT_EQ(c.next(1100, 101, 100, LMB), 1);

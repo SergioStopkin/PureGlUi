@@ -28,9 +28,9 @@
 
 #include "menubarloop.h"
 #include "nativefocus.h"
+#include "popupsaswindows.h"
 #include "shelltest.h"
 #include "testconst.h"
-#include "ui/config.h"
 #include "ui/res/type/dialog.h"
 #include "ui/shell.h"
 #include "ui/window/popup/dialogwindow.h"
@@ -41,15 +41,16 @@
 
 namespace {
 
-using ListFocusTest = PureGlUi::ShellTest;
+// A list's focus is its window's, so on X11 it is one on a Wayland session too
+class ListFocusTest : public PureGlUi::ShellTest {
+protected:
+    PureGlUi::PopupsAsWindows m_popupsAsWindows; // before SetUp starts the shell
+};
 
 TEST_F(ListFocusTest, AListStaysOpenAsTheOsGivesItTheFocus)
 {
     if (m_menuIds.empty()) {
         GTEST_SKIP() << "no title opens a list here";
-    }
-    if (Ui::g_config.isCompositing) {
-        GTEST_SKIP() << "a list here is never mapped, drawn into the main frame instead";
     }
     Ui::Window::WindowManager & windowManager = m_shell.windowManager();
     PureGlUi::makeListsTopLevel(mainWindow());
@@ -77,9 +78,6 @@ TEST_F(ListFocusTest, AListStaysOpenAsTheFocusMovesIntoItsChildWindow)
 {
     if (m_menuIds.empty()) {
         GTEST_SKIP() << "no title opens a list here";
-    }
-    if (Ui::g_config.isCompositing) {
-        GTEST_SKIP() << "a list here is never mapped, drawn into the main frame instead";
     }
     if (!PureGlUi::setActive(mainWindow(), true)) {
         GTEST_SKIP() << PureGlUi::NO_FOCUS;

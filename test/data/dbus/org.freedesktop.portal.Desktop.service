@@ -1,0 +1,5 @@
+# The portal as the test bus starts it on the first call: by a program that never takes the name,
+# so a stand-in in the test takes it while the call waits
+[D-BUS Service]
+Name=org.freedesktop.portal.Desktop
+Exec=/bin/sleep 5

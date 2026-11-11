@@ -29,6 +29,8 @@ namespace Ui::Io {
 struct alignas(64) file_filter_t final {
     std::string name; // human-readable, e.g. "CAD files (STEP, IGES)"
     std::string spec; // "*.step;*.stp;*.iges;*.igs"
+
+    bool operator==(const file_filter_t &) const = default;
 };
 
 } // namespace Ui::Io

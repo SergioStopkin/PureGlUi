@@ -55,6 +55,9 @@ public:
     [[nodiscard]] virtual Ui::Window::NativeWindowHandle  nativeHandle() const                          = 0;
     [[nodiscard]] virtual Ui::Window::NativeDisplayHandle nativeDisplay() const                         = 0;
     virtual void                                          destroy()                                     = 0;
+    // The window as xdg-desktop-portal takes a dialog's parent: "x11:<XID>" or "wayland:<handle>",
+    // empty where it has none to give
+    [[nodiscard]] virtual std::string windowIdentifier() const = 0;
 
     // Title & screen helpers
     virtual void setTitle(const std::string & title)                = 0;
@@ -103,6 +106,9 @@ public:
     virtual void makeCurrent() = 0; // Make this window's GL context current
     virtual void swapBuffers() = 0; // Swap the front/back buffers
     virtual void clear()       = 0; // Clear framebuffer with background color
+    // Whether the frame last swapped stands at the window's size; only a Wayland surface resized
+    // while it held its next buffer does not, until it swaps again
+    [[nodiscard]] virtual bool isShownAtItsSize() const = 0;
 
     // Queue a render via the render-request callback (the pairing/coordinator
     // does the actual frame production).

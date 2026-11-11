@@ -24,6 +24,7 @@
  *        tooltip waits, the next follows at once, a content surface's never waits).
  */
 
+#include "testconst.h"
 #include "ui/type.h"
 #include "ui/window/istooltipdelayed.h"
 #include "ui/window/spentbuttonof.h"
@@ -40,8 +41,8 @@ using Ui::Window::tooltipWantedOf;
 
 namespace {
 
-constexpr Ui::id_t BUTTON = 5;
-constexpr Ui::id_t OTHER  = 6;
+using PureGlUi::BUTTON;
+using PureGlUi::OTHER;
 
 tooltip_t buttonTooltip() { return { "Measure", { 0.0F, 100.0F, 40.0F, 40.0F } }; }
 

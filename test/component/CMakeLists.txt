@@ -27,6 +27,7 @@ add_executable(
     TestFullscreen.cpp
     TestHiddenSurface.cpp
     TestAlphaToCoverage.cpp
+    TestWindowIdentifier.cpp
 )
 
 # macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Ten do: TestGlSmoke

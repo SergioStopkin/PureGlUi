@@ -33,18 +33,19 @@ Input flows one direction through three seams:
 
 ### Accessors
 
-All are `[[nodiscard]]` with const + non-const overloads.
+All are `[[nodiscard]]`; all but `fileDialog` have const + non-const overloads.
 
 ```cpp
 Ui::Res::ResManager &       resManager();
 Ui::Window::WindowManager & windowManager();
 Ui::Render::Context &       context();
-Ui::Action::Registry &      actions();   // host registers domain actions here
+Ui::Action::Registry &      actions();      // host registers domain actions here
+Ui::Io::FileDialog &        fileDialog();   // OpenFile's dialog; run() asks it at the top of each pass
 ```
 
 On macOS, including `ui/shell.h` forces the includer to compile as Objective-C++:
-it reaches `<Cocoa/Cocoa.h>` transitively through `action/openfile.h` ->
-`io/filedialog.h`. Mark any such translation unit
+it reaches `<Cocoa/Cocoa.h>` through `io/filedialog.h`, for the `FileDialog` it
+owns. Mark any such translation unit
 `set_source_files_properties(<file> PROPERTIES LANGUAGE OBJCXX)` (see the demo's
 `src/CMakeLists.txt`).
 
@@ -85,7 +86,8 @@ purpose rather than spine position because the first two run on both paths:
   newest. It deliberately does NOT
   shut down (a host's content surfaces must die before the main window) and does
   not print a banner (only `main()` brackets the object's lifetime).
-- `run()` loops while `windowManager().isRunning()`: drains `frameTasks`, polls +
+- `run()` loops while `windowManager().isRunning()`: drains `frameTasks`, takes the open
+  dialog's picks (`takePickedFiles`, before that pass's events), polls +
   dispatches all pending OS events, then on any events runs popup-move tracking,
   temp-status expiry, the `onTick` hook, and deferred actions; renders the dirty
   set; and, idle, sleeps until one refresh of the display (`g_config.refreshPeriod()`)
@@ -291,8 +293,11 @@ Notes:
 
 - A host overrides any key by re-registering it (`shell.actions().on("Reload", ...)`)
   to also reload domain resources.
-- `openFile` calls `host.closePopupMenu()`, invokes `Ui::Io::FileDialog::openFiles`
-  with the main window as owner and `resManager().lastOpenDir()` / `openFileTitle()` / `openFileFilters()`,
+- `openFile` calls `host.closePopupMenu()` and opens the Shell's `Ui::Io::FileDialog`
+  (`host.fileDialog().open`) with the main window as owner and `resManager().lastOpenDir()` /
+  `openFileTitle()` / `openFileFilters()`, then returns. Each pass of `Shell::run` takes what the
+  dialog picked once it has closed and hands it to `openPickedFiles` (`action/openpickedfiles.h`,
+  apart from `openfile.h` so it needs no native dialog to be tested), which
   updates `lastOpenDir` from the last pick, then for each file computes
   `fileExtension(file)` and calls `host.runFileHandler(extension, file)`. If no
   handler is registered it calls `openNoHandlerDialog(host, extension)` - a
@@ -331,25 +336,67 @@ wants spaces, macOS wants bare extensions).
 
 ### Ui::Io::FileDialog
 
-Header: `include/ui/io/filedialog.h`. `class FileDialog final` (all-static; not
-constructible).
+Header: `include/ui/io/filedialog.h`. `class FileDialog final`, non-copyable; the Shell
+owns one.
 
 ```cpp
-static std::vector<std::string> openFiles(Ui::Window::NativeWindowHandle owner,
-                                          const std::string & startDir,
-                                          const std::string & title,
-                                          const std::vector<file_filter_t> & filters);
+void open(const Ui::IWindow & owner,
+          const std::string & startDir,
+          const std::string & title,
+          const std::vector<file_filter_t> & filters);
+std::optional<std::vector<std::string>> takeFiles();
 ```
+
+`open` while one is up does nothing. `takeFiles` never waits: the files once the dialog
+has closed (empty when cancelled), `std::nullopt` while it is open or none was. Win32's
+and macOS's dialogs run their own loop inside `open`, which keeps the window answering.
+GNU/Linux's runs beside the loop, which keeps answering the compositor's ping while it is
+open - waited on, a Wayland desktop took the app for hung: first the desktop's own through
+xdg-desktop-portal's FileChooser (`Ui::Io::Platform::PortalFileChooser`, `include/ui/io/platform/portalfilechooser.h`:
+`OpenFile` over D-Bus with GDBus, its `Response` subscribed to before the call on the path its
+`handle_token` names, and GLib's default main context turned once a pass by `takeFiles` while
+it is asked for), else, where no portal answers the call, zenity or kdialog
+(`Ui::Io::Platform::ChildProcess`, `include/ui/io/platform/childprocess.h`: started from its argv with no shell,
+its stdout read and its exit checked without blocking). Every GLib object it owns is a
+`Common::c_ptr_t<T, Free>` (`include/common/cfree.h`), a `std::unique_ptr` freed with its
+type's own function. A portal that has not answered `OpenFile` within 1 s
+(`REPLY_TIMEOUT_MS`; a portal started cold answers in about 0.1 s) counts as none: the call is
+withdrawn with `Request.Close`, so its dialog closes as it comes rather than beside zenity, and
+a dialog still up as the app quits is closed the same way. `open` returns at once, except
+where there is a display but no session bus address (`ssh -X`): there GLib runs `dbus-launch`
+to find a bus, synchronously, inside `g_bus_get`.
 
 Native multi-select open dialog. Domain-blind: title and filters come from the
 caller; empty filters => any file (a trailing "All files" is always appended).
 `owner` is the window the dialog is modal to and stands above (`OpenFile` passes the
-main window). Only Win32 reads it: it stacks a dialog by its owner, and one with none
+main window). Win32 reads its handle: it stacks a dialog by its owner, and one with none
 went behind the main window's popups. A popup there is owned by its parent window and
-never topmost, so a dialog that window owns stands above it.
-Backends: Win32 `IFileOpenDialog`, macOS `NSOpenPanel`, GNU/Linux `zenity` then
-`kdialog` fallback. Returns the selected absolute paths (empty on cancel or when
-no dialog tool is available on GNU/Linux).
+never topmost, so a dialog that window owns stands above it. The portal reads its
+`windowIdentifier()` - `x11:<XID>`, or on Wayland `wayland:<handle>` from the xdg-foreign
+export the main window makes once configured - and parents its dialog to it, modal, so a
+click on the main window can never put the dialog behind it. A compositor with no
+xdg-foreign exporter leaves the identifier empty and the dialog without a parent.
+Under X11 the desktop holds the focus back from it: the portal's dialog carries the time of
+the last input the portal saw, older than the Ctrl+O or click that asked for it, which GNOME
+takes for the user working elsewhere. So while `FileDialog::isOpen()`, `Shell` has the event
+peer watch for it (`WindowManager::setDialogAwaited`), and `X11Event` sends
+`_NET_ACTIVE_WINDOW` for a window another program made transient for the main window, timed
+by our latest key or button - honoured unless the user has gone elsewhere since.
+A `Response` of `Ended` (`Ui::Io::Platform::PortalResponse`, `include/ui/io/platform/portalresponse.h`)
+gives no files, as a cancel, and a log line: the portal answers so for a dialog closed by Esc or
+its close button as for a backend that fails to show it, and an Esc must never bring up another
+dialog. Where no portal answers, `Ui::Io::Platform::dialogCommandsOf(parentWindow, startDir, title, filters)`
+(`include/ui/io/platform/dialogcommandsof.h`) gives zenity's and kdialog's command, each a
+`Ui::Io::Platform::command_t` (`include/ui/io/platform/command.h`: argv, and NAME=value variables its own over
+ours, which `ChildProcess::start` lays over `Common::System::environment()`). Under an
+`x11:` parent both are attached to the window - zenity `--modal --attach=<id>` as an X11
+client (`GDK_BACKEND=x11`), kdialog `--attach=<id>` (`QT_QPA_PLATFORM=xcb`) - since on a
+Wayland desktop only a client of the same X server can reach an XWayland window.
+Backends: Win32 `IFileOpenDialog`, macOS `NSOpenPanel`, GNU/Linux the portal, else `zenity`,
+else `kdialog` where zenity cannot be started or fails to run - ends with neither a pick (0) nor
+a cancel (1), or by a signal (a cancelled one is the user's answer).
+Picks are absolute paths; none on cancel or when no dialog tool is available on
+GNU/Linux.
 
 ## Demo app
 

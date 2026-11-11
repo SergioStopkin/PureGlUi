@@ -196,9 +196,26 @@ if(WITH_WAYLAND AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         if(WAYLAND_SCANNER AND WAYLAND_PROTOCOLS_FOUND)
             pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
             set(XDG_SHELL_PROTOCOL "${WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml")
+            # The main window exported for the desktop portal's dialogs to parent to
+            set(XDG_FOREIGN_PROTOCOL "${WAYLAND_PROTOCOLS_DIR}/unstable/xdg-foreign/xdg-foreign-unstable-v2.xml")
 
-            if(EXISTS "${XDG_SHELL_PROTOCOL}")
+            if(EXISTS "${XDG_SHELL_PROTOCOL}" AND EXISTS "${XDG_FOREIGN_PROTOCOL}")
                 message(STATUS "Found xdg-shell protocol: ${XDG_SHELL_PROTOCOL}")
+
+                add_custom_command(
+                    OUTPUT ${CMAKE_BINARY_DIR}/xdg-foreign-unstable-v2-client-protocol.h
+                    COMMAND ${WAYLAND_SCANNER} client-header ${XDG_FOREIGN_PROTOCOL}
+                            ${CMAKE_BINARY_DIR}/xdg-foreign-unstable-v2-client-protocol.h
+                    DEPENDS ${XDG_FOREIGN_PROTOCOL}
+                    COMMENT "Generating xdg-foreign client header"
+                )
+                add_custom_command(
+                    OUTPUT ${CMAKE_BINARY_DIR}/xdg-foreign-unstable-v2-protocol.c
+                    COMMAND ${WAYLAND_SCANNER} private-code ${XDG_FOREIGN_PROTOCOL}
+                            ${CMAKE_BINARY_DIR}/xdg-foreign-unstable-v2-protocol.c
+                    DEPENDS ${XDG_FOREIGN_PROTOCOL}
+                    COMMENT "Generating xdg-foreign protocol code"
+                )
 
                 # Generate xdg-shell client header
                 add_custom_command(
@@ -222,13 +239,15 @@ if(WITH_WAYLAND AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 add_library(wayland-protocols-gen STATIC
                     ${CMAKE_BINARY_DIR}/xdg-shell-protocol.c
                     ${CMAKE_BINARY_DIR}/xdg-shell-client-protocol.h
+                    ${CMAKE_BINARY_DIR}/xdg-foreign-unstable-v2-protocol.c
+                    ${CMAKE_BINARY_DIR}/xdg-foreign-unstable-v2-client-protocol.h
                 )
                 set_target_properties(wayland-protocols-gen PROPERTIES LINKER_LANGUAGE C)
                 target_include_directories(wayland-protocols-gen PUBLIC ${CMAKE_BINARY_DIR})
                 target_link_libraries(wayland-protocols-gen PUBLIC ${WAYLAND_LIBRARIES})
                 set(WAYLAND_PROTOCOL_LIB wayland-protocols-gen)
             else()
-                message(WARNING "xdg-shell protocol XML not found at ${XDG_SHELL_PROTOCOL}")
+                message(WARNING "xdg-shell or xdg-foreign protocol XML not found under ${WAYLAND_PROTOCOLS_DIR}")
                 set(HAVE_WAYLAND FALSE)
             endif()
         else()
@@ -295,6 +314,10 @@ else()
     pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo)
     set(LIBRSVG_LIBRARIES PkgConfig::LIBRSVG)
     set(CAIRO_LIBRARIES PkgConfig::CAIRO)
+    # The desktop's file dialog through xdg-desktop-portal, asked over D-Bus (GDBus)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
+    endif()
 endif()
 
 # ===========================================================================
@@ -383,7 +406,7 @@ if(APPLE)
     # includes it, a host's too, compiles that way or leaks what it makes
     target_compile_options(ui INTERFACE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(ui INTERFACE ${X11_LIBRARIES} ${X11_Xrandr_LIB} ${XCOMPOSITE_LIBRARY} ${XRENDER_LIBRARY})
+    target_link_libraries(ui INTERFACE ${X11_LIBRARIES} ${X11_Xrandr_LIB} ${XCOMPOSITE_LIBRARY} ${XRENDER_LIBRARY} PkgConfig::GIO)
     if(X11_FOUND AND NOT HAVE_WAYLAND)
         target_compile_definitions(ui INTERFACE HAVE_X11=1)
     endif()

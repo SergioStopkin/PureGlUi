@@ -96,6 +96,9 @@ static constexpr int     KeyRelease = 3;
 // long-sized - uint32_t would corrupt the buffer layout. Aliased once here;
 // the API chooses the type.
 using Cardinal = unsigned long; // NOLINT(google-runtime-int)
+
+// Its signed long: a property read's offset and length, a client message's format-32 data
+using Long = long; // NOLINT(google-runtime-int)
 } // namespace Ui::Window::Platform::X11
 
 #endif // __linux__

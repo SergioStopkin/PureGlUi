@@ -66,6 +66,12 @@ public:
     [[nodiscard]] virtual bool isFullscreen() const { return false; }
     virtual void               setFullscreen(bool /*isFullscreen*/) { }
 
+    // A surface that follows its window shows every frame at its size; Wayland's is resized apart
+    [[nodiscard]] bool isShownAtItsSize() const override { return true; }
+
+    // No parent a portal could take: macOS and Win32 have no portal; X11 and Wayland name theirs
+    [[nodiscard]] std::string windowIdentifier() const override { return {}; }
+
     // -------- Geometry accessors --------
 
     [[nodiscard]] Ui::Res::Type::bound_t bound() const override { return m_bound; }

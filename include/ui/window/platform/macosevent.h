@@ -187,6 +187,9 @@ public:
         // macOS doesn't need explicit flush like X11
     }
 
+    // The open panel runs modal inside FileDialog::open, focused by AppKit
+    void setDialogAwaited(Ui::IWindow & /*window*/, bool /*isAwaited*/) override { }
+
     bool copyToClipboard(Ui::IWindow & window, const std::string & text) override
     {
         (void)window;

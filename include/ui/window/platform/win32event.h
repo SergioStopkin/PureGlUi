@@ -153,6 +153,9 @@ public:
         m_clickCounter.configure(intervalMs, distancePx);
     }
 
+    // The open dialog runs inside FileDialog::open, owned by the window, focused by Windows
+    void setDialogAwaited(Ui::IWindow & /*window*/, bool /*isAwaited*/) override { }
+
     bool copyToClipboard(Ui::IWindow & window, const std::string & text) override
     {
         auto hwnd = window.nativeHandle();

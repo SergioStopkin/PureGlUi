@@ -66,20 +66,26 @@ jobs:
       - name: Build Component Tests on Wayland
         run:  ./build.sh ct wl
 
-      # A headless Weston is the compositor, its desktop shell giving fullscreen, popups and an
-      # output's scale; with no GPU on the runner Mesa draws on the CPU into shared memory. At
-      # 1.25x as above, so the UI's scale stands apart from the output's buffer scale
+      # Weston is the compositor, on its X11 backend in an Xvfb for a seat, which a headless one
+      # lacks and which activates the window; its output smaller than the window, so fullscreen
+      # shrinks it. Its desktop shell gives fullscreen, popups and an output's scale; with no GPU
+      # on the runner Mesa draws on the CPU into shared memory. Spelled as Weston 10 takes it too,
+      # so the same line runs on an older desktop. At 1.25x as above, so the UI's scale stands
+      # apart from the output's buffer scale
       - name: Run Component Tests on Wayland
         timeout-minutes: 15
         run: |
           export XDG_RUNTIME_DIR=`mktemp -d`
-          weston --backend=headless --socket=wayland-ci &
+          xvfb-run -a weston --backend=x11-backend.so --use-pixman --width=1024 --height=640 --socket=wayland-ci &
           for attempt in `seq 100`; do
               if [[ -S $XDG_RUNTIME_DIR/wayland-ci ]]; then
                   break
               fi
               sleep 0.1
           done
+          # With no compositor every test skips and the suite passes, so a Weston that never
+          # started fails the step instead
+          [[ -S $XDG_RUNTIME_DIR/wayland-ci ]] || { echo "weston did not start"; exit 1; }
           WAYLAND_DISPLAY=wayland-ci PUREGLUI_SCALE=1.25 ./run.sh ct wl
 
       - name: Build Coverage

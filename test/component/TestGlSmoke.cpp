@@ -39,6 +39,7 @@
  *   runner: no FBOs, no shaders) -> context liveness verified, render+readback skipped.
  */
 
+#include "isdisplayset.h"
 #include "testconst.h"
 #include "ui/color.h"
 #include "ui/gl/glrender.h"
@@ -82,6 +83,7 @@ TEST(GlSmoke, WindowContextAndUiRender)
     auto                  connector = std::make_unique<MainConnector>(subscribe);
 
     if (!connector->window().create(320, 240, nullptr, 0, "gl-smoke")) {
+        ASSERT_FALSE(isDisplaySet()) << DISPLAY_UNREACHABLE;
         GTEST_SKIP() << "No window/GL context available (headless without a GL driver)";
     }
     NativeWindow & window = connector->window();
@@ -151,6 +153,7 @@ protected:
     void SetUp() override
     {
         if (!m_connector->window().create(TEXT_FRAME_W, TEXT_FRAME_H, nullptr, 0, "gl-text")) {
+            ASSERT_FALSE(isDisplaySet()) << DISPLAY_UNREACHABLE;
             GTEST_SKIP() << "No window/GL context available (headless without a GL driver)";
         }
         m_connector->window().makeCurrent();

@@ -27,6 +27,7 @@
  * values in that file, which are the designer's to change.
  */
 
+#include "testconst.h"
 #include "ui/render/scrollbar.h"
 #include "ui/res/resmanager.h"
 
@@ -40,12 +41,10 @@ using Ui::Res::Type::bound_t;
 
 namespace {
 
-// One area for every test: 200 wide, 100 tall, 400 of content in a 100 viewport,
-// so exactly 300 is scrollable and the thumb is a quarter of the track.
-constexpr fpx_t AREA_W    = 200.0F;
-constexpr fpx_t AREA_H    = 100.0F;
-constexpr fpx_t CONTENT_H = 400.0F;
-constexpr fpx_t MAX_VALUE = CONTENT_H - AREA_H;
+using PureGlUi::AREA_H;
+using PureGlUi::AREA_W;
+using PureGlUi::CONTENT_H;
+using PureGlUi::MAX_VALUE;
 
 class ScrollBarTest : public ::testing::Test {
 protected:

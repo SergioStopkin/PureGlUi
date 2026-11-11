@@ -24,11 +24,11 @@
 
 #include "common/time.h"
 #include "common/warnifslow.h"
+#include "testconst.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cstddef>
 #include <gtest/gtest.h>
 
 using Common::Time;
@@ -36,13 +36,9 @@ using Common::warnIfSlow;
 
 namespace {
 
-constexpr std::chrono::milliseconds ONE_MS { 1 };
-
-// Sleeps of one millisecond: enough for a median a stray wake-up does not move
-constexpr std::size_t SLEEPS = 9;
-
-// Well under a Windows timer tick, well over a sleep that wakes when asked
-constexpr double MOST_MS = 5.0;
+using PureGlUi::MOST_SLEEP_MS;
+using PureGlUi::ONE_MS;
+using PureGlUi::SLEEPS;
 
 } // namespace
 
@@ -62,7 +58,7 @@ TEST(Time, AMillisecondSleepIsNotATimerTick)
         slept = Time::msSince(start);
     }
     std::ranges::sort(sleptMs);
-    warnIfSlow("a 1 ms sleep's median", sleptMs.at(SLEEPS / 2), MOST_MS);
+    warnIfSlow("a 1 ms sleep's median", sleptMs.at(SLEEPS / 2), MOST_SLEEP_MS);
 }
 
 TEST(Time, ASleepUntilWakesAtItsPoint)
@@ -76,5 +72,5 @@ TEST(Time, ASleepUntilAPassedPointReturnsAtOnce)
 {
     const Time::point_t start = Time::now();
     Time::sleepUntil(start - std::chrono::seconds(1));
-    warnIfSlow("a sleep until a passed point", Time::msSince(start), MOST_MS);
+    warnIfSlow("a sleep until a passed point", Time::msSince(start), MOST_SLEEP_MS);
 }

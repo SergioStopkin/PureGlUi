@@ -799,9 +799,13 @@ private:
         // Commit to trigger configure
         wl_surface_commit(m_surface);
 
-        // Wait for configure
+        // Wait for configure, which a connection the compositor closed never brings
         while (!m_popupConfigured) {
-            wl_display_roundtrip(m_display);
+            if (wl_display_roundtrip(m_display) == -1) {
+                std::cerr << "[PopupWindow] Display error before the configure: " << wl_display_get_error(m_display)
+                          << std::endl;
+                return false;
+            }
         }
 
         // Initialize EGL context (use inherited m_context)

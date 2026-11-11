@@ -210,6 +210,7 @@ Methods (all `static`):
 ```cpp
 static unsigned int          cpuCores();
 static std::string           environmentVariable(std::string_view name);
+static std::vector<std::string> environment();   // GNU/Linux only
 static std::filesystem::path homeDir();
 static std::string           cpuFrequency();
 static std::string           systemRam();
@@ -217,7 +218,8 @@ static void                  setSystemName(const std::string & name);
 ```
 
 - `cpuCores` - number of hardware threads via `std::thread::hardware_concurrency()`, clamped to a minimum of 1.
-- `environmentVariable` - the variable's value as UTF-8, or an empty string when unset. Windows reads it wide, so a value outside the code page survives. The only place the process reads its environment: `getenv` races nothing but a `setenv`, and nothing in the process ever sets one - so the `concurrency-mt-unsafe` suppression lives here once instead of at every call site.
+- `environmentVariable` - the variable's value as UTF-8, or an empty string when unset. Windows reads it wide, so a value outside the code page survives. With `environment`, the only places the process reads its environment: `getenv` races nothing but a `setenv`, and nothing in the process ever sets one - so the `concurrency-mt-unsafe` suppression lives here once instead of at every call site.
+- `environment` - (GNU/Linux only) every variable as `NAME=value`. `Ui::Io::Platform::ChildProcess` lays a command's own variables over these for a program it starts.
 - `homeDir` - the user's home: `%USERPROFILE%` on Windows, `$HOME` on GNU/Linux and macOS. An empty path when unset, so a path joined to it stays relative. `ResManager::sessionPath()` anchors the session under it, so where the app was started from never decides where it saves.
 - `cpuFrequency` - base CPU clock formatted as `"X.XX GHz"`, or `"N/A"` if unavailable. GNU/Linux prefers the rated frequency in `/proc/cpuinfo` `model name` (`@ ...GHz`), falling back to sysfs `cpuinfo_max_freq`; macOS uses `hw.cpufrequency_max` and falls back to parsing the CPU brand string (Apple Silicon exposes no frequency sysctl); Windows reads `~MHz` from the CPU registry key.
 - `systemRam` - total physical RAM as `"N GB"`, or `"N/A"` if unavailable. GNU/Linux reads `/proc/meminfo` `MemTotal`; macOS reads `hw.memsize`; Windows uses `GlobalMemoryStatusEx` and rounds to the nearest GB.
@@ -346,6 +348,23 @@ inline void warnIfSlow(std::string_view what, double ms, double mostMs);
 ```cpp
 Common::warnIfSlow("a 1 ms sleep's median", medianMs, 5.0);
 // ::warning::a 1 ms sleep's median took 15.6 ms, over 5
+```
+
+## Common::c_free_t / Common::c_ptr_t
+
+Header: `include/common/cfree.h`
+
+The owner of a C library's object (GLib/GIO, Wayland): a `std::unique_ptr` whose deleter calls the function that type is freed with. The function is a template argument, so the deleter takes no space and is spelled once, at the declaration. Never a raw pointer that owns.
+
+```cpp
+template <auto Free> struct c_free_t;   // calls Free(owned)
+template <typename T, auto Free> using c_ptr_t = std::unique_ptr<T, c_free_t<Free>>;
+```
+
+```cpp
+const Common::c_ptr_t<GVariant, g_variant_unref>        reply(g_dbus_connection_call_finish(connection, result, &failure));
+Common::c_ptr_t<wl_registry, wl_registry_destroy>       registry(wl_display_get_registry(display));
+std::vector<Common::c_ptr_t<wl_output, wl_output_destroy>> outputs;   // one owner each
 ```
 
 ## See also

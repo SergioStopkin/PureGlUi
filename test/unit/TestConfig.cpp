@@ -22,10 +22,10 @@
  *        floor/round modes that the renderer and popup layout depend on.
  */
 
+#include "testconst.h"
 #include "ui/config.h"
 #include "ui/type.h"
 
-#include <array>
 #include <cmath>
 #include <gtest/gtest.h>
 
@@ -33,13 +33,9 @@ using Ui::config_t;
 
 namespace {
 
-// Every scale an edge has to hold at: the fractional ones are what toPhysEdge is for, and CI
-// only ever runs 1x and 1.25x
-constexpr std::array SCALES { 1.0F, 1.25F, 1.5F, 1.75F, 2.0F, 2.5F, 3.0F };
-
-// CSS px either way of the window's corner, in half steps: a value off the window, and one
-// that is not whole, are both handed to it
-constexpr int MOST_HALF_STEPS = 1600;
+using PureGlUi::DIALOG_WIDTH;
+using PureGlUi::MOST_HALF_STEPS;
+using PureGlUi::SCALES;
 
 [[nodiscard]] config_t configAt(Ui::fpx_t scale) { return config_t { Ui::roundToInt(96.0F * scale), scale, false }; }
 
@@ -188,14 +184,13 @@ TEST(Config, AnEdgeMovesOnWithEveryCssPx)
 // of its size however its corner fell
 TEST(Config, TheSpanBetweenTwoEdgesIsWithinAPixelOfItsSize)
 {
-    constexpr Ui::fpx_t WIDTH = 300.0F;
     for (const Ui::fpx_t scale : SCALES) {
         const config_t cfg = configAt(scale);
         for (int css = -100; css <= 400; ++css) {
             const auto      left = static_cast<Ui::fpx_t>(css);
-            const Ui::fpx_t span = cfg.toPhysEdge(left + WIDTH) - cfg.toPhysEdge(left);
+            const Ui::fpx_t span = cfg.toPhysEdge(left + DIALOG_WIDTH) - cfg.toPhysEdge(left);
             EXPECT_FLOAT_EQ(span, std::floor(span)) << "at " << scale << "x, " << css;
-            EXPECT_LE(std::abs(span - (WIDTH * scale)), 1.0F) << "at " << scale << "x, " << css;
+            EXPECT_LE(std::abs(span - (DIALOG_WIDTH * scale)), 1.0F) << "at " << scale << "x, " << css;
         }
     }
 }

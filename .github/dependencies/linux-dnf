@@ -4,6 +4,7 @@ clang
 clang-tools-extra
 cmake-format
 cppcheck
+dbus-daemon
 flatpak
 fontconfig-devel
 freetype-devel

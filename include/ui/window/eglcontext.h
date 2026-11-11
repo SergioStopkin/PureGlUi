@@ -557,6 +557,22 @@ public:
 #endif
     }
 
+    [[nodiscard]] bool isShownAt(fpx_t width, fpx_t height) const override
+    {
+#ifdef HAVE_WAYLAND
+        if (m_wlEglWindow && m_platform == EglPlatform::Wayland) {
+            int shownWidth  = 0;
+            int shownHeight = 0;
+            wl_egl_window_get_attached_size(m_wlEglWindow, &shownWidth, &shownHeight);
+            return shownWidth == static_cast<int>(width) && shownHeight == static_cast<int>(height);
+        }
+#else
+        (void)width;
+        (void)height;
+#endif
+        return true;
+    }
+
     bool createContext() override
     {
 #ifdef __linux__

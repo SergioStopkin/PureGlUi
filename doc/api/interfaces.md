@@ -204,6 +204,10 @@ Pure-virtual methods:
 - `Ui::Window::NativeWindowHandle nativeHandle() const` - native window handle.
 - `Ui::Window::NativeDisplayHandle nativeDisplay() const` - native display handle.
 - `void destroy()` - destroy the surface.
+- `std::string windowIdentifier() const` - the window as xdg-desktop-portal takes a dialog's
+  parent: X11 `x11:<XID in hex>`, Wayland `wayland:<handle>` from the xdg-foreign export the
+  main window makes once configured (empty where the compositor offers no exporter);
+  `WindowBase` answers empty for macOS, Win32 and any window with no export.
 - `void setTitle(const std::string &title)` - set window title.
 - `void screenPosition(int &screenX, int &screenY) const` - client-area top-left
   in screen coords (use for popup placement, anchored to the client area).
@@ -224,6 +228,10 @@ Pure-virtual methods:
 - `void makeCurrent()` - make this window's GL context current.
 - `void swapBuffers()` - swap front/back buffers. A hidden window swaps nothing on native
   Wayland, from `hide()` until `show()`: a swap commits a buffer, which would map it again.
+- `bool isShownAtItsSize() const` - whether the frame last swapped stands at the window's
+  size. `WindowBase` answers true; a native Wayland surface resized while it held its next
+  buffer is not until it swaps again, so the coordinator draws a content surface once more
+  after a swap that showed the old size.
 - `void clear()` - clear framebuffer with the background color.
 - `void requestRender()` - queue a render via the render-request callback (the
   coordinator produces the actual frame).
@@ -270,6 +278,14 @@ Pure-virtual methods:
 - `void flush(IWindow &window)` - flush pending output to the display server.
 - `bool copyToClipboard(IWindow &window, const std::string &text)` - copy text to
   the system clipboard (window used for selection ownership).
+- `void setDialogAwaited(IWindow &window, bool isAwaited)` - while a dialog another
+  program shows for the window is awaited (the desktop's file dialog, `Shell` sets it
+  while `FileDialog::isOpen()`), hand it the focus a desktop holds back. X11 alone does
+  anything: the desktop takes the dialog's last input, older than the press that asked
+  for it, for the user working elsewhere, so `X11Event` watches the root's maps and
+  sends `_NET_ACTIVE_WINDOW` for a window another program made transient for ours,
+  timed by our latest key or button. Wayland's parent handle, Win32 and macOS focus it
+  themselves.
 
 Virtual (default no-op):
 - `void setDoubleClickConfig(uint32_t intervalMs, int distancePx)` - configure
@@ -313,6 +329,8 @@ Pure-virtual methods:
 - `void swapBuffers()` - swap front/back buffers.
 - `void resize(fpx_t width, fpx_t height)` - resize the drawable (no-op where the
   surface tracks the window).
+- `bool isShownAt(fpx_t width, fpx_t height) const` - whether the frame last swapped stands
+  at this size: a `wl_egl_window`'s attached size, true everywhere else.
 - `void release()` - release the context (make none current).
 - `void cleanup()` - clean up all resources.
 - `bool hasAlpha() const` - context has an alpha channel.

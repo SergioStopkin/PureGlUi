@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "isdisplayset.h"
 #include "menubarloop.h"
 #include "ui/inithooks.h"
 #include "ui/shell.h"
@@ -44,6 +45,7 @@ protected:
     void SetUp() override
     {
         if (!m_shell.initialize(m_hooks)) {
+            ASSERT_FALSE(isDisplaySet()) << DISPLAY_UNREACHABLE;
             GTEST_SKIP() << "no window or GL context here";
         }
         m_isInitialized = true;

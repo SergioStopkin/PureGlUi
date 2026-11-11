@@ -39,6 +39,9 @@
 #include <objc/runtime.h>
 #include <sys/sysctl.h>
 #include <sys/types.h>
+#elifdef LINUX
+#include <unistd.h>
+#include <vector>
 #endif
 
 #include <cstdint>
@@ -71,9 +74,9 @@ public:
         return (cores > 0) ? cores : 1;
     }
 
-    // An environment variable as UTF-8, empty when unset. The only place the
-    // process reads its environment: getenv races nothing but a setenv, and
-    // nothing here ever sets one
+    // An environment variable as UTF-8, empty when unset. With environment() on Linux, the only
+    // places the process reads its environment: getenv races nothing but a setenv, and nothing
+    // here ever sets one
     static std::string environmentVariable(std::string_view name)
     {
 #ifdef WINDOWS
@@ -86,6 +89,20 @@ public:
         return (value != nullptr) ? std::string(value) : std::string {};
 #endif
     }
+
+#ifdef LINUX
+    // Every variable as NAME=value, for a program started from here to be given
+    static std::vector<std::string> environment()
+    {
+        std::vector<std::string> variables;
+        // A C array ending in a null, with no bound to walk it by
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        for (char * const * variable = environ; *variable != nullptr; ++variable) {
+            variables.emplace_back(*variable);
+        }
+        return variables;
+    }
+#endif
 
     // The user's home: %USERPROFILE% on Windows, $HOME elsewhere. Empty when
     // unset, which leaves a path joined to it relative
