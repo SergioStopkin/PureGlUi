@@ -25,9 +25,11 @@ add_executable(
     TestOutputScale.cpp
     TestListResize.cpp
     TestFullscreen.cpp
-    TestHiddenSurface.cpp
     TestAlphaToCoverage.cpp
     TestWindowIdentifier.cpp
+    # Last: gtest runs suites in the order their files register them, linked in this order, and
+    # these come after every other
+    TestHiddenSurface.cpp
 )
 
 # macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Ten do: TestGlSmoke

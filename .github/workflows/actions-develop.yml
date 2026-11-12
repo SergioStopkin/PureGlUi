@@ -83,8 +83,7 @@ jobs:
               fi
               sleep 0.1
           done
-          # With no compositor every test skips and the suite passes, so a Weston that never
-          # started fails the step instead
+          # A Weston that never started fails the step here with one line, not every test on its own
           [[ -S $XDG_RUNTIME_DIR/wayland-ci ]] || { echo "weston did not start"; exit 1; }
           WAYLAND_DISPLAY=wayland-ci PUREGLUI_SCALE=1.25 ./run.sh ct wl
 

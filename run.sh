@@ -12,7 +12,7 @@ shift
 SUFFIX=""
 if [[ $1 == "wl" ]]; then
     if [[ "`uname`" != "Linux" ]]; then
-        echo "wl: native Wayland is Linux only"
+        echo "wl: native Wayland runs on GNU/Linux only - run without wl here"
         exit 1
     fi
     SUFFIX=$WAYLAND_SUFFIX
@@ -25,6 +25,10 @@ if [[ $MODE == "test" || $MODE == "ut" || $MODE == "ct" ]]; then
     ARGS=()
     while [[ $# -gt 0 ]]; do
         if [[ $1 == "-f" ]]; then
+            # An empty filter runs no test and passes
+            if [[ $# -lt 2 ]]; then
+                PrintUsageAndExit
+            fi
             shift
             ARGS+=("--gtest_filter=$1")
         else

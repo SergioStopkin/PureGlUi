@@ -34,7 +34,8 @@ constexpr std::chrono::milliseconds SETTLE { 100 };
 constexpr std::chrono::milliseconds MOST_WAIT { 5000 };
 
 // The most a window made, a few frames and closed take, many times over: a swap waiting for a
-// frame callback that never comes never returns. And how often the wait looks
+// frame callback that never comes never returns, and running out ends the child process drawing
+// them (runWithin). And how often the wait looks
 constexpr std::chrono::milliseconds FRAMES_MOST { 1000 };
 constexpr std::chrono::milliseconds POLL_INTERVAL { 10 };
 

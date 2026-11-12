@@ -21,30 +21,41 @@
  *
  * At swap interval 1 Mesa waits, before each swap, for the frame callback the swap before it
  * asked for, and a compositor may never fire one for a surface unmapped before it did: such a
- * swap never returns, so the frames run on a thread of their own and the test waits for them
- * a while. The framework's EGL context swaps at 0 on Wayland, its loop pacing the frames
+ * swap never returns, so the frames run on a thread of their own, waited for a while, in a child
+ * process the wait takes down alone. The framework's EGL context swaps at 0 on Wayland, its loop
+ * pacing the frames
  *
  * Native Wayland only, which ./build.sh ct wl builds: X11 has no frame callbacks
  */
 
 #ifdef HAVE_WAYLAND
 
-#include "common/time.h"
+#include "runwithin.h"
 #include "shelltest.h"
 #include "testconst.h"
 #include "ui/pubsub/subscribe.h"
 #include "ui/window/nativewindow.h"
 
 #include <atomic>
-#include <chrono>
 #include <cstdlib>
 #include <functional>
 #include <gtest/gtest.h>
-#include <thread>
+#include <iostream>
 
 namespace {
 
-using HiddenSurfaceTest = PureGlUi::ShellTest;
+// Not named *DeathTest, which gtest runs before every other suite: CMake links this file last,
+// so it runs after them
+class HiddenSurfaceTest : public PureGlUi::ShellTest {
+protected:
+    void SetUp() override
+    {
+        PureGlUi::ShellTest::SetUp();
+        // A child forked off this process would draw over its Wayland connection; one run afresh
+        // opens its own
+        GTEST_FLAG_SET(death_test_style, "threadsafe");
+    }
+};
 
 // One frame, as the render loop draws one
 void drawFrame(Ui::Window::NativeWindow & window)
@@ -54,92 +65,85 @@ void drawFrame(Ui::Window::NativeWindow & window)
 }
 
 // The script on a content-surface-like child, made and closed on a thread of its own, where its
-// context is current. A swap that waits for a frame callback that never comes never returns, so
-// it ends the run: the teardown would close the display under it
-void runOnChild(const Ui::Window::NativeWindow & parent, const std::function<void(Ui::Window::NativeWindow &)> & script)
+// context is current; then the end of the child process this runs in, its exit saying how it went
+[[noreturn]] void runOnChild(const Ui::Window::NativeWindow &                        parent,
+                             const std::function<void(Ui::Window::NativeWindow &)> & script)
 {
-    std::atomic<bool>           isCreated { false };
-    std::atomic<bool>           isDone { false };
-    std::thread                 frames([&parent, &script, &isCreated, &isDone] {
-        {
-            Ui::PubSub::Subscribe    subscribe;
-            Ui::Window::NativeWindow child(subscribe);
-            isCreated = child.create(PureGlUi::CHILD_WIDTH,
-                                     PureGlUi::CHILD_HEIGHT,
-                                     parent.nativeDisplay(),
-                                     parent.nativeHandle(),
-                                     "");
-            if (isCreated) {
-                script(child);
-            }
+    std::atomic<bool> isCreated { false };
+    PureGlUi::runWithin([&parent, &script, &isCreated] {
+        Ui::PubSub::Subscribe    subscribe;
+        Ui::Window::NativeWindow child(subscribe);
+        isCreated =
+        child.create(PureGlUi::CHILD_WIDTH, PureGlUi::CHILD_HEIGHT, parent.nativeDisplay(), parent.nativeHandle(), "");
+        if (isCreated) {
+            script(child);
         }
-        isDone = true;
     });
-    const Common::Time::point_t start = Common::Time::now();
-    while (!isDone && Common::Time::now() - start < PureGlUi::FRAMES_MOST) {
-        Common::Time::sleepFor(PureGlUi::POLL_INTERVAL);
-    }
-    if (!isDone) {
-        ADD_FAILURE() << "a swap never returned in " << PureGlUi::FRAMES_MOST.count() << " ms";
+    if (!isCreated) {
+        std::cerr << "no child window here" << std::endl;
         std::_Exit(EXIT_FAILURE);
     }
-    frames.join();
-    EXPECT_TRUE(isCreated) << "no child window here";
+    std::_Exit(EXIT_SUCCESS);
 }
 
 // A content surface's frame, hidden at once as an inactive workspace's is, then shown and drawn
 TEST_F(HiddenSurfaceTest, ASurfaceHiddenRightAfterAFrameDrawsOnceShown)
 {
-    runOnChild(mainWindow(), [](Ui::Window::NativeWindow & child) {
+    const auto script = [](Ui::Window::NativeWindow & child) {
         drawFrame(child);
         child.hide();
         child.show();
         drawFrame(child);
-    });
+    };
+    EXPECT_EXIT(runOnChild(mainWindow(), script), testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 // A tab switched away from and back again and again
 TEST_F(HiddenSurfaceTest, ASurfaceHiddenAgainAndAgainDrawsEachTimeItIsShown)
 {
-    runOnChild(mainWindow(), [](Ui::Window::NativeWindow & child) {
+    const auto script = [](Ui::Window::NativeWindow & child) {
         for (int round = 0; round < 3; ++round) {
             drawFrame(child);
             child.hide();
             child.show();
         }
         drawFrame(child);
-    });
+    };
+    EXPECT_EXIT(runOnChild(mainWindow(), script), testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 // A frame asked for while hidden swaps nothing, and leaves the one after the show free
 TEST_F(HiddenSurfaceTest, AFrameWhileHiddenLeavesTheNextOneFree)
 {
-    runOnChild(mainWindow(), [](Ui::Window::NativeWindow & child) {
+    const auto script = [](Ui::Window::NativeWindow & child) {
         drawFrame(child);
         child.hide();
         drawFrame(child);
         child.show();
         drawFrame(child);
-    });
+    };
+    EXPECT_EXIT(runOnChild(mainWindow(), script), testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 // A tab closed while its view is hidden right after a frame
 TEST_F(HiddenSurfaceTest, ASurfaceHiddenRightAfterAFrameCloses)
 {
-    runOnChild(mainWindow(), [](Ui::Window::NativeWindow & child) {
+    const auto script = [](Ui::Window::NativeWindow & child) {
         drawFrame(child);
         child.hide();
-    });
+    };
+    EXPECT_EXIT(runOnChild(mainWindow(), script), testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 // Negative: a surface never hidden draws frame after frame, so a wait above is the hidden one's
 TEST_F(HiddenSurfaceTest, ASurfaceNeverHiddenDrawsFrameAfterFrame)
 {
-    runOnChild(mainWindow(), [](Ui::Window::NativeWindow & child) {
+    const auto script = [](Ui::Window::NativeWindow & child) {
         drawFrame(child);
         drawFrame(child);
         drawFrame(child);
-    });
+    };
+    EXPECT_EXIT(runOnChild(mainWindow(), script), testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 } // namespace

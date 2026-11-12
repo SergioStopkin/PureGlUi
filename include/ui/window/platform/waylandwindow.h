@@ -334,8 +334,10 @@ public:
             return;
         }
         // The buffer follows the scale, or the window grows or shrinks on screen with it. Before
-        // the buffer exists the size is still the one asked for at creation
-        if (m_context) {
+        // the buffer exists the size is still the one asked for at creation. A subsurface's size
+        // is its parent's layout's, given again at the new scale: its own scale may arrive after
+        // that, so it takes the buffer's scale alone
+        if (m_context && m_subsurface == nullptr) {
             m_bound.w = m_bound.w * scale / m_scale;
             m_bound.h = m_bound.h * scale / m_scale;
             m_context->resize(m_bound.w, m_bound.h);

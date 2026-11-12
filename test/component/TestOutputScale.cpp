@@ -140,6 +140,24 @@ TEST_F(OutputScaleTest, AChildWindowStandsTheSizeItWasMadeAt)
     EXPECT_FLOAT_EQ(child.bound().h, PureGlUi::CHILD_HEIGHT) << "at scale " << m_scaleBefore;
 }
 
+// A content surface's size is its parent's layout's, given again at the new scale as the shell
+// lays it out: its own output's scale arriving after that is its buffer's alone, its size kept
+TEST_F(OutputScaleTest, AChildWindowKeepsTheSizeItWasGivenAsItsOutputsScaleChanges)
+{
+    Ui::PubSub::Subscribe    subscribe;
+    Ui::Window::NativeWindow child(subscribe);
+    ASSERT_TRUE(createChildAt(Ui::g_config.scale, child));
+    // The room the layout gives it at twice the scale, before its output says so
+    const Ui::Res::Type::bound_t given { .x = 0.0F,
+                                         .y = 0.0F,
+                                         .w = PureGlUi::CHILD_WIDTH * 2.0F,
+                                         .h = PureGlUi::CHILD_HEIGHT * 2.0F };
+    child.moveResize(given);
+    child.handleOutputScale(m_scaleBefore * 2);
+    EXPECT_FLOAT_EQ(child.bound().w, given.w) << "at scale " << m_scaleBefore * 2;
+    EXPECT_FLOAT_EQ(child.bound().h, given.h) << "at scale " << m_scaleBefore * 2;
+}
+
 // PUREGLUI_SCALE is the UI's, never a buffer's: a child made under a factor above 1 stands the
 // size it was asked for, its buffer at its output's scale
 TEST_F(OutputScaleTest, AChildWindowMadeUnderAFactorAbove1StandsTheSizeItWasMadeAt)
