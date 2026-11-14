@@ -37,6 +37,7 @@
 // headers listed here, not the ones they pull in
 // IWYU pragma: begin_exports
 #include <X11/X.h>
+#include <X11/XKBlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>

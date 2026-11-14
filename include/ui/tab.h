@@ -26,13 +26,14 @@ namespace Ui {
 // Lightweight tab view model the chrome renders. A one-way projection of the
 // host's authoritative workspace state (file path, MRU, session stay host-side);
 // the host resolves any atomics into these plain values on the main thread.
-struct alignas(64) tab_t final {
+struct alignas(128) tab_t final {
     id_t        id = INVALID_ID;    // stable identity, host-assigned
     std::string label;              // display text
     bool        isActive   = false; // currently focused tab
     bool        hasContent = false; // has a document (controls close button)
     bool        isLoading  = false; // content load in progress
     int         progress   = 0;     // loading sector index for the tab spinner
+    std::string description;        // dimmed after the label in the Ctrl+Tab list (a file's folder), "" for none
 };
 
 } // namespace Ui

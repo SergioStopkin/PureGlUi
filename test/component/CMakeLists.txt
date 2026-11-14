@@ -10,6 +10,7 @@ add_executable(
     TestDockScrollbar.cpp
     TestDockSlider.cpp
     TestIconFill.cpp
+    TestGlide.cpp
     TestWindowGeometry.cpp
     TestGlSmoke.cpp
     TestUiDriver.cpp
@@ -27,20 +28,22 @@ add_executable(
     TestFullscreen.cpp
     TestAlphaToCoverage.cpp
     TestWindowIdentifier.cpp
+    TestTabSwitcher.cpp
+    TestTabDrag.cpp
     # Last: gtest runs suites in the order their files register them, linked in this order, and
     # these come after every other
     TestHiddenSurface.cpp
 )
 
-# macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Ten do: TestGlSmoke
-# creates a real window via NativeWindow -> macoswindow.h, TestInitHooks, TestSecondMainWindow, TestMenuBar,
-# TestMenuBarWindowChange, TestListFocus and TestScaleChange include ui/shell.h, which pulls Cocoa transitively through
-# action/openfile.h -> io/filedialog.h, TestWindowGeometry includes ui/window/windowmanager.h, which pulls it through
-# eventfactory.h -> macosevent.h, and TestPopupPlacement and TestFullscreen ask AppKit itself for a window's place or
-# its fullscreen (nativegeometry.h). So on macOS, including shell.h or windowmanager.h at all forces Obj-C++ on the
-# includer - windowless says nothing about it. TestContentSurface includes windowmanager.h too but is #if
-# defined(HAVE_X11), so it is an empty TU here. The rest are pure C++. GL_SILENCE_DEPRECATION quiets the deprecated-GL
-# SDK annotations for these Obj-C++ units (CMAKE_CXX_FLAGS' -Wno-... only covers CXX).
+# macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Eleven do:
+# TestGlSmoke creates a real window via NativeWindow -> macoswindow.h, TestInitHooks, TestSecondMainWindow, TestMenuBar,
+# TestMenuBarWindowChange, TestListFocus, TestScaleChange and TestTabSwitcher include ui/shell.h, which pulls Cocoa
+# transitively through action/openfile.h -> io/filedialog.h, TestWindowGeometry includes ui/window/windowmanager.h,
+# which pulls it through eventfactory.h -> macosevent.h, and TestPopupPlacement and TestFullscreen ask AppKit itself for
+# a window's place or its fullscreen (nativegeometry.h). So on macOS, including shell.h or windowmanager.h at all forces
+# Obj-C++ on the includer - windowless says nothing about it. TestContentSurface and TestTabDrag include them too but
+# are #if'd to X11 (and Win32), so they are empty TUs here. The rest are pure C++. GL_SILENCE_DEPRECATION quiets the
+# deprecated-GL SDK annotations for these Obj-C++ units (CMAKE_CXX_FLAGS' -Wno-... only covers CXX).
 if(APPLE)
     set_source_files_properties(
         TestGlSmoke.cpp
@@ -53,6 +56,7 @@ if(APPLE)
         TestListFocus.cpp
         TestScaleChange.cpp
         TestFullscreen.cpp
+        TestTabSwitcher.cpp
         PROPERTIES LANGUAGE OBJCXX
     )
     target_compile_definitions(${TARGET} PRIVATE GL_SILENCE_DEPRECATION)

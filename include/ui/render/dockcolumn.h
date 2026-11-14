@@ -22,6 +22,7 @@
 #include "ui/gl/svgrenderer.h"
 #include "ui/idkind.h"
 #include "ui/render/dragtrack.h"
+#include "ui/render/elementkey.h"
 #include "ui/render/scrollbar.h"
 #include "ui/render/slider.h"
 #include "ui/render/thumbmetrics.h"
@@ -34,12 +35,14 @@
 #include "ui/res/dock/row.h"
 #include "ui/res/dock/rowkind.h"
 #include "ui/res/dock/state.h"
+#include "ui/res/key/element.h"
 #include "ui/res/key/iconrole.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/alignh.h"
 #include "ui/res/type/alignv.h"
 #include "ui/res/type/border.h"
 #include "ui/res/type/bound.h"
+#include "ui/res/type/colorpair.h"
 #include "ui/type.h"
 
 #include <algorithm>
@@ -823,9 +826,15 @@ private:
             const Ui::Res::Type::bound_t bound = rowBound(contentRect, i);
 
             // Selected rows take the menu's active block; a dock row and a menu
-            // row are the same thing visually, so they share the theming
-            if (row.isSelected) {
-                out.appendBg(bound, theme.menuItemActive, theme.dock.background.bg);
+            // row are the same thing visually, so they share the theming - and its
+            // fade in and out, top-menu-item's in animation.json
+            const Ui::Res::Type::color_pair_t selection = out.colorsOf(
+            Ui::Render::element_key_t { .id = row.id, .type = UiElementType::DockRow },
+            row.isSelected ? theme.menuItemActive
+                           : Ui::Res::Type::color_pair_t { .fg = theme.menuItemActive.fg, .bg = Ui::Color::Inherit() },
+            Ui::Res::Key::ElementKey::TopMenuItem);
+            if (!selection.bg.isInherit()) {
+                out.appendBg(bound, selection, theme.dock.background.bg);
             }
 
             const fpx_t indent = padH + (indentStep() * static_cast<fpx_t>(row.depth));

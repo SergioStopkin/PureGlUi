@@ -51,7 +51,6 @@ Methods:
 - `static std::vector<UiElement> buildPopup(const menu_t & menu, const ResManager &, fpx_t cssWidth)` - build popup dropdown items (`MenuItem` rows + `Separator`s) from menu data, `cssWidth` wide.
 - `UiElement * hitTest(fpx_t cssX, fpx_t cssY, EventKind event)` - topmost non-disabled element at CSS coords that ACCEPTS `event`, or `nullptr`. Iterates in reverse (last drawn wins). Passing the kind is what lets a hover pass and a click pass disagree about which element is under the same pixel - a `Text` status bar answers a click but not a hover.
 - `UiElement * elementById(id_t)` - first element with matching id, or `nullptr`.
-- `const UiElement * parentOf(const UiElement & child) const` - the element sharing the child's id but with a different type (e.g. a `Tab` for a `TabClose`), or `nullptr`.
 - `const std::vector<UiElement> & elements() const` / `std::vector<UiElement> & elements()` - the flat draw list (draw in order).
 - Cached font-handle getters: `menuFont()`, `itemFont()`, `itemFontBold()`, `popupFont()`, `statusBarFont()`, `tooltipFont()` (all `Ui::font_handle_t`).
 - `UiElement & addElement(UiElementType type, const bound_t & bound, id_t id = INVALID_ID)` - append an element, stamping `accepts` from `defaultAccepts(type)`. Override `accepts` on the returned reference for the exceptions (a submenu parent takes `Hover` only). Insertion order is z-order, so a contributor added after `build()` - a dock, via the extra-ops hook - sits on top of the chrome it overlaps.
@@ -81,7 +80,12 @@ Other methods:
 
 - `void setContent()` - rebuild the entire `UiLayout` from current `ResManager` state, then re-apply hover/active state.
 - `const Ui::Res::Type::bound_t & bound(id_t)` - element bounds by id (empty bound if not found).
-- `void Render(fpx_t width, fpx_t height)` - render a frame at the given physical size: clears op buffers, generates ops from the layout, runs the extra-ops hook, then `beginFrame`/flush/`endFrame` on the sink.
+- `void Render(fpx_t width, fpx_t height)` - render a frame at the given physical size: clears op buffers, generates ops from the layout, runs the extra-ops hook, then `beginFrame`/flush/`endFrame` on the sink - the held tab's ops after a `flushLayer`, over everything else.
+- `void holdTab(id_t id, fpx_t left)` / `void releaseTab()` - the tab a drag holds, its left edge in CSS px: drawn there, kept from the strip's first tab's left to its last tab's right, over the other tabs with its close glyph (`render/drawlayer.h`, `draw_layer_t`, one per layer), its corners over a transparent ground so they show its neighbours. Released, it glides from there to its place. `WindowManager::dragTab` holds it from the drag's own track, the press taken at the tab's left edge.
+- `bool isGliding() const` - whether the last frame drew anything midway along its glide or fade, so another frame is due; `WindowManager::keepGliding` asks once a pass of `Shell::run` - of this renderer and of an open menu's, submenu's and dialog's (`PopupRendererBase::isGliding`) - so a glide runs at the display's pace and a still window draws nothing.
+- `color_pair_t colorsOf(element_key_t key, color_pair_t target, ElementKey block)` - for a hook user: the colours its element is drawn in this frame, `target` faded along `block`'s transition as the renderer's own are. `DockColumn` fades a row's selection with it (`top-menu-item`, since a dock row is themed as a menu row), from none and back. The sweep runs after the hook, so a hook user's elements are kept while drawn.
+
+Elements glide and fade (`ui/animation/`, `Animator<element_key_t>`, keyed by id and type - `render/elementkey.h` - since a tab's close glyph shares its tab's id): each is drawn where its glide stands and in the colours its fade stands at, along its block's `transition` in `res/animation.json` (`transitionsFor(type)` -> `ResManager::transitionsFor(ElementKey)`: a tab `workspace-tab`, its close glyph `workspace-tab-close`, a toolbar button `toolbar-button`, a menu-bar button `top-menu-button-label`). FLIP, each property on its own clock: at its place and in its colours the first time, from where it was drawn when layout moves it or the theme recolours it - a reorder, a close or a drop slides a tab, a hover or a press fades a background and a text colour in and out, a colour changing mid-glide never restarting the glide. A tab's close glyph is drawn in it (`render/tabcloseboundof.h`, `tabCloseBoundOf`, which layout places it by too), its antialiasing ground the tab's drawn colour. Layout and the theme stay the truth hit-testing reads, and `bound(id)` returns layout's. A resize and a scroll of the strip jump, as a glide would chase them; an element not drawn in a frame is forgotten (`Animator::sweep`).
 - `void setExtraOpsHook(std::function<void(UiRenderer &)>)` - register a hook that runs after layout ops and before GL submission; used to draw dock columns into the same frame.
 - `void appendBg(const bound_t & rect, const color_pair_t & elementColors, const Ui::Color & parentBg, const border_t & radius = {})` - op-emitter for hook users: a colored (optionally rounded) rect, no shadow. `elementColors` is the natural theme block `{fg, bg}`; `parentBg` is the surrounding fill used for edge anti-aliasing.
 - `void appendImage(const bound_t & rect, const std::string & svgPath, Ui::Color tint)` - op-emitter for hook users: a tinted SVG in a rect.
@@ -91,7 +95,7 @@ Other methods:
 
 `Ui::IEventApp` overrides: `bool onMouseMove(int,int)`, `element_event_t onMousePress(int,int,MouseButton,int clickCount)`, `element_event_t onMouseRelease(int,int,MouseButton)`, `bool onMouseLeave()`, `element_event_t onScroll(int,int,fpx_t)` (no-op, returns `{}`). All translate physical input to CSS via `toCss`, update element `state`, and report whether a redraw is needed via `changed`. Press and release are Left-only here; the other buttons belong to content surfaces. Hit-testing is capability-driven - `UiLayout::hitTest(x, y, EventKind)` only returns elements whose `accepts` mask includes that kind.
 
-Internally, `generateDrawOps()` resolves colors/fonts/text/image-src per element from `ResManager` (`resolveColors`/`resolveFont`/`resolveText`/`resolveImageSrc`), and `flushOps()` translates the staged op buffers into `IRender` primitive calls in the order backgrounds -> progress -> images -> text.
+Internally, `generateDrawOps()` resolves colors/fonts/text/image-src per element from `ResManager` (`resolveColors`/`resolveFont`/`resolveText`/`resolveImageSrc`) and where it is drawn (`drawnBoundOf`), and `flushOps(layer)` translates one layer's staged ops into `IRender` primitive calls in the order backgrounds -> progress -> images -> text.
 
 ### Context
 
@@ -253,7 +257,8 @@ Software-rounded corner support (popup/dialog corners composited over parent pix
 
 - `void setAlpha(bool hasAlpha)`
 - `void setCornerPixels(std::array<std::vector<uint8_t>,4> pixels, const Ui::Res::Type::border_t & radii)`
-- `bool hasCornerPixels() const`
+- `void setUnderlay(const std::vector<uint8_t> & pixels, int width, int height)` - for a popup whose background is see-through (its window background's alpha under 255): what stands under its whole window, in place of the corners - which it holds - so the background shows the main window and the content surface through it, not only at its corners.
+- `bool hasCornerPixels() const` - either of the two.
 
 `Ui::IRenderer` boilerplate: `void resize(fpx_t,fpx_t)` (caches size), `void apply(changes_t)` (no-op), `void cleanup()` (make current + `Rounded::cleanup`), `element_event_t onScroll(int,int,fpx_t)` (`{}`).
 
@@ -301,7 +306,7 @@ Its buttons are `ui/render/popup/dialogbutton.h`'s `struct alignas(64) dialog_bu
 - `void cleanup()` - clear buttons + base cleanup.
 - `Ui::IEventApp` overrides: `bool onMouseMove(int,int)` (button/close hover + scrollbar thumb drag), `bool onMouseLeave()`, `element_event_t onScroll(int,int,fpx_t deltaY)` (scrolls content; honors `input().scrollNatural`/`scrollSpeed`), `element_event_t onMousePress(int,int,MouseButton,int)`, `element_event_t onMouseRelease(int,int,MouseButton)`.
 
-Content scrolling is smoothed (exponential lerp toward a target); the scrollbar has a draggable thumb and track paging. Keyboard-triggered actions run a two-phase hover -> active -> fire animation timed off `input().keyAnimationDelayMs`.
+Content scrolling is smoothed (exponential lerp toward a target); the scrollbar has a draggable thumb and track paging. A button's and the close button's colours fade along `dialog-button`'s and `dialog-close`'s transitions in `res/animation.json`, keyed by the button's index and the close button's after the last; the close button's none-of-its-own is the dialog's background, so it fades over the dialog. Keyboard-triggered actions show the button hovered, then pressed, then fire, each step held as long as its block's transitions run (`keyStepOf` -> `Ui::Animation::durationOf`), so the press lands before the dialog acts - and with no transition it acts at once.
 
 ---
 
@@ -311,7 +316,7 @@ Content scrolling is smoothed (exponential lerp toward a target); the scrollbar 
 
 `ui/gl/glrender.h` - `class GlRender final : public Ui::IRender, private Common::NonCopyable`. The bottom concrete `Ui::IRender` implementation. Wraps `Rounded` (SDF rects), `SvgRenderer` (images), a `FontRenderer` (text), and a small flat-color shader (the loading-bar arrow triangle). Domain-blind: callers resolve all theme/layout values to plain args.
 
-Batching: rects and images each need a `begin()`/`end()` GL setup, so the renderer tracks a `Mode` (`None`/`Rect`/`Image`) and switches lazily as primitive kinds change. Text is buffered and flushed font-sorted in `endFrame()` so it always composites above non-text.
+Batching: rects and images each need a `begin()`/`end()` GL setup, so the renderer tracks a `Mode` (`None`/`Rect`/`Image`) and switches lazily as primitive kinds change. Text is buffered and flushed font-sorted in `endFrame()` - and in `flushLayer()`, which ends the batch the same way mid-frame - so it always composites above non-text of its layer. A `fillRect` over a transparent ground (`colors.bg` alpha 0) blends premultiplied (`Util::blendPremultipliedAlpha`), as `Rounded` writes it there, its corners clear.
 
 - `GlRender(Ui::task_fn_t makeCurrent, const std::string & fontDir)` - `makeCurrent` makes the owning window's GL context current for teardown. Destructor makes the context current before deleting GL objects.
 - `Ui::Gl::FontRenderer * fontRenderer()` - concrete accessor for popup/dialog renderers that share this font renderer (not part of `IRender`).
@@ -338,8 +343,9 @@ Two output modes controlled by `bgColor.a`: opaque composite (`a > 0`, blends fg
 - `static fpx_t borderRadius(const border_t &, id_t idx)` - radius by corner index (0=TL,1=TR,2=BR,3=BL).
 - `void setCornerPixels(std::array<std::vector<uint8_t>,4> pixels, const border_t & radii)` - upload captured parent pixels as corner textures (each buffer `radius*radius*4` bytes RGBA, top-left origin; zero-radius/empty corners skipped).
 - `void updateCorner(id_t cornerIndex, const std::vector<uint8_t> & pixels, fpx_t radius)` - replace a single corner texture.
-- `bool hasCornerPixels() const`
-- `void drawCorners(fpx_t viewW, fpx_t viewH, fpx_t scale)` - draw captured corner pixels as an underlay (call before `begin`/`draw`/`end`).
+- `void setUnderlay(const std::vector<uint8_t> & pixels, int width, int height)` - upload what stands under the whole window (RGBA, top-left origin, physical px), dropping any corner textures, which it covers; a corner upload drops it in turn.
+- `bool hasCornerPixels() const` - corner textures or the whole underlay.
+- `void drawCorners(fpx_t viewW, fpx_t viewH, fpx_t scale)` - draw captured corner pixels as an underlay, or the whole underlay across the window (call before `begin`/`draw`/`end`).
 - `void begin(fpx_t viewW, fpx_t viewH, fpx_t scale)` - bind shader/VAO, set projection + AA (`1/scale`).
 - `void draw(const bound_t &, const border_t & radii, const color_pair_t &) const` - one rounded rect (`colors.fg` = fill, `colors.bg` = AA/composite background).
 - `void drawSplit(const bound_t &, const border_t & radii, const Ui::Color & colorL, const Ui::Color & colorR, fpx_t splitAngleDeg, const Ui::Color & bgColor) const` - a rounded rect filled with two colors split along an angled line (used for theme-preview swatches). `0` = horizontal split (`colorR` bottom), `45` = "/" line, `90` = vertical (`colorR` right).

@@ -643,6 +643,12 @@ private:
                       << std::endl;
             return false;
         }
+        // A held key's autorepeat comes as presses alone: X otherwise sends each as the key
+        // going up and down again, and a Ctrl that repeats would switch the Ctrl+Tab list held
+        if (m_ownsDisplay) {
+            int isSupported = Ui::Window::Platform::X11::False;
+            XkbSetDetectableAutoRepeat(m_display, Ui::Window::Platform::X11::True, &isSupported);
+        }
         return true;
     }
 
@@ -703,10 +709,13 @@ private:
         winAttrs.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask
                             | StructureNotifyMask;
 
-        // The main window alone hears the focus leave it: the app's, which a list closes on
+        // The main window alone hears the focus leave it: the app's, which a list closes on.
+        // And a key going up, which X sends only to a window that asks: the focus is its, and
+        // Ctrl going up is what switches to the tab the Ctrl+Tab list has highlighted
         if (!isChildWindow) {
             winAttrs.event_mask = static_cast<int64_t>(
-            Common::Bit::Or(Common::Bit::Or(winAttrs.event_mask, LeaveWindowMask), FocusChangeMask));
+            Common::Bit::Or(Common::Bit::Or(Common::Bit::Or(winAttrs.event_mask, LeaveWindowMask), FocusChangeMask),
+                            KeyReleaseMask));
         }
 
         m_xWindow = XCreateWindow(m_display,

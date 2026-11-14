@@ -18,7 +18,10 @@
 #pragma once
 
 #include "common/noncopyable.h"
+#include "common/time.h"
 #include "common/unicode.h"
+#include "ui/animation/animator.h"
+#include "ui/animation/transition.h"
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/const.h"
@@ -27,18 +30,22 @@
 #include "ui/interface/irender.h"
 #include "ui/interface/irenderer.h"
 #include "ui/render/bgop.h"
+#include "ui/render/drawlayer.h"
 #include "ui/render/elementevent.h"
+#include "ui/render/elementkey.h"
 #include "ui/render/elementstyle.h"
 #include "ui/render/eventkind.h"
 #include "ui/render/imageop.h"
 #include "ui/render/progressop.h"
 #include "ui/render/shadow.h"
+#include "ui/render/tabcloseboundof.h"
 #include "ui/render/textop.h"
 #include "ui/render/truncate.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
 #include "ui/render/uilayout.h"
 #include "ui/res/dock/anchor.h"
+#include "ui/res/key/element.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/alignh.h"
 #include "ui/res/type/alignv.h"
@@ -57,8 +64,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -137,6 +146,10 @@ public:
 
     void resize(fpx_t w, fpx_t h) override
     {
+        // A resize is no move: tabs sized to the window jump with it, as they would chase it
+        if (w != m_width || h != m_height) {
+            m_animator = Ui::Animation::Animator<element_key_t> {};
+        }
         // Cache the new physical size; the layout rebuilds on the next
         // setContent() using clientWidth/clientHeight.
         m_width  = w;
@@ -145,8 +158,13 @@ public:
 
     void cleanup() override { m_layout = UiLayout(); }
 
-    void apply(Ui::Res::Type::changes_t /*changed*/) override
+    void apply(Ui::Res::Type::changes_t changed) override
     {
+        // A theme switch is no change of state: every colour lands on the new theme's at once,
+        // as the grounds drawn around them do
+        if (changed.has(Ui::Res::Type::Changed::Theme)) {
+            m_animator = Ui::Animation::Animator<element_key_t> {};
+        }
         // Content rebuild is handled by requestContentRefresh() -> setContent().
         // Not called here to avoid duplicate layout builds (SVG loading is expensive).
     }
@@ -173,21 +191,48 @@ public:
 
         // Produce draw ops from UiLayout elements, then let WindowManager
         // contribute extra ops (docks, future overlays) into the same op
-        // buffers. The ops are then translated to IRender primitives.
-        m_bgOps.clear();
-        m_textOps.clear();
-        m_imageOps.clear();
-        m_progressOps.clear();
+        // buffers. The ops are then translated to IRender primitives, the held
+        // tab's in a layer of their own over everything else.
+        m_layer.clear();
+        m_heldLayer.clear();
 
         generateDrawOps();
         if (m_extraOpsHook) {
             m_extraOpsHook(*this);
         }
 
+        m_animator.sweep();
+
         m_render->beginFrame(width, height);
-        flushOps();
+        flushOps(m_layer);
+        if (!m_heldLayer.empty()) {
+            m_render->flushLayer();
+            flushOps(m_heldLayer);
+        }
         m_render->endFrame();
     }
+
+    // The colours a hook user's element `key` is drawn in this frame: `target`, the theme's for
+    // its state, faded along `block`'s transition in animation.json, as the renderer's own are
+    [[nodiscard]] Ui::Res::Type::color_pair_t colorsOf(const element_key_t &               key,
+                                                       const Ui::Res::Type::color_pair_t & target,
+                                                       Ui::Res::Key::ElementKey            block)
+    {
+        return m_animator.colorsOf(key, target, m_resManager.transitionsFor(block), m_frameTime);
+    }
+
+    // The tab `id` dragged, its left edge `left` CSS px: drawn there, held along the strip
+    // and over every other tab; let go, it glides to where layout puts it
+    void holdTab(id_t id, fpx_t left)
+    {
+        m_heldTabId   = id;
+        m_heldTabLeft = left;
+    }
+
+    void releaseTab() { m_heldTabId = INVALID_ID; }
+
+    // Whether the last frame drew something mid-glide, so another frame is due
+    [[nodiscard]] bool isGliding() const { return m_animator.isRunning(m_frameTime); }
 
     // Caller can register a hook that runs between UiLayout-driven ops and
     // GL submission. The hook may call appendBg/appendImage to push extra
@@ -227,7 +272,7 @@ public:
         op.radius    = radius;
         op.colors.fg = elementColors.bg; // shape fill
         op.colors.bg = parentBg;         // AA blend color
-        m_bgOps.emplace_back(op);
+        m_layer.bgOps.emplace_back(op);
     }
 
     // Text in a rect, left-aligned on the rect's baseline-capped centre, or
@@ -253,7 +298,7 @@ public:
         op.alignH  = alignH;
         op.alignV  = alignV;
         op.minPadH = minPadH;
-        m_textOps.emplace_back(op);
+        m_layer.textOps.emplace_back(op);
     }
 
     // Fonts a hook user can lay text out with. The item font is the row font;
@@ -272,6 +317,13 @@ public:
     [[nodiscard]] fpx_t popupWidthOf(const std::vector<Ui::Res::Type::menu_t> & items) const
     {
         return m_layout.popupWidthOf(items, m_resManager, *m_render);
+    }
+
+    // The Ctrl+Tab list's rows fitted to `maxWidth` and the CSS width they take,
+    // measured here for the same reason
+    [[nodiscard]] fpx_t fitTabSwitcherRows(fpx_t maxWidth, std::vector<Ui::tab_t> & rows) const
+    {
+        return m_layout.fitTabSwitcherRows(maxWidth, m_resManager, *m_render, rows);
     }
 
     // A tooltip's CSS width, measured here for the same reason
@@ -312,7 +364,7 @@ public:
         op.tinted   = true;
         op.isSvg    = true;
         op.isFilled = isFilled;
-        m_imageOps.emplace_back(op);
+        m_layer.imageOps.emplace_back(op);
     }
 
     // === Ui::IEventApp Interface ===
@@ -521,22 +573,41 @@ private:
 
         // ---- Interactive elements ----
         const auto & tabBar = m_resManager.tabBar();
+        // A scroll is no move: the strip shows other tabs, which jump into place
+        if (tabBar.scrollOffset() != m_scrollOffset) {
+            m_scrollOffset = tabBar.scrollOffset();
+            m_animator     = Ui::Animation::Animator<element_key_t> {};
+        }
+        m_frameTime = Common::Time::now();
+        // The tab drawn last, which its close glyph right after it stands in and on
+        Ui::Res::Type::bound_t drawnTab;
+        Ui::Color              drawnTabBg;
 
         for (const auto & el : m_layout.elements()) {
-            element_style_t style = resolveStyle(el, theme);
+            const element_key_t                              key { .id = el.id, .type = el.type };
+            const std::vector<Ui::Animation::transition_t> & transitions = transitionsFor(el.type);
+            element_style_t                                  style       = resolveStyle(el, theme);
+            style.colors                       = m_animator.colorsOf(key, style.colors, transitions, m_frameTime);
+            const Ui::Res::Type::bound_t bound = drawnBoundOf(el, key, transitions, drawnTab);
+            if (el.type == UiElementType::Tab) {
+                drawnTab   = bound;
+                drawnTabBg = style.colors.bg;
+            }
+            const bool     isHeld = m_heldTabId != INVALID_ID && el.id == m_heldTabId;
+            draw_layer_t & layer  = isHeld ? m_heldLayer : m_layer;
 
             // Draw background (if visible and not inherited from parent)
             if (style.colors.bg.a() > 0 && !style.colors.bg.isInherit()) {
                 bg_op_t op;
-                op.bound     = el.bound;
+                op.bound     = bound;
                 op.colors.fg = style.colors.bg;
                 if (el.type == UiElementType::Tab) {
-                    op.radius    = layout.workspaceTab.border;
-                    op.colors.bg = theme.workspaceTabs.bg;
+                    op.radius = layout.workspaceTab.border;
+                    // Held, it stands over its neighbours: its corners show them, not the strip
+                    op.colors.bg = isHeld ? Ui::Color::TransparentBlack() : theme.workspaceTabs.bg;
                 } else if (el.type == UiElementType::TabClose) {
-                    op.radius                = layout.tabCloseBorderRadius;
-                    const UiElement * parent = m_layout.parentOf(el);
-                    op.colors.bg             = (parent != nullptr) ? resolveColors(*parent, theme).bg : Ui::Color {};
+                    op.radius    = layout.tabCloseBorderRadius;
+                    op.colors.bg = drawnTabBg;
                 } else if (el.type == UiElementType::MenuButton) {
                     op.colors.bg = theme.topMenu.bg;
                     if (el.id == m_resManager.activeMenuId() || el.state == UiElementState::Active) {
@@ -549,27 +620,28 @@ private:
                     op.radius    = layout.toolbarButton.border;
                     op.colors.bg = style.backdrop;
                 }
-                m_bgOps.emplace_back(op);
+                layer.bgOps.emplace_back(op);
             }
 
             // Draw loading progress bar overlay on workspace tabs
-            const Ui::tab_t * tab = (el.type == UiElementType::Tab) ? tabBar.find(el.id) : nullptr;
-            if (tab != nullptr && tab->isLoading && tab->progress > 0) {
+            int modelProgress = 0;
+            if (el.type == UiElementType::Tab) {
+                tabBar.visit(el.id, [&modelProgress](const Ui::tab_t & tab) {
+                    modelProgress = tab.isLoading ? tab.progress : 0;
+                });
+            }
+            if (modelProgress > 0) {
                 const int   tlr          = roundToInt(layout.workspaceTab.border.topLeft);
-                const int   totalSectors = (tlr > 0) ? std::max(2, static_cast<int>(el.bound.w) / tlr)
+                const int   totalSectors = (tlr > 0) ? std::max(2, static_cast<int>(bound.w) / tlr)
                                                      : layout.progressSectors;
-                const fpx_t sectorW      = el.bound.w / totalSectors;
+                const fpx_t sectorW      = bound.w / totalSectors;
                 // Scale model progress (0..layout.progressSectors) to visual sectors
-                const int modelProgress = tab->progress;
-                int       progress      = modelProgress * totalSectors / layout.progressSectors;
-                if (modelProgress > 0 && progress < 1) {
-                    progress = 1;
-                }
-                m_progressOps.push_back({ .tabRect      = el.bound,
-                                          .tabRadius    = layout.workspaceTab.border,
-                                          .sectorW      = sectorW,
-                                          .totalSectors = totalSectors,
-                                          .progress     = progress });
+                const int progress = std::max(1, modelProgress * totalSectors / layout.progressSectors);
+                layer.progressOps.emplace_back(progress_op_t { .tabRect      = bound,
+                                                               .tabRadius    = layout.workspaceTab.border,
+                                                               .sectorW      = sectorW,
+                                                               .totalSectors = totalSectors,
+                                                               .progress     = progress });
             }
 
             // Draw text (if present)
@@ -586,12 +658,12 @@ private:
                 const bool isCentered = (el.type == UiElementType::MenuButton || el.type == UiElementType::Tab);
                 op.alignH             = isCentered ? Ui::Res::Type::AlignH::CenterClamped : Ui::Res::Type::AlignH::Left;
                 if (isCentered) {
-                    op.pos     = el.bound;
+                    op.pos     = bound;
                     op.minPadH = pH;
                 } else {
-                    op.pos = { .x = el.bound.x + pH, .y = el.bound.y, .w = el.bound.w - (pH * 2), .h = el.bound.h };
+                    op.pos = { .x = bound.x + pH, .y = bound.y, .w = bound.w - (pH * 2), .h = bound.h };
                 }
-                m_textOps.emplace_back(op);
+                layer.textOps.emplace_back(op);
             }
 
             // Draw image (if present)
@@ -601,11 +673,11 @@ private:
                 op.src   = imageSrc;
                 op.isSvg = isSvgFile(imageSrc);
                 // A toolbar button's icon is the button inset by its padding
-                const fpx_t buttonIcon = std::min(el.bound.w, el.bound.h) - (layout.toolbarButton.padding * 2.0F);
+                const fpx_t buttonIcon = std::min(bound.w, bound.h) - (layout.toolbarButton.padding * 2.0F);
                 const fpx_t imgSz      = [&]() -> fpx_t {
                     switch (el.type) {
                     case UiElementType::TabClose: return layout.tabCloseIconSize;
-                    case UiElementType::TabArrow: return el.bound.h;
+                    case UiElementType::TabArrow: return bound.h;
                     case UiElementType::ToolbarButton: return buttonIcon;
                     default: return layout.buttonImgSize;
                     }
@@ -625,8 +697,8 @@ private:
                         }
                     }
                 }
-                const fpx_t imgX = el.bound.x + ((el.bound.w - imgW) / 2.0F);
-                const fpx_t imgY = el.bound.y + ((el.bound.h - imgH) / 2.0F);
+                const fpx_t imgX = bound.x + ((bound.w - imgW) / 2.0F);
+                const fpx_t imgY = bound.y + ((bound.h - imgH) / 2.0F);
                 op.pos           = { .x = imgX, .y = imgY, .w = imgW, .h = imgH };
                 if (el.type == UiElementType::TabArrow) {
                     op.tinted   = true;
@@ -650,9 +722,57 @@ private:
                 }
                 op.hovered = (el.state == UiElementState::Hovered);
                 op.active  = (el.state == UiElementState::Active);
-                m_imageOps.emplace_back(op);
+                layer.imageOps.emplace_back(op);
             }
         }
+    }
+
+    // Where `el` is drawn this frame: where its glide along `transitions` stands, a held tab
+    // where the drag puts it along the strip, a close glyph in `drawnTab`, the tab drawn right
+    // before it
+    [[nodiscard]] Ui::Res::Type::bound_t drawnBoundOf(const UiElement &                                el,
+                                                      const element_key_t &                            key,
+                                                      const std::vector<Ui::Animation::transition_t> & transitions,
+                                                      const Ui::Res::Type::bound_t &                   drawnTab)
+    {
+        if (el.type == UiElementType::TabClose) {
+            return Ui::Render::tabCloseBoundOf(m_resManager.layout(), drawnTab);
+        }
+        if (el.type == UiElementType::Tab && m_heldTabId != INVALID_ID && el.id == m_heldTabId) {
+            Ui::Res::Type::bound_t held = el.bound;
+            held.x                      = heldTabLeftOf(el.bound.w);
+            m_animator.hold(key, held);
+            return held;
+        }
+        return m_animator.boundOf(key, el.bound, transitions, m_frameTime);
+    }
+
+    // An element's transitions, its block's in animation.json; none for one with no block there
+    [[nodiscard]] const std::vector<Ui::Animation::transition_t> & transitionsFor(UiElementType type) const
+    {
+        static const std::vector<Ui::Animation::transition_t> none;
+        switch (type) {
+        case UiElementType::Tab: return m_resManager.transitionsFor(Ui::Res::Key::ElementKey::WorkspaceTab);
+        case UiElementType::TabClose: return m_resManager.transitionsFor(Ui::Res::Key::ElementKey::WorkspaceTabClose);
+        case UiElementType::ToolbarButton: return m_resManager.transitionsFor(Ui::Res::Key::ElementKey::ToolbarButton);
+        case UiElementType::MenuButton:
+            return m_resManager.transitionsFor(Ui::Res::Key::ElementKey::TopMenuButtonLabel);
+        default: return none;
+        }
+    }
+
+    // The held tab's left edge, kept from the strip's first tab's left to its last tab's right
+    [[nodiscard]] fpx_t heldTabLeftOf(fpx_t width) const
+    {
+        fpx_t first = std::numeric_limits<fpx_t>::max();
+        fpx_t last  = std::numeric_limits<fpx_t>::lowest();
+        for (const auto & el : m_layout.elements()) {
+            if (el.type == UiElementType::Tab) {
+                first = std::min(first, el.bound.x);
+                last  = std::max(last, el.bound.x + el.bound.w);
+            }
+        }
+        return std::max(first, std::min(m_heldTabLeft, last - width));
     }
 
     // Resolve color pair for an element from ResManager theme
@@ -680,8 +800,7 @@ private:
             return theme.topMenuButton;
         }
         case UiElementType::Tab: {
-            const Ui::tab_t * tab         = m_resManager.tabBar().find(el.id);
-            const bool        isActiveTab = (tab != nullptr && tab->isActive);
+            const bool isActiveTab = el.id == m_resManager.tabBar().activeId();
             if (el.state == UiElementState::Active) {
                 return theme.workspaceTabActive;
             }
@@ -729,8 +848,6 @@ private:
         }
     }
 
-    // Colors stay in their own method: a TabClose bg needs its parent's alone, and
-    // a full parent resolve would re-truncate that tab's label per close button
     [[nodiscard]] element_style_t resolveStyle(const UiElement & el, const Ui::Res::Type::theme_t & theme) const
     {
         const auto & layout    = m_resManager.layout();
@@ -767,14 +884,12 @@ private:
             }
             return style;
         case UiElementType::Tab: {
-            style.padH            = layout.workspaceTab.padding;
-            const Ui::tab_t * tab = m_resManager.tabBar().find(el.id);
-            if (tab == nullptr) {
-                return style;
-            }
-            style.font           = tab->isActive ? m_layout.itemFontBold() : m_layout.itemFont();
-            const fpx_t textMaxW = el.bound.w - (layout.workspaceTab.padding * 2) - layout.workspaceTab.height;
-            style.text           = Ui::Render::truncateFileName(tab->label, textMaxW, m_render.get(), style.font);
+            style.padH = layout.workspaceTab.padding;
+            m_resManager.tabBar().visit(el.id, [&](const Ui::tab_t & tab) {
+                style.font           = tab.isActive ? m_layout.itemFontBold() : m_layout.itemFont();
+                const fpx_t textMaxW = el.bound.w - (layout.workspaceTab.padding * 2) - layout.workspaceTab.height;
+                style.text           = Ui::Render::truncateFileName(tab.label, textMaxW, m_render.get(), style.font);
+            });
             return style;
         }
         case UiElementType::TabClose: {
@@ -814,7 +929,7 @@ private:
             bg_op_t op;
             op.bound     = bound;
             op.colors.fg = color;
-            m_bgOps.emplace_back(op);
+            m_layer.bgOps.emplace_back(op);
         }
     }
 
@@ -832,21 +947,21 @@ private:
 
     // === GL Drawing code (extracted from HtmlRenderer) ===
 
-    // Translate the staged op vectors into IRender primitive calls. The bits
+    // Translate one layer's staged ops into IRender primitive calls. The bits
     // that read theme/layout (icon scale/shadow, progress colors) are resolved
     // here and passed as plain values, so the backend stays domain-blind. Order
     // (backgrounds -> progress -> images -> text) preserves the layering.
-    void flushOps()
+    void flushOps(const draw_layer_t & layer)
     {
-        for (const auto & op : m_bgOps) {
+        for (const auto & op : layer.bgOps) {
             m_render->fillRect(op.bound, op.radius, op.colors, {});
         }
 
-        for (const auto & p : m_progressOps) {
+        for (const auto & p : layer.progressOps) {
             drawProgress(p);
         }
 
-        for (const auto & op : m_imageOps) {
+        for (const auto & op : layer.imageOps) {
             const fpx_t          scale = op.active ? m_resManager.layout().iconActiveScale : 1.0F;
             Ui::Render::shadow_t shadow {};
             if (op.hovered) {
@@ -872,7 +987,7 @@ private:
             }
         }
 
-        for (const auto & op : m_textOps) {
+        for (const auto & op : layer.textOps) {
             m_render->drawText(op.hFont, op.text, op.pos, op.color, op.alignH, op.alignV, op.minPadH);
         }
     }
@@ -936,11 +1051,17 @@ private:
     fpx_t m_width  = 0;
     fpx_t m_height = 0;
 
-    // Batched draw ops
-    std::vector<bg_op_t>       m_bgOps;
-    std::vector<text_op_t>     m_textOps;
-    std::vector<image_op_t>    m_imageOps;
-    std::vector<progress_op_t> m_progressOps;
+    // Batched draw ops: the frame's, and over them the held tab's
+    draw_layer_t m_layer;
+    draw_layer_t m_heldLayer;
+
+    // Where each element is drawn, and in which colours, while it glides; layout and the theme
+    // stay the truth hit-testing and every other reader take
+    Ui::Animation::Animator<element_key_t> m_animator;
+    Common::Time::point_t                  m_frameTime;        // when the last frame was drawn
+    std::size_t                            m_scrollOffset = 0; // the strip's when last drawn, a change of it jumping
+    id_t                                   m_heldTabId    = INVALID_ID; // the dragged tab (holdTab)
+    fpx_t                                  m_heldTabLeft  = 0.0F;       // its left edge as the drag puts it, CSS px
 
     // Extra-ops hook fires after generateDrawOps() and before the ops are
     // flushed, so callers can append BG/Image ops into the same frame (docks).

@@ -403,6 +403,11 @@ public:
         m_theme.toolbarButtonActive   = { .fg = Ui::Color::Inherit(),
                                           .bg = blockColor(ElementKey::ToolbarButtonActive, CssPropKey::Background) };
         m_theme.tooltip               = blockColors(ElementKey::Tooltip);
+        m_theme.tabSwitcher           = { .fg = m_theme.colorError,
+                                          .bg = blockColor(ElementKey::TabSwitcher, CssPropKey::Background) };
+        m_theme.tabSwitcherItem       = { .fg = blockColor(ElementKey::TabSwitcherItem, CssPropKey::Color),
+                                          .bg = m_theme.colorError };
+        m_theme.tabSwitcherItemActive = blockColors(ElementKey::TabSwitcherItemActive);
         m_theme.workspaceTab          = blockColors(ElementKey::WorkspaceTab);
         m_theme.workspaceTabHover     = blockColors(ElementKey::WorkspaceTabHover);
         m_theme.workspaceTabActive    = blockColors(ElementKey::WorkspaceTabActive);
@@ -434,11 +439,14 @@ public:
         m_theme.statusBarActive     = blockColors(ElementKey::StatusBarActive);
 
         // Standalone colors
-        m_theme.menuItemDisabledColor      = blockColor(ElementKey::TopMenuItemDisabled, CssPropKey::Color);
-        m_theme.toolbarButtonDisabledColor = blockColor(ElementKey::ToolbarButtonDisabled, CssPropKey::Color);
-        m_theme.separatorColor             = blockColor(ElementKey::TopMenuSeparator, CssPropKey::Background);
-        m_theme.shortcutColor              = blockColor(ElementKey::TopMenuItemShortcut, CssPropKey::Color);
-        m_theme.shortcutHoverColor         = blockColor(ElementKey::TopMenuItemShortcutHover, CssPropKey::Color);
+        m_theme.menuItemDisabledColor             = blockColor(ElementKey::TopMenuItemDisabled, CssPropKey::Color);
+        m_theme.toolbarButtonDisabledColor        = blockColor(ElementKey::ToolbarButtonDisabled, CssPropKey::Color);
+        m_theme.separatorColor                    = blockColor(ElementKey::TopMenuSeparator, CssPropKey::Background);
+        m_theme.shortcutColor                     = blockColor(ElementKey::TopMenuItemShortcut, CssPropKey::Color);
+        m_theme.shortcutHoverColor                = blockColor(ElementKey::TopMenuItemShortcutHover, CssPropKey::Color);
+        m_theme.tabSwitcherDescriptionColor       = blockColor(ElementKey::TabSwitcherDescription, CssPropKey::Color);
+        m_theme.tabSwitcherDescriptionActiveColor = blockColor(ElementKey::TabSwitcherDescriptionActive,
+                                                               CssPropKey::Color);
 
         // Worker: read a Ui::Res::Type::font_t {family, size, weight} from a named JSON block.
         auto blockFontBy = [&](const std::string &       block,
@@ -486,6 +494,10 @@ public:
                                              Ui::Res::Type::FontWeight::Regular);
         m_theme.statusBarFont    = blockFont(ElementKey::StatusBar, fontMono, 14, Ui::Res::Type::FontWeight::Regular);
         m_theme.tooltipFont      = blockFont(ElementKey::Tooltip, fontSans, 16, Ui::Res::Type::FontWeight::Regular);
+        m_theme.tabSwitcherFont  = blockFont(ElementKey::TabSwitcherItem,
+                                             fontSans,
+                                             16,
+                                             Ui::Res::Type::FontWeight::Regular);
         m_theme.workspaceTabFont = blockFont(ElementKey::WorkspaceTab,
                                              fontSans,
                                              14,

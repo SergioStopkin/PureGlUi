@@ -92,6 +92,19 @@
     "padding": "8px",
     "border-radius": "16px"
   },
+  "tab-switcher": {
+    "width": "160px",
+    "margin": "16px",
+    "border-radius": "16px"
+  },
+  "tab-switcher-item": {
+    "height": "32px",
+    "padding": "16px"
+  },
+  "tab-switcher-item:active": {
+    "margin": "3px",
+    "border-radius": "13px"
+  },
   "workspace-tab": {
     "height": "var(--workspace-tab-height)",
     "width": "144px",

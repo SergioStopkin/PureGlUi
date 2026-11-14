@@ -217,41 +217,48 @@ const float o = Ui::Convert::parseCssNumber("0.15");   // 0.15F
 const auto  r = Ui::Convert::parseCssBorderRadius("8 4"); // TL/BR=8, TR/BL=4
 ```
 
-## Ui::Registry<Key, T>
+## Ui::LinkedMap<Key, T>
 
-Header: `include/ui/registry.h`
+Header: `include/ui/linkedmap.h`
 
-Ordered, id-keyed container: an `unordered_map<id_t, T>` for O(1) identity lookup plus a `vector<id_t>` holding visual/iteration order. The caller always supplies the id on add - the container never invents identity. "Active" state is intentionally NOT modelled here; it lives on the owner.
+Keyed container in an order of its own - Java's `LinkedHashMap`: an `unordered_map<Key, list iterator>` over a `std::list` of `{key, value}` nodes. A lookup, an add, a remove, a move, a neighbour and an end are each O(1); a walk in order is O(1) a step. The caller always supplies the key on add - the container never invents identity. "Active" state is intentionally NOT modelled here; it lives on the owner.
 
 ```cpp
 template <typename Key, typename T>
-class Ui::Registry final {
+class Ui::LinkedMap final {
 public:
     // read side
-    [[nodiscard]] const T * find(const Key & key) const;         // nullptr if absent
+    bool visit(const Key & key, Fn && fn) const;                 // fn(const T &) when held; whether it was
     [[nodiscard]] bool contains(const Key & key) const;
-    [[nodiscard]] const std::vector<Key> & order() const;
+    [[nodiscard]] auto keys() const;                             // a view of the keys in order
+    [[nodiscard]] std::optional<Key> keyAfter(const Key & key) const;  // none for the last or an absent key
+    [[nodiscard]] std::optional<Key> keyBefore(const Key & key) const; // none for the first or an absent key
+    [[nodiscard]] std::optional<Key> firstKey() const;           // none while empty
+    [[nodiscard]] std::optional<Key> lastKey() const;            // none while empty
     [[nodiscard]] std::size_t size() const;
     [[nodiscard]] bool empty() const;
 
     // mutate side
-    void add(const Key & key, T value);                          // no-op if key exists
-    void insert(std::size_t index, const Key & key, T value);    // clamps index
+    bool visit(const Key & key, Fn && fn);                       // fn(T &) to change it in place
+    void add(const Key & key, T value);                          // at the end; no-op if key exists
     void remove(const Key & key);
-    void move(const Key & key, std::size_t index);               // reorder; clamps index
-    [[nodiscard]] T * edit(const Key & key);                     // mutable access, nullptr if absent
+    void moveBefore(const Key & key, const Key & anchor);        // no-op while either is absent
+    void moveToBack(const Key & key);
     [[nodiscard]] T & findOrAdd(const Key & key);                // existing, or default-constructed at the end
 };
 ```
 
-The key is a template parameter, so a registry is not limited to `id_t`. `add`/`insert` are no-ops if the key already exists. `insert`/`move` clamp an out-of-range index to the end.
+The key is a template parameter, so a map is not limited to `id_t`. A place in the order is named by a neighbour's key, never an index: the i-th key or a key's index is O(n) here, and no structure keeps them O(1) beside an O(1) insert and remove (list indexing is Omega(log n / log log n) per operation, Fredman-Saks).
+
+No pointer ever leaves it. A value is reached through `visit` - the check in one place, and a reference that lives only for the call, so it cannot outlast a remove (Boost.Unordered's `concurrent_flat_map::visit` is the same shape); a key comes back as a copy, `std::optional` when there may be none, so `keyAfter(id).value_or(...)` turns "none" into a fallback with no branch. A value's address holds until its own key is removed, whatever else is added, moved or removed; `findOrAdd` builds a value in its node, so one that cannot move (an atomic) is held directly; a copy points its lookups at nodes of its own.
 
 ```cpp
-Ui::Registry<Ui::id_t, Ui::tab_t> tabs;
+Ui::LinkedMap<Ui::id_t, Ui::tab_t> tabs;
 tabs.add(1, myTab);
-for (const Ui::id_t id : tabs.order()) {
-    const Ui::tab_t * tab = tabs.find(id);
-    // render tab...
+for (const Ui::id_t id : tabs.keys()) {
+    tabs.visit(id, [](const Ui::tab_t & tab) {
+        // render tab...
+    });
 }
 ```
 
@@ -270,11 +277,11 @@ public:
     [[nodiscard]] bool contains(const Key & key) const;
     [[nodiscard]] std::size_t size() const;                             // distinct KEYS, not values
     [[nodiscard]] bool empty() const;
-    [[nodiscard]] const std::vector<Key> & keys() const;                // first-seen order
+    [[nodiscard]] auto keys() const;                                    // a view, first-seen order
 };
 ```
 
-Composed over `Registry` rather than reimplementing map + order, so the two stay one storage strategy: `Registry` means "one value per key, in order", `Index` means "many values per key". Keeping them separate keeps `Registry`'s meaning intact. Insertion order is preserved within a group, which is what a tree walk needs - children come out in the order the source listed them.
+Composed over `LinkedMap` rather than reimplementing map + order, so the two stay one storage strategy: `LinkedMap` means "one value per key, in order", `Index` means "many values per key". Keeping them separate keeps `LinkedMap`'s meaning intact. Insertion order is preserved within a group, which is what a tree walk needs - children come out in the order the source listed them.
 
 ## Ui::IdKind
 
@@ -333,6 +340,7 @@ struct alignas(64) Ui::tab_t final {
     bool        hasContent = false; // has a document (controls close button)
     bool        isLoading  = false; // content load in progress
     int         progress   = 0;     // loading sector index for the tab spinner
+    std::string description;        // dimmed after the label in the Ctrl+Tab list (a file's folder), "" for none
 };
 ```
 
@@ -340,20 +348,27 @@ struct alignas(64) Ui::tab_t final {
 
 Header: `include/ui/tabbar.h`
 
-The chrome's tab model: an ordered set of `tab_t` view models plus the scroll offset (which tab is leftmost-visible). Active-ness rides inside each `tab_t` so the underlying `Registry` stays active-agnostic. Scroll is the one piece of authoritative state owned here (pure chrome concern, no domain meaning).
+The chrome's tab model: an ordered set of `tab_t` view models plus the scroll offset (which tab is leftmost-visible). The active tab is the first one the host projects active (`tab_t::isActive`), kept by `setTabs` as `activeId()`, so the underlying `LinkedMap` stays active-agnostic. Scroll is the one piece of authoritative state owned here (pure chrome concern, no domain meaning).
 
 ```cpp
 class Ui::TabBar final {
 public:
     // read side (renderer)
-    [[nodiscard]] const std::vector<id_t> & order() const;
-    [[nodiscard]] const tab_t * find(id_t id) const;
+    [[nodiscard]] auto order() const;                      // a view of the ids, left to right
+    [[nodiscard]] const std::vector<id_t> & recentIds() const; // by when last active, the active one first
+    bool visit(id_t id, Fn && fn) const;                   // fn(const tab_t &) when held; whether it was
+    [[nodiscard]] bool contains(id_t id) const;
+    [[nodiscard]] id_t activeId() const;                   // INVALID_ID while no tab is
+    [[nodiscard]] id_t idAfter(id_t id) const;             // right of id, the first after the last
+    [[nodiscard]] id_t idBefore(id_t id) const;            // left of id, the last before the first
+    [[nodiscard]] std::optional<id_t> rightIdOf(id_t id) const; // right of id, none for the last - no wrapping
+    [[nodiscard]] std::optional<id_t> leftIdOf(id_t id) const;  // left of id, none for the first - no wrapping
     [[nodiscard]] std::size_t scrollOffset() const;
     [[nodiscard]] std::size_t count() const;
     [[nodiscard]] bool empty() const;
 
     // write side (host, main thread)
-    void setTabs(std::vector<tab_t> tabs);                 // replace all; scroll clamped to new count
+    void setTabs(std::vector<tab_t> tabs, std::vector<id_t> recentIds = {}); // replace all; scroll clamped to new count
     void setLoading(id_t id, bool isLoading, int progress);// cheap in-place progress tick
     void scrollLeft();
     void scrollRight();
@@ -361,7 +376,32 @@ public:
 };
 ```
 
-`setTabs` replaces the projected tabs in one shot (vector order = visual order) and clamps the preserved scroll offset to the new count. `setLoading` updates only the volatile loading fields in place (no rebuild/allocation), leaving structure/label/active untouched. `scrollLeft`/`scrollRight` step the offset within bounds. `reveal` brings a tab into view among the `shown` from the offset (`Ui::Render::tabsShownOf` - every tab while they fit at their narrowest, else as many as fit between both arrows): `Shell::setActiveTab` calls it, so a tab activated other than by a click on it (`CycleTab`) is never off the strip.
+`setTabs` replaces the projected tabs in one shot (vector order = visual order) and clamps the preserved scroll offset to the new count. With them come their ids by when last active, the most recent - the active one - first: the Ctrl+Tab list's order (`recentIds`). It is the host's to keep, since activation is the host's (`WorkspaceManager::recentOrder`); a host that keeps none gets the strip's order, and an id it does not hold is dropped, so a row of the list always names a tab. Rebuilt whole with each projection and read by position, so a vector. `setLoading` updates only the volatile loading fields in place (no rebuild/allocation), leaving structure/label/active untouched. `scrollLeft`/`scrollRight` step the offset within bounds. `reveal` brings a tab into view among the `shown` from the offset (`Ui::Render::tabsShownOf` - every tab while they fit at their narrowest, else as many as fit between both arrows): `Shell::setActiveTab` calls it, so a tab activated other than by a click on it (`CycleTab`) is never off the strip.
+
+## Ui::TabSwitch
+
+Header: `include/ui/tabswitch.h`
+
+The Ctrl+Tab list while Ctrl is held: the tabs most recent first (`TabBar::recentIds`), the one highlighted, and whether it is up. `Shell` owns one and the list's window is `WindowManager`'s (`openTabSwitcher`); this is what it shows, kept apart from any window so it is the same whether shown or not, and unit-tested.
+
+```cpp
+class Ui::TabSwitch final {
+public:
+    void open(std::vector<id_t> recentIds, int delta, Common::Time::point_t due); // on the tab `delta` rows from the active one
+    void close();
+    [[nodiscard]] bool isOpen() const;
+    [[nodiscard]] bool isShown() const;
+    [[nodiscard]] bool isDue(Common::Time::point_t now) const;  // open, not up, its delay run out
+    void setShown();
+    void cycle(int delta);                                      // the highlight on, wrapping at either end
+    void select(std::size_t row);                               // the pointer's row; nothing past the last
+    [[nodiscard]] std::size_t selectedRow() const;
+    [[nodiscard]] id_t selectedId() const;                      // INVALID_ID while closed
+    [[nodiscard]] const std::vector<id_t> & ids() const;
+};
+```
+
+`open` with `delta` 1 highlights the tab viewed before the active one, -1 the least recent. It goes up only once Ctrl has been held past its delay (`input.json` `tabSwitcher.delayMs`), so a quick tap switches with no list. Rows are positions, never a search by id: the pointer's row comes from the list's renderer as a row.
 
 ## Ui::intent_t
 
@@ -460,6 +500,26 @@ struct alignas(32) Ui::Render::shadow_t final {
     bool operator==(const shadow_t &) const = default;
 };
 ```
+
+## Ui::Animation
+
+Headers: `include/ui/animation/*.h`
+
+The one engine every animated element shares: CSS's `transition`, declared per element block in `res/animation.json` (`Res::Store::AnimationStore`, see [resources.md](resources.md)) and drawn by the renderers that own the elements ([render.md](render.md)). Pure - no GL, no window - and unit-tested.
+
+- `easing_t` (`easing.h`) - a `cubic-bezier(x1, y1, x2, y2)`, `ease` when unset, and CSS's keywords as constants: `LINEAR`, `EASE`, `EASE_IN`, `EASE_OUT`, `EASE_IN_OUT`. A y outside 0..1 overshoots.
+- `easedOf(easing, progress)` (`easedof.h`) - the way gone at `progress` (0..1, clamped) of the time: the curve's x solved for its parameter, Newton's method then halving, as browsers do.
+- `AnimatedProperty` (`animatedproperty.h`) - `Left`, `Top`, `Width`, `Height` (a bound's), `Background`, `Color` (a `color_pair_t`'s `bg`, `fg`). A new property is C++; a new animation of one, res alone.
+- `transition_t` (`transition.h`) - `{property, duration, easing}`.
+- `transitionsOf(css)` (`transitionsof.h`) - a `transition` value read as CSS reads it: comma-separated parts of a property (or `all`, the default), a duration in `ms` or `s` and an easing, in any order; a property named twice keeps its last part. A part with no time or a word it does not know - a delay included - is left out. Its words are spelled by `res/key/transition.h` (`TransitionKey`) and `res/key/cssprop.h`.
+- `durationOf(transitions)` (`durationof.h`) - how long they run: the longest; none, no time.
+- `track_t` (`track.h`) - one property of one element on its way: `from`, `target`, `start`, its `transition`, `isKnown`; a number in the first of four channels, or a colour's premultiplied RGBA in all four.
+- `motion_t` (`motion.h`) - an element's six tracks and `isSeen`.
+- `Animator<Key>` (`animator.h`) - where an element is drawn and in which colours, by `Key` (the main renderer's `Render::element_key_t`, a popup's `id_t`). FLIP, each property on its own clock:
+  - `bound_t boundOf(key, target, transitions, now)` and `color_pair_t colorsOf(key, target, transitions, now)` - at the target at once the first time, and with no transitions; a new target glides from where it is drawn, one changed again mid-glide from where it stands. A colour fades through premultiplied RGBA - so from none (`Color::Inherit()`) it fades in rather than through black - and is the target itself, inherit flag and all, once arrived.
+  - `void hold(key, drawn)` - drawn where the pointer puts it, not by layout: the next `boundOf` glides from there.
+  - `bool isRunning(now) const` - whether any glide begun has yet to end; O(1), off the latest end. A renderer asks it with its last frame's time, so the frame that lands every glide is drawn.
+  - `void sweep()` - forgets every key not drawn since the last sweep, so one drawn again stands at its place at once; once after a frame that draws them all. A popup never sweeps: it lives as long as what it shows.
 
 ## See also
 

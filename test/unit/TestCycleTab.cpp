@@ -58,7 +58,7 @@ std::vector<Ui::tab_t> tabsOf(Ui::id_t count, Ui::id_t active)
 TEST(CycleTabTest, NoTabsActivatesNothing)
 {
     fake_host_t host;
-    Ui::Action::cycleTab(host, "");
+    Ui::Action::cycleTab(host, "next");
     EXPECT_TRUE(host.activated.empty());
 }
 
@@ -66,7 +66,7 @@ TEST(CycleTabTest, OneTabActivatesNothing)
 {
     fake_host_t host;
     host.bar.setTabs(tabsOf(1, 1));
-    Ui::Action::cycleTab(host, "");
+    Ui::Action::cycleTab(host, "next");
     EXPECT_TRUE(host.activated.empty());
 }
 
@@ -74,7 +74,7 @@ TEST(CycleTabTest, NoActiveTabActivatesNothing)
 {
     fake_host_t host;
     host.bar.setTabs(tabsOf(3, 0));
-    Ui::Action::cycleTab(host, "");
+    Ui::Action::cycleTab(host, "next");
     EXPECT_TRUE(host.activated.empty());
 }
 
@@ -82,7 +82,7 @@ TEST(CycleTabTest, TheTabAfterTheActiveOne)
 {
     fake_host_t host;
     host.bar.setTabs(tabsOf(3, 2));
-    Ui::Action::cycleTab(host, "");
+    Ui::Action::cycleTab(host, "next");
     EXPECT_EQ(host.activated, (std::vector<Ui::id_t> { 3 }));
 }
 
@@ -90,7 +90,7 @@ TEST(CycleTabTest, TheFirstAfterTheLast)
 {
     fake_host_t host;
     host.bar.setTabs(tabsOf(3, 3));
-    Ui::Action::cycleTab(host, "");
+    Ui::Action::cycleTab(host, "next");
     EXPECT_EQ(host.activated, (std::vector<Ui::id_t> { 1 }));
 }
 
@@ -99,8 +99,34 @@ TEST(CycleTabTest, TwoTabsCycledTwiceComeBack)
 {
     fake_host_t host;
     host.bar.setTabs(tabsOf(2, 1));
-    Ui::Action::cycleTab(host, "");
+    Ui::Action::cycleTab(host, "next");
     host.bar.setTabs(tabsOf(2, 2));
-    Ui::Action::cycleTab(host, "");
+    Ui::Action::cycleTab(host, "next");
     EXPECT_EQ(host.activated, (std::vector<Ui::id_t> { 2, 1 }));
+}
+
+TEST(CycleTabTest, PriorIsTheTabBeforeTheActiveOne)
+{
+    fake_host_t host;
+    host.bar.setTabs(tabsOf(3, 2));
+    Ui::Action::cycleTab(host, "prior");
+    EXPECT_EQ(host.activated, (std::vector<Ui::id_t> { 1 }));
+}
+
+TEST(CycleTabTest, PriorOfTheFirstIsTheLast)
+{
+    fake_host_t host;
+    host.bar.setTabs(tabsOf(3, 1));
+    Ui::Action::cycleTab(host, "prior");
+    EXPECT_EQ(host.activated, (std::vector<Ui::id_t> { 3 }));
+}
+
+// A typo in res must not step the wrong way
+TEST(CycleTabTest, AnyOtherArgActivatesNothing)
+{
+    fake_host_t host;
+    host.bar.setTabs(tabsOf(3, 2));
+    Ui::Action::cycleTab(host, "");
+    Ui::Action::cycleTab(host, "prev");
+    EXPECT_TRUE(host.activated.empty());
 }

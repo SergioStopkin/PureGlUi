@@ -95,6 +95,11 @@ TEST(ResKeys, ElementKeyAllMappedUniqueNonEmpty)
         ElementKey::ToolbarButtonActive,
         ElementKey::ToolbarButtonDisabled,
         ElementKey::Tooltip,
+        ElementKey::TabSwitcher,
+        ElementKey::TabSwitcherItem,
+        ElementKey::TabSwitcherItemActive,
+        ElementKey::TabSwitcherDescription,
+        ElementKey::TabSwitcherDescriptionActive,
         ElementKey::ThemePreview,
         ElementKey::Dialog,
         ElementKey::DialogTitle,
@@ -156,6 +161,7 @@ TEST(ResKeys, CssPropKeyAllMappedUniqueNonEmpty)
         CssPropKey::Shift,      CssPropKey::SplitAngle,      CssPropKey::MinThumbHeight,
         CssPropKey::GripWidth,  CssPropKey::GripIcon,        CssPropKey::ClickThreshold,
         CssPropKey::RowIndent,  CssPropKey::RowExpanderSize, CssPropKey::RowKeyRatio,
+        CssPropKey::Transition, CssPropKey::SwapAt,
     };
     expectNonEmptyAndUnique(all, cssPropKeyName);
     EXPECT_EQ(all.size(), static_cast<std::size_t>(CssPropKey::Count));

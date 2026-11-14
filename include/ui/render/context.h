@@ -140,8 +140,8 @@ public:
         Ui::result_t result;
         const auto & shortcuts = m_resManager.shortcuts();
         const auto   it        = shortcuts.find(normalizedKey);
-        if (it != shortcuts.end() && !it->second.empty()) {
-            result.intents.push_back({ .kind = Ui::IntentKind::EmitAction, .actionKey = it->second, .arg = {} });
+        if (it != shortcuts.end()) {
+            result.intents.emplace_back(it->second);
         }
         return result;
     }

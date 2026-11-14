@@ -60,6 +60,24 @@
   "top-menu-item-shortcut:hover": {
     "color": "var(--bg-second) lighter(24.0)"
   },
+  "tab-switcher": {
+    "background": "var(--bg-second) darker(8.0)"
+  },
+  "tab-switcher-item": {
+    "font-family": "var(--font-sans)",
+    "font-size": "16px",
+    "color": "var(--cl-second) darker(8.0)"
+  },
+  "tab-switcher-item:active": {
+    "color": "var(--cl-main) lighter(8.0)",
+    "background": "var(--bg-main) lighter(8.0)"
+  },
+  "tab-switcher-description": {
+    "color": "var(--cl-second) lighter(16.0)"
+  },
+  "tab-switcher-description:active": {
+    "color": "var(--bg-second) lighter(24.0)"
+  },
   "left-toolbar": {
     "color": "var(--cl-main)",
     "background": "var(--bg-second)"

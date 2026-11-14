@@ -257,6 +257,15 @@ public:
         if (hasObject(ElementKey::Tooltip)) {
             m_layout.tooltip = parseRegion(block(ElementKey::Tooltip));
         }
+        if (hasObject(ElementKey::TabSwitcher)) {
+            m_layout.tabSwitcher = parseRegion(block(ElementKey::TabSwitcher));
+        }
+        if (hasObject(ElementKey::TabSwitcherItem)) {
+            m_layout.tabSwitcherItem = parseRegion(block(ElementKey::TabSwitcherItem));
+        }
+        if (hasObject(ElementKey::TabSwitcherItemActive)) {
+            m_layout.tabSwitcherItemActive = parseRegion(block(ElementKey::TabSwitcherItemActive));
+        }
         if (hasObject(ElementKey::StatusBar)) {
             m_layout.statusBar = parseRegion(block(ElementKey::StatusBar));
         }
@@ -267,8 +276,9 @@ public:
             const auto & wsTab    = block(ElementKey::WorkspaceTab);
             m_layout.workspaceTab = parseRegion(wsTab);
             m_layout.tabMinWidth  = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(wsTab, cssPropKeyName(CssPropKey::MinWidth), "")));
-            // Compute progress sectors: tabW / TL_radius
+            resolveVariable(Common::Json::string(wsTab,
+                                                 cssPropKeyName(CssPropKey::MinWidth),
+                                                 ""))); // Compute progress sectors: tabW / TL_radius
             const int tlr = Ui::roundToInt(m_layout.workspaceTab.border.topLeft);
             if (tlr > 0) {
                 m_layout.progressSectors = std::max(static_cast<int>(m_layout.workspaceTab.width) / tlr, 2);

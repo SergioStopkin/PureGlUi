@@ -144,6 +144,7 @@ void setOnTabClosed(std::function<void(id_t)> fn);
 void setOnKeyPress(Ui::predicate_fn_t fn);         // consume domain shortcuts before intent mapping (return true = handled)
 void setFileHandler(const std::string & extension, Ui::action_fn_t handler); // per-extension loader (lowercase, no dot)
 void setOnDockRowValue(std::function<void(id_t rowId, fpx_t ratio)> fn);     // a dock slider row moved
+void setOnTabMoved(std::function<void(id_t tabId, id_t beforeId)> fn);       // a tab dragged along the strip, a call per jump
 ```
 
 `setOnDockRowValue` forwards to `WindowManager::setOnRowValue`; it is here
@@ -287,7 +288,8 @@ is type-checked when bound.
 | `SwitchThemeMode` | `action/switchthememode.h` | `switchThemeMode` | toggle dark/light (`resManager().switchThemeMode()`), re-apply diff, refresh | ignored |
 | `SwitchTheme` | `action/switchtheme.h` | `switchTheme` | select theme by name; no-op if `arg` empty or already active | theme name |
 | `OpenFile` | `action/openfile.h` | `openFile` | native open dialog, then route each picked file to its per-extension handler | ignored |
-| `CycleTab` | `action/cycletab.h` | `cycleTab` | the tab after the active one in `tabBar().order()`, the first after the last, through `host.setActiveTab` - as a click on it, the strip scrolled to bring it into view (`TabBar::reveal`); nothing with one tab or none active | ignored |
+| `OpenTabSwitcher` | `action/opentabswitcher.h` | `openTabSwitcher` | `Shell::openTabSwitcher(delta)`: the Ctrl+Tab list of the tabs most recent first (`TabBar::recentIds`, a `Ui::TabSwitch`), on the tab viewed before the active one or the least recent. Up once Ctrl has been held past `input.json` `tabSwitcher.delayMs`; while open its keys come before every other (Ctrl+Tab and Ctrl+Down step down, Ctrl+Shift+Tab and Ctrl+Up up, wrapping; Ctrl+Return switches; Escape takes it down; any other does nothing, so no shortcut behind it runs). Ctrl going up (a key release named by `window/iscontrolkey.h`) or a click on a row - a click on its tab - switches through `setActiveTab`; a quick tap switches with no list. A press off it, the app losing the focus or Escape takes it down unswitched; a key with Ctrl up switches first, its release gone unseen. Not over a dialog; an open menu closes | `next` or `prior` (`res/key/tabstep.h`); any other does nothing |
+| `CycleTab` | `action/cycletab.h` | `cycleTab` | the tab right of the active one (`TabBar::idAfter`, the first after the last) or left of it (`idBefore`, the last before the first), through `host.setActiveTab` - as a click on it, the strip scrolled to bring it into view (`TabBar::reveal`); nothing with one tab or none active | `next` or `prior` (`res/key/tabstep.h`); any other does nothing |
 
 Notes:
 

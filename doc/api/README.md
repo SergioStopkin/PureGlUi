@@ -83,7 +83,8 @@ hook, and work the framework can finish itself (tab scroll, dock resize) sets
 - Shell hooks: `setFrameTasks` / `setOnTick` (per-loop work),
   `setOnTabActivated` / `setOnTabClosed` / `setOnKeyPress` (domain reactions),
   `setFileHandler(extension, fn)` (per-type file loaders for OpenFile),
-  `setOnDockRowValue(fn)` (a dock slider moved).
+  `setOnDockRowValue(fn)` (a dock slider moved), `setOnTabMoved(fn)` (a tab dragged along
+  the strip).
 - WindowManager hooks: `setOnDialogClose` / `setOnElementHover` /
   `setDoubleClickConfig` / `setDialogContentResolver` / `setOnRowValue`, plus
   `setCursor(PointerShape)`.

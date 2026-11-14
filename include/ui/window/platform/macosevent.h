@@ -359,6 +359,19 @@ private:
             fillKeyName(event, nsEvent);
             break;
 
+        // Ctrl or Cmd alone going down or up comes as a change of the modifier flags, never
+        // a key event: one Control here, as convertNSModifiers folds them, held while either
+        // is, and named as X11 names Ctrl - so a Ctrl going up reads as one (the Ctrl+Tab list)
+        case NSEventTypeFlagsChanged:
+            if (const char * name = controlKeyName([nsEvent keyCode])) {
+                const bool isHeld   = convertNSModifiers([nsEvent modifierFlags]).has(KeyModifier::Control);
+                event.type          = isHeld ? EventType::KeyPress : EventType::KeyRelease;
+                event.key.keysym    = [nsEvent keyCode];
+                event.key.modifiers = convertNSModifiers([nsEvent modifierFlags]);
+                strncpy(event.key.name.data(), name, event.key.name.size() - 1);
+            }
+            break;
+
         default: break;
         }
 
@@ -393,6 +406,18 @@ private:
      * @brief Map macOS virtual keycodes to the logical key names used by shortcuts.
      * Returns nullptr for keys that should fall back to charactersIgnoringModifiers.
      */
+    // Ctrl and Cmd, either side, named as X11 names Ctrl; nullptr for any other key
+    static const char * controlKeyName(unsigned short keyCode)
+    {
+        switch (keyCode) {
+        case 0x3B: return "Control_L"; // kVK_Control
+        case 0x3E: return "Control_R"; // kVK_RightControl
+        case 0x37: return "Control_L"; // kVK_Command
+        case 0x36: return "Control_R"; // kVK_RightCommand
+        default: return nullptr;
+        }
+    }
+
     static const char * specialKeyName(unsigned short keyCode)
     {
         switch (keyCode) {
@@ -405,8 +430,8 @@ private:
         case 0x75: return "Delete";    // kVK_ForwardDelete
         case 0x73: return "Home";      // kVK_Home
         case 0x77: return "End";       // kVK_End
-        case 0x74: return "Page_Up";   // kVK_PageUp
-        case 0x79: return "Page_Down"; // kVK_PageDown
+        case 0x74: return "Prior";     // kVK_PageUp, named as X11, Wayland and Win32 name it
+        case 0x79: return "Next";      // kVK_PageDown
         case 0x7B: return "Left";      // kVK_LeftArrow
         case 0x7C: return "Right";     // kVK_RightArrow
         case 0x7D: return "Down";      // kVK_DownArrow

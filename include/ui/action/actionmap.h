@@ -20,6 +20,7 @@
 #include "ui/action/cycletab.h"
 #include "ui/action/exitapp.h"
 #include "ui/action/openfile.h"
+#include "ui/action/opentabswitcher.h"
 #include "ui/action/reload.h"
 #include "ui/action/switchtheme.h"
 #include "ui/action/switchthememode.h"
@@ -51,6 +52,7 @@ void registerActions(Host & host)
     { "SwitchTheme", &switchTheme<Host> },
     { "OpenFile", &openFile<Host> },
     { "CycleTab", &cycleTab<Host> },
+    { "OpenTabSwitcher", &openTabSwitcher<Host> },
     });
     for (const auto & [key, fn] : actions) {
         host.actions().on(key, [&host, fn](const std::string & arg) { fn(host, arg); });

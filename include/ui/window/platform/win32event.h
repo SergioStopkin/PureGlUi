@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "common/bit.h"
 #include "common/unicode.h"
 #include "ui/interface/ieventos.h"
 #include "ui/interface/iwindow.h"
@@ -304,16 +305,19 @@ private:
             event.type                = EventType::KeyPress;
             event.key.keysym          = static_cast<uint32_t>(msg.wParam);
             event.key.modifiers       = convertWin32Modifiers();
-            const std::string keyname = vkToKeyName(msg.wParam);
+            const std::string keyname = vkToKeyName(msg.wParam, msg.lParam);
             std::strncpy(event.key.name.data(), keyname.c_str(), event.key.name.size() - 1);
         } break;
 
+        // Named as its press is, so a Ctrl going up reads as one (the Ctrl+Tab list)
         case WM_KEYUP:
-        case WM_SYSKEYUP:
-            event.type          = EventType::KeyRelease;
-            event.key.keysym    = static_cast<uint32_t>(msg.wParam);
-            event.key.modifiers = convertWin32Modifiers();
-            break;
+        case WM_SYSKEYUP: {
+            event.type                = EventType::KeyRelease;
+            event.key.keysym          = static_cast<uint32_t>(msg.wParam);
+            event.key.modifiers       = convertWin32Modifiers();
+            const std::string keyname = vkToKeyName(msg.wParam, msg.lParam);
+            std::strncpy(event.key.name.data(), keyname.c_str(), event.key.name.size() - 1);
+        } break;
 
         default: break;
         }
@@ -326,8 +330,12 @@ private:
      * XKeysymToString output. Letters return lowercase ("q"), F-keys "F1"..
      * "F24", and special keys use X11 names ("Return", "Escape", "Left", ...).
      */
-    static std::string vkToKeyName(WPARAM vk)
+    // `flags` is the message's lParam, which tells the right Ctrl (an extended key) from the left
+    static std::string vkToKeyName(WPARAM vk, LPARAM flags)
     {
+        if (vk == VK_CONTROL) {
+            return (Common::Bit::And(HIWORD(flags), KF_EXTENDED) != 0) ? "Control_R" : "Control_L";
+        }
         if (vk >= 'A' && vk <= 'Z') {
             return std::string(1, static_cast<char>(vk + ('a' - 'A')));
         }

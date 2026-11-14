@@ -60,6 +60,7 @@ public:
         return submenuDir("theme") + "/" + std::string(name) + "-" + std::string(mode) + ".json";
     }
     [[nodiscard]] std::string layoutFile() const { return join("layout.json"); }
+    [[nodiscard]] std::string animationFile() const { return join("animation.json"); }
     [[nodiscard]] std::string appFile() const { return join("app.json"); }
     [[nodiscard]] std::string inputFile() const { return join("input.json"); }
     [[nodiscard]] std::string dialogFile() const { return join("dialog.json"); }

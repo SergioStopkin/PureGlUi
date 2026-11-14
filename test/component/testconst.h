@@ -64,6 +64,9 @@ constexpr const char * NO_MINIMIZE   = "AppKit does not minimize the window here
 // The Q key on macOS, kVK_ANSI_Q
 constexpr unsigned short MAC_KEY_Q = 12;
 
+// The left Ctrl key on macOS, kVK_Control
+constexpr unsigned short MAC_KEY_CONTROL = 59;
+
 // Nothing done to the window round a press
 constexpr auto NOTHING = [] { };
 

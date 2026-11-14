@@ -19,6 +19,7 @@
 
 #include "common/time.h"
 #include "common/unicode.h"
+#include "ui/animation/durationof.h"
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
@@ -30,11 +31,14 @@
 #include "ui/render/popup/popuprendererbase.h"
 #include "ui/render/scrollbar.h"
 #include "ui/render/uielementstate.h"
+#include "ui/res/key/element.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/border.h"
+#include "ui/res/type/colorpair.h"
 #include "ui/res/type/dialog.h"
 #include "ui/res/type/dialogaction.h"
 #include "ui/res/type/dialogtype.h"
+#include "ui/res/type/theme.h"
 #include "ui/type.h"
 #include "ui/window/keymodifier.h"
 #include "ui/window/mousebutton.h"
@@ -327,7 +331,7 @@ private:
         }
 
         const auto elapsed = Common::Time::now() - m_keyAnimationStart;
-        const auto delay   = std::chrono::milliseconds(m_resManager.input().keyAnimationDelayMs);
+        const auto delay   = keyStepOf();
         if (m_keyAnimationPhase == 0 && elapsed >= delay) {
             // Phase 1: hover -> active
             m_keyAnimationPhase = 1;
@@ -357,6 +361,16 @@ private:
         if (m_keyAnimationTarget != KeyAnimationTarget::None && m_renderRequest) {
             m_renderRequest();
         }
+    }
+
+    // How long each step of a key's press holds - hovered, then pressed - before the next:
+    // what its fade takes, the longest of its block's transitions, so the press lands
+    // before the dialog acts; no transition, no wait
+    [[nodiscard]] Common::Time::span_t keyStepOf() const
+    {
+        return Ui::Animation::durationOf(m_resManager.transitionsFor(m_keyAnimationTarget == KeyAnimationTarget::Close
+                                                                     ? Ui::Res::Key::ElementKey::DialogClose
+                                                                     : Ui::Res::Key::ElementKey::DialogButton));
     }
 
     void clearKeyboardFocus()
@@ -507,31 +521,24 @@ private:
                        m_resManager.layout().dialog.border,
                        { .fg = theme.dialog.bg, .bg = bgColor });
 
-        for (const auto & btn : m_buttons) {
-            Ui::Color                    btnBg;
+        for (std::size_t idx = 0; idx < m_buttons.size(); ++idx) {
+            const dialog_button_t &      btn      = m_buttons.at(idx);
             const bool                   active   = (btn.state == Ui::Render::UiElementState::Active);
             const Ui::Res::Type::bound_t btnBound = active
                                                   ? shiftedBound(btn.bound, m_resManager.layout().dialogButtonShift)
                                                   : btn.bound;
-            if (active) {
-                btnBg = theme.dialogButtonActive.bg;
-            } else if (btn.state == Ui::Render::UiElementState::Hovered) {
-                btnBg = theme.dialogButtonHover.bg;
-            } else if (btn.primary) {
-                btnBg = theme.dialogButtonPrimary.bg;
-            } else {
-                btnBg = theme.dialogButton.bg;
-            }
-            m_rounded.draw(btnBound, m_resManager.layout().dialogButtonBorder, { .fg = btnBg, .bg = bgColor });
+            m_rounded.draw(btnBound,
+                           m_resManager.layout().dialogButtonBorder,
+                           { .fg = drawnButtonColorsOf(idx, theme).bg, .bg = bgColor });
         }
 
-        // Close button (X) background - skip when inherited (already drawn by dialog bg)
+        // Close button (X) background - none where it has none of its own, the dialog's under it
         {
-            const Ui::Color rawBg = closeColors(theme).bg;
-            if (!rawBg.isInherit()) {
+            const Ui::Color closeBg = drawnCloseColorsOf(theme).bg;
+            if (closeBg != theme.dialog.bg) {
                 m_rounded.draw(m_closeBound,
                                m_resManager.layout().dialogCloseBorder,
-                               { .fg = rawBg, .bg = theme.dialog.bg });
+                               { .fg = closeBg, .bg = theme.dialog.bg });
             }
         }
 
@@ -562,7 +569,7 @@ private:
 
             m_svgRenderer.drawTinted(m_closeIconKey,
                                      { .x = closeX, .y = closeY, .w = closeS, .h = closeS },
-                                     closeColors(theme).fg);
+                                     drawnCloseColorsOf(theme).fg);
         }
 
         endSvgDraw();
@@ -732,8 +739,9 @@ private:
         if (m_font != 0) {
             auto * fr = fontRenderer.font(m_font);
             if (fr != nullptr && fr->program != 0U) {
-                for (const auto & btn : m_buttons) {
-                    const std::string & text = m_resManager.localeManager().get(btn.label);
+                for (std::size_t idx = 0; idx < m_buttons.size(); ++idx) {
+                    const dialog_button_t & btn  = m_buttons.at(idx);
+                    const std::string &     text = m_resManager.localeManager().get(btn.label);
                     if (text.empty()) {
                         continue;
                     }
@@ -748,19 +756,8 @@ private:
                     const auto baseline = fr->metrics.baselineCap(btnBound.y, btnBound.h, g_config.scale);
                     auto       verts    = Ui::Gl::FontRenderer::buildTextVerts(*fr, text, startX, baseline);
 
-                    Ui::Color fg;
-                    if (btn.state == Ui::Render::UiElementState::Active) {
-                        fg = theme.dialogButtonActive.fg;
-                    } else if (btn.state == Ui::Render::UiElementState::Hovered) {
-                        fg = theme.dialogButtonHover.fg;
-                    } else if (btn.primary) {
-                        fg = theme.dialogButtonPrimary.fg;
-                    } else {
-                        fg = theme.dialogButton.fg;
-                    }
-
                     if (!verts.empty()) {
-                        drawTextVerts(verts, fg, *fr);
+                        drawTextVerts(verts, drawnButtonColorsOf(idx, theme).fg, *fr);
                     }
                 }
             }
@@ -772,16 +769,39 @@ private:
         return { .x = bound.x + shift, .y = bound.y + shift, .w = bound.w, .h = bound.h };
     }
 
-    // The close button's colours in its state, read for its background and its glyph alike
-    [[nodiscard]] const Ui::Res::Type::color_pair_t & closeColors(const Ui::Res::Type::theme_t & theme) const
+    // A button's colours as drawn this frame: its state's, faded along dialog-button's
+    // transition. Its index is its key, the close button's the one after the last
+    [[nodiscard]] Ui::Res::Type::color_pair_t drawnButtonColorsOf(std::size_t idx, const Ui::Res::Type::theme_t & theme)
     {
-        if (m_closeState == Ui::Render::UiElementState::Active) {
-            return theme.dialogCloseActive;
-        }
-        if (m_closeState == Ui::Render::UiElementState::Hovered) {
-            return theme.dialogCloseHover;
-        }
-        return theme.dialogClose;
+        const dialog_button_t &             btn   = m_buttons.at(idx);
+        const Ui::Res::Type::color_pair_t & state = [&]() -> const Ui::Res::Type::color_pair_t & {
+            if (btn.state == Ui::Render::UiElementState::Active) {
+                return theme.dialogButtonActive;
+            }
+            if (btn.state == Ui::Render::UiElementState::Hovered) {
+                return theme.dialogButtonHover;
+            }
+            return btn.primary ? theme.dialogButtonPrimary : theme.dialogButton;
+        }();
+        return colorsOf(idx, state, Ui::Res::Key::ElementKey::DialogButton);
+    }
+
+    // The close button's colours as drawn this frame, for its background and its glyph alike:
+    // its state's faded along dialog-close's transition, with none of its own the dialog's
+    [[nodiscard]] Ui::Res::Type::color_pair_t drawnCloseColorsOf(const Ui::Res::Type::theme_t & theme)
+    {
+        const Ui::Res::Type::color_pair_t & state = [&]() -> const Ui::Res::Type::color_pair_t & {
+            if (m_closeState == Ui::Render::UiElementState::Active) {
+                return theme.dialogCloseActive;
+            }
+            if (m_closeState == Ui::Render::UiElementState::Hovered) {
+                return theme.dialogCloseHover;
+            }
+            return theme.dialogClose;
+        }();
+        return colorsOf(m_buttons.size(),
+                        { .fg = state.fg, .bg = Ui::Res::Type::inheritBg(state.bg, theme.dialog.bg) },
+                        Ui::Res::Key::ElementKey::DialogClose);
     }
 
     Ui::Res::Type::dialog_t      m_dialog;

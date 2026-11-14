@@ -17,30 +17,29 @@
 
 #pragma once
 
+#include "ui/res/key/tabstep.h"
 #include "ui/tabbar.h"
 #include "ui/type.h"
 
-#include <algorithm>
-#include <iterator>
 #include <string>
-#include <vector>
 
 namespace Ui::Action {
 
-// "CycleTab": the tab after the active one, the first after the last, activated
-// as a click on it would be
+// "CycleTab": for "next" the tab right of the active one, the first after the last;
+// for "prior" the one left of it, the last before the first - activated as a click
+// on it would be. Any other arg does nothing
 template <typename Host>
-void cycleTab(Host & host, const std::string & /*arg*/)
+void cycleTab(Host & host, const std::string & arg)
 {
-    const Ui::TabBar &        tabBar = host.resManager().tabBar();
-    const std::vector<id_t> & order  = tabBar.order();
-    const auto active = std::ranges::find_if(order, [&tabBar](id_t id) { return tabBar.find(id)->isActive; });
-    if (active == order.end()) {
-        return;
+    const Ui::TabBar & tabBar = host.resManager().tabBar();
+    const id_t         active = tabBar.activeId();
+    id_t               next   = active;
+    if (arg == Ui::Res::Key::tabStepKeyName(Ui::Res::Key::TabStepKey::Next)) {
+        next = tabBar.idAfter(active);
+    } else if (arg == Ui::Res::Key::tabStepKeyName(Ui::Res::Key::TabStepKey::Prior)) {
+        next = tabBar.idBefore(active);
     }
-    const auto after = std::next(active);
-    const id_t next  = (after == order.end()) ? order.front() : *after;
-    if (next != *active) {
+    if (next != active) {
         host.setActiveTab(next);
     }
 }

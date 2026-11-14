@@ -50,6 +50,7 @@ TEST(ResPath, ThemeComposesNameAndMode)
 TEST(ResPath, TopLevelFiles)
 {
     EXPECT_EQ(resPath().layoutFile(), "/base/layout.json");
+    EXPECT_EQ(resPath().animationFile(), "/base/animation.json");
     EXPECT_EQ(resPath().appFile(), "/base/app.json");
     EXPECT_EQ(resPath().dialogFile(), "/base/dialog.json");
     EXPECT_EQ(resPath().shortcutFile(), "/base/shortcut.json");

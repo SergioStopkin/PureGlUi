@@ -29,12 +29,15 @@
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
 #include "ui/render/uilayout.h"
+#include "ui/res/key/element.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/bound.h"
+#include "ui/res/type/colorpair.h"
 #include "ui/res/type/font.h"
 #include "ui/res/type/fontweight.h"
 #include "ui/res/type/iconplace.h"
 #include "ui/res/type/menu.h"
+#include "ui/res/type/theme.h"
 #include "ui/res/type/themepreview.h"
 #include "ui/type.h"
 #include "ui/window/keymodifier.h"
@@ -298,17 +301,19 @@ private:
 
         for (size_t i = 0; i < m_popupElements.size(); ++i) {
             const auto &                      el = m_popupElements.at(i);
-            const Ui::Res::Type::color_pair_t cp = resolvePopupColors(el, theme);
+            const Ui::Res::Type::color_pair_t cp = drawnColorsOf(el, theme);
 
             if (cp.bg.a() == 0) {
                 continue;
             }
 
+            // A hovered or pressed item is a pill inset in its row, and stays one while its
+            // colour fades back to the row's
             Ui::Res::Type::border_t itemRadius;
             Ui::Res::Type::bound_t  itemBound = el.bound;
             if (el.type == Ui::Render::UiElementType::MenuItem
-                && (el.state == Ui::Render::UiElementState::Hovered
-                    || el.state == Ui::Render::UiElementState::Active)) {
+                && (el.state == Ui::Render::UiElementState::Hovered || el.state == Ui::Render::UiElementState::Active
+                    || cp.bg != theme.menuItem.bg)) {
                 itemRadius          = m_resManager.layout().menuItemHoverBorder;
                 const fpx_t marginH = m_resManager.layout().menuItemHoverMarginH;
                 const fpx_t marginV = m_resManager.layout().menuItemHoverMarginV;
@@ -379,7 +384,7 @@ private:
                 continue;
             }
 
-            const Ui::Res::Type::color_pair_t cp = resolvePopupColors(el, theme);
+            const Ui::Res::Type::color_pair_t cp = drawnColorsOf(el, theme);
 
             // Label text
             {
@@ -474,6 +479,18 @@ private:
                 }
             }
         }
+    }
+
+    // An element's colours as drawn this frame: a menu item's state's faded along
+    // top-menu-item's transition, a separator's as they are
+    [[nodiscard]] Ui::Res::Type::color_pair_t drawnColorsOf(const Ui::Render::UiElement &  el,
+                                                            const Ui::Res::Type::theme_t & theme)
+    {
+        const Ui::Res::Type::color_pair_t colors = resolvePopupColors(el, theme);
+        if (el.type != Ui::Render::UiElementType::MenuItem) {
+            return colors;
+        }
+        return colorsOf(el.id, colors, Ui::Res::Key::ElementKey::TopMenuItem);
     }
 
     static Ui::Res::Type::color_pair_t resolvePopupColors(const Ui::Render::UiElement &  el,

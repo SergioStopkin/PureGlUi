@@ -41,7 +41,7 @@ ResPath resPath() { return ResPath(std::string(TEST_RES_DIR)); }
 bool mapsToAction(const ShortcutStore & store, const std::string & action)
 {
     return std::any_of(store.shortcuts().begin(), store.shortcuts().end(), [&action](const auto & pair) {
-        return pair.second == action;
+        return pair.second.actionKey == action;
     });
 }
 } // namespace
@@ -56,6 +56,21 @@ TEST(ShortcutStore, LoadShippedShortcuts)
     EXPECT_TRUE(mapsToAction(store, "ExitApp"));
     EXPECT_TRUE(mapsToAction(store, "Reload"));
     EXPECT_TRUE(mapsToAction(store, "OpenFile"));
+}
+
+// An entry's "arg" rides with its action; one without reads as empty
+TEST(ShortcutStore, AnEntryCarriesItsArg)
+{
+    ShortcutStore store;
+    (void)store.load(resPath().shortcutFile());
+    const auto & shortcuts = store.shortcuts();
+    ASSERT_TRUE(shortcuts.contains("ctrl+next"));
+    ASSERT_TRUE(shortcuts.contains("ctrl+prior"));
+    ASSERT_TRUE(shortcuts.contains("ctrl+w"));
+    EXPECT_EQ(shortcuts.at("ctrl+next").actionKey, "CycleTab");
+    EXPECT_EQ(shortcuts.at("ctrl+next").arg, "next");
+    EXPECT_EQ(shortcuts.at("ctrl+prior").arg, "prior");
+    EXPECT_TRUE(shortcuts.at("ctrl+w").arg.empty());
 }
 
 TEST(ShortcutStore, ReloadIdenticalIsNoOp)

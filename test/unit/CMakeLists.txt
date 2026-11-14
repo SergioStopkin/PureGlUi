@@ -2,9 +2,17 @@ set(TARGET unit-tests)
 
 add_executable(
     ${TARGET}
-    TestRegistry.cpp
+    TestLinkedMap.cpp
     TestConfig.cpp
     TestTabBar.cpp
+    TestTabSwitch.cpp
+    TestTabMoveOf.cpp
+    TestEasedOf.cpp
+    TestTransitionsOf.cpp
+    TestAnimator.cpp
+    TestTabCloseBoundOf.cpp
+    TestAnimationStore.cpp
+    TestDurationOf.cpp
     TestRenderInterfaces.cpp
     TestIntent.cpp
     TestMenuDisable.cpp

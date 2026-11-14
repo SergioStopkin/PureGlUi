@@ -20,6 +20,8 @@
 #include "common/json.h"
 #include "common/sanitize.h"
 #include "nlohmann/json.hpp"
+#include "ui/intent.h"
+#include "ui/intentkind.h"
 #include "ui/res/type/changed.h"
 #include "ui/res/util.h"
 
@@ -28,15 +30,16 @@
 
 namespace Ui::Res::Store {
 
-// Loads and holds res/shortcut.json: normalized key-combo -> actionKey. One of
-// the logical sub-stores ResManager composes. load() returns Changed::Shortcut
-// when the map actually changed (else None) so the facade can aggregate it.
+// Loads and holds res/shortcut.json: normalized key-combo -> the action it runs,
+// with its optional "arg". One of the logical sub-stores ResManager composes.
+// load() returns Changed::Shortcut when the map actually changed (else None) so
+// the facade can aggregate it.
 class ShortcutStore final {
-    std::unordered_map<std::string, std::string> m_shortcuts; // key combo -> actionKey
+    std::unordered_map<std::string, Ui::intent_t> m_shortcuts; // key combo -> EmitAction intent
 
     // One entry, from either an array element or a lone object. A missing or
-    // mistyped field reads as empty, and an entry without both halves is not a
-    // shortcut, so it is skipped rather than binding "" to something.
+    // mistyped field reads as empty, and an entry without both "keys" and
+    // "action" is not a shortcut, so it is skipped rather than binding "" to something.
     void addShortcut(const nlohmann::json & entry)
     {
         const std::string keys   = Common::Sanitize::string(Common::Json::string(entry, "keys"), "shortcut.keys");
@@ -44,11 +47,15 @@ class ShortcutStore final {
         if (keys.empty() || action.empty()) {
             return;
         }
-        m_shortcuts[Util::strKey(keys)] = action;
+        m_shortcuts[Util::strKey(keys)] = {
+            .kind      = Ui::IntentKind::EmitAction,
+            .actionKey = action,
+            .arg       = Common::Sanitize::string(Common::Json::string(entry, "arg"), "shortcut.arg"),
+        };
     }
 
 public:
-    [[nodiscard]] const std::unordered_map<std::string, std::string> & shortcuts() const { return m_shortcuts; }
+    [[nodiscard]] const std::unordered_map<std::string, Ui::intent_t> & shortcuts() const { return m_shortcuts; }
 
     [[nodiscard]] Type::Changed load(const std::string & file)
     {

@@ -54,12 +54,15 @@ namespace Ui::Gl {
  *   compositing over a capture layer or transparent window.
  *
  * Corner capture draws parent window pixels in popup corners for software
- * transparency on X11 without compositing. Draw order: drawCorners() first
+ * transparency on X11 without compositing. A popup whose background is
+ * see-through takes the parent's pixels under its whole window instead
+ * (setUnderlay), which hold its corners too. Draw order: drawCorners() first
  * as underlay, then begin()/draw()/end() with premultiplied alpha on top.
  *
  * Usage:
  *   m_rounded.setAlpha(hasAlpha);
  *   m_rounded.setCornerPixels(pixels, radii);  // optional, for software transparency
+ *   // or m_rounded.setUnderlay(pixels, w, h)  // a see-through background
  *   m_rounded.drawCorners(viewW, viewH, scale); // underlay
  *   m_rounded.begin(viewW, viewH, scale);
  *   m_rounded.draw(bound, radii, fgColor, bgColor);
@@ -126,6 +129,25 @@ public:
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
+    // What stands under the whole window, for one whose background lets it show through: drawn
+    // as the corners are, under everything, and in place of them, since it holds them. RGBA,
+    // top-left origin, `width` x `height` physical pixels
+    void setUnderlay(const std::vector<uint8_t> & pixels, int width, int height)
+    {
+        cleanupCorners();
+        if (pixels.empty() || width <= 0 || height <= 0) {
+            return;
+        }
+        glGenTextures(1, &m_underlayTex);
+        glBindTexture(GL_TEXTURE_2D, m_underlayTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
     // Update a single corner (0=TL, 1=TR, 2=BR, 3=BL) without touching others
     void updateCorner(id_t cornerIndex, const std::vector<uint8_t> & pixels, fpx_t radius)
     {
@@ -163,8 +185,12 @@ public:
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
+    // Whether it holds what stands under its corners, as the corners alone or the whole underlay
     [[nodiscard]] bool hasCornerPixels() const
     {
+        if (m_underlayTex != 0) {
+            return true;
+        }
         for (id_t i = 0; i < 4; ++i) {
             if (m_cornerTex.at(i) != 0) {
                 return true;
@@ -174,11 +200,12 @@ public:
     }
 
     /**
-     * @brief Draw captured parent pixels as underlay in popup corner areas.
+     * @brief Draw captured parent pixels as underlay in popup corner areas, or
+     * under the whole window when it holds the whole underlay.
      *
      * Call before begin()/draw()/end(). The SDF shader draws on top with
-     * premultiplied alpha; its alpha=0 corner cutouts let the captured
-     * background show through.
+     * premultiplied alpha; its alpha=0 corner cutouts - and a see-through
+     * background - let the captured background show through.
      */
     void drawCorners(fpx_t viewW, fpx_t viewH, fpx_t scale)
     {
@@ -206,11 +233,23 @@ public:
         glBindVertexArray(m_cornerVao);
         glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 
+        // UV: (0,0) at top-left, (1,1) at bottom-right
+        // Data is top-left origin; GL interprets as bottom-left -> standard UVs compensate
+        const auto drawPatch = [](GLuint texture, fpx_t x0, fpx_t y0, fpx_t x1, fpx_t y1) {
+            glBindTexture(GL_TEXTURE_2D, texture);
+            const std::array<fpx_t, 24> verts = { x0, y0, 0, 0, x1, y0, 1, 0, x1, y1, 1, 1,
+                                                  x0, y0, 0, 0, x1, y1, 1, 1, x0, y1, 0, 1 };
+            Ui::Gl::Util::drawTriangles(verts, 6);
+        };
+
         const std::array<fpx_t, 4> cssRadii = { m_cornerRadii.topLeft / scale,
                                                 m_cornerRadii.topRight / scale,
                                                 m_cornerRadii.bottomRight / scale,
                                                 m_cornerRadii.bottomLeft / scale };
 
+        if (m_underlayTex != 0) {
+            drawPatch(m_underlayTex, 0, 0, cssW, cssH);
+        }
         for (id_t i = 0; i < 4; ++i) {
             if (m_cornerTex.at(i) == 0) {
                 continue;
@@ -219,8 +258,6 @@ public:
             if (r <= 0) {
                 continue;
             }
-
-            glBindTexture(GL_TEXTURE_2D, m_cornerTex.at(i));
 
             fpx_t x0 = 0;
             fpx_t y0 = 0;
@@ -253,12 +290,7 @@ public:
                 break;
             default: continue;
             }
-
-            // UV: (0,0) at top-left, (1,1) at bottom-right
-            // Data is top-left origin; GL interprets as bottom-left -> standard UVs compensate
-            const std::array<fpx_t, 24> verts = { x0, y0, 0, 0, x1, y0, 1, 0, x1, y1, 1, 1,
-                                                  x0, y0, 0, 0, x1, y1, 1, 1, x0, y1, 0, 1 };
-            Ui::Gl::Util::drawTriangles(verts, 6);
+            drawPatch(m_cornerTex.at(i), x0, y0, x1, y1);
         }
 
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -581,6 +613,7 @@ private:
         for (auto & tex : m_cornerTex) {
             Ui::Gl::Util::deleteTexture(tex);
         }
+        Ui::Gl::Util::deleteTexture(m_underlayTex);
     }
 
     // Rounded rect shader
@@ -606,6 +639,7 @@ private:
     // Corner textures and radii (physical pixels)
     std::array<GLuint, 4>   m_cornerTex = { 0, 0, 0, 0 };
     Ui::Res::Type::border_t m_cornerRadii {};
+    GLuint                  m_underlayTex = 0; // what stands under the whole window, see-through; 0 none
 
     bool m_hasAlpha = false;
 };

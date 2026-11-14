@@ -59,6 +59,8 @@ enum class CssPropKey : unsigned char {
     RowIndent,       // row-indent
     RowExpanderSize, // row-expander-size
     RowKeyRatio,     // row-key-ratio
+    Transition,      // transition
+    SwapAt,          // swap-at
 
     Count, // enumerator total, never a property - what an exhaustive check counts against
 };
@@ -96,6 +98,8 @@ enum class CssPropKey : unsigned char {
     case CssPropKey::RowIndent: return "row-indent";
     case CssPropKey::RowExpanderSize: return "row-expander-size";
     case CssPropKey::RowKeyRatio: return "row-key-ratio";
+    case CssPropKey::Transition: return "transition";
+    case CssPropKey::SwapAt: return "swap-at";
 
     case CssPropKey::Count: break;
     }

@@ -774,10 +774,16 @@ private:
         // Get modifiers
         event.key.modifiers = self->modifiers();
 
-        // Get text representation and logical key name for key press
+        // Text for a press. The name for a release too, so a Ctrl going up reads as one, and
+        // from the key's level without Shift, as X11 names it: Shift+Tab is Tab there, never
+        // ISO_Left_Tab, or a shortcut spelled once matches on one backend only
         if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
             xkb_state_key_get_utf8(self->m_xkbState, keycode, event.key.text.data(), event.key.text.size());
-            xkb_keysym_get_name(keysym, event.key.name.data(), event.key.name.size());
+        }
+        const xkb_keysym_t *     levelSyms = nullptr;
+        const xkb_layout_index_t layout    = xkb_state_key_get_layout(self->m_xkbState, keycode);
+        if (xkb_keymap_key_get_syms_by_level(self->m_xkbKeymap, keycode, layout, 0, &levelSyms) > 0) {
+            xkb_keysym_get_name(*levelSyms, event.key.name.data(), event.key.name.size());
         }
 
         self->queueEvent(event);

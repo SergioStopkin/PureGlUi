@@ -22,19 +22,23 @@
 #include "common/sanitize.h"
 #include "common/system.h"
 #include "nlohmann/json.hpp"
+#include "ui/animation/transition.h"
 #include "ui/convert.h"
+#include "ui/intent.h"
 #include "ui/io/filefilter.h"
 #include "ui/res/dock/anchor.h"
 #include "ui/res/dock/config.h"
 #include "ui/res/dock/state.h"
 #include "ui/res/key/app.h"
 #include "ui/res/key/dock.h"
+#include "ui/res/key/element.h"
 #include "ui/res/key/iconrole.h"
 #include "ui/res/key/section.h"
 #include "ui/res/key/session.h"
 #include "ui/res/localemanager.h"
 #include "ui/res/persistedsetting.h"
 #include "ui/res/respath.h"
+#include "ui/res/store/animationstore.h"
 #include "ui/res/store/dialogstore.h"
 #include "ui/res/store/dockstore.h"
 #include "ui/res/store/iconstore.h"
@@ -88,10 +92,11 @@ class ResManager final {
     Store::ThemeStore      m_themeStore;  // res/submenu/theme/*: theme_t + name/mode + preview (sub-store)
     Ui::Res::Type::input_t m_input;
     Ui::Res::LocaleManager m_localeManager;
-    Store::IconStore       m_iconStore;     // res/icon-defaults.json (logical sub-store)
-    Store::DialogStore     m_dialogStore;   // res/dialog.json (logical sub-store)
-    Store::ShortcutStore   m_shortcutStore; // res/shortcut.json (logical sub-store)
-    Ui::TabBar             m_tabBar;        // chrome tab view; a host projects its tabs into it
+    Store::IconStore       m_iconStore;      // res/icon-defaults.json (logical sub-store)
+    Store::DialogStore     m_dialogStore;    // res/dialog.json (logical sub-store)
+    Store::AnimationStore  m_animationStore; // res/animation.json (logical sub-store)
+    Store::ShortcutStore   m_shortcutStore;  // res/shortcut.json (logical sub-store)
+    Ui::TabBar             m_tabBar;         // chrome tab view; a host projects its tabs into it
     Ui::Res::ResPath       m_resPath;
     // menus/buttons/action-map machinery; composes locale + icon/theme/layout
     // stores (declared above) + resPath, so it is declared after them.
@@ -176,6 +181,7 @@ public:
         m_changed |= Ui::Res::Type::Changed::Locale;
         m_changed |= m_themeStore.loadCurrent(m_resPath);
         m_changed |= m_layoutStore.load(m_resPath.layoutFile());
+        m_animationStore.load(m_resPath.animationFile());
         loadInput(m_resPath.inputFile());
         m_dialogStore.load(m_resPath.dialogFile());
         m_changed |= m_shortcutStore.load(m_resPath.shortcutFile());
@@ -192,16 +198,26 @@ public:
     const Ui::Res::Type::layout_t & layout() const { return m_layoutStore.layout(); }
     const Ui::Res::Type::theme_t &  theme() const { return m_themeStore.theme(); }
     const Ui::Res::Type::popup_t &  popup() const { return m_layoutStore.popup(); }
-    const Ui::Res::Type::input_t &  input() const { return m_input; }
-    const Ui::Res::LocaleManager &  localeManager() const { return m_localeManager; }
-    const std::string &             title() const { return m_title; }
-    const std::string &             openFileTitle() const { return m_openFileTitle; }
+
+    // How the element of block `key` moves, from animation.json; none, and it jumps
+    [[nodiscard]] const std::vector<Ui::Animation::transition_t> & transitionsFor(Ui::Res::Key::ElementKey key) const
+    {
+        return m_animationStore.transitionsFor(Ui::Res::Key::elementKeyName(key));
+    }
+
+    // How far over a neighbour a dragged tab is drawn before they swap, a share of its width:
+    // animation.json's workspace-tab `swap-at`, half when it names none
+    [[nodiscard]] fpx_t            tabSwapAt() const { return m_animationStore.tabSwapAt(); }
+    const Ui::Res::Type::input_t & input() const { return m_input; }
+    const Ui::Res::LocaleManager & localeManager() const { return m_localeManager; }
+    const std::string &            title() const { return m_title; }
+    const std::string &            openFileTitle() const { return m_openFileTitle; }
 
     const std::vector<Ui::Io::file_filter_t> & openFileFilters() const { return m_openFileFilters; }
     const std::string &                        tabCloseIcon() const { return m_layoutStore.layout().tabCloseIcon; }
     const std::string &                        tabArrowLeft() const { return m_layoutStore.layout().tabArrowIconLeft; }
     const std::string & tabArrowRight() const { return m_layoutStore.layout().tabArrowIconRight; }
-    const std::unordered_map<std::string, std::string> & shortcuts() const { return m_shortcutStore.shortcuts(); }
+    const std::unordered_map<std::string, Ui::intent_t> & shortcuts() const { return m_shortcutStore.shortcuts(); }
 
     // Smallest the main window may be (CSS): the authored chrome floor, raised to
     // what the largest dialog needs. A dialog is fixed-size and centred inside the
@@ -781,11 +797,11 @@ public:
         m_input.scrollSmooth        = Common::Json::number(scroll, "smooth", m_input.scrollSmooth);
         m_input.scrollSnapThreshold = Common::Json::number(scroll, "snapThreshold", m_input.scrollSnapThreshold);
 
-        const auto & keyAnimation   = Common::Json::object(j, "keyAnimation");
-        m_input.keyAnimationDelayMs = Common::Json::number(keyAnimation, "delayMs", m_input.keyAnimationDelayMs);
-
         const auto & tooltip   = Common::Json::object(j, "tooltip");
         m_input.tooltipDelayMs = Common::Json::number(tooltip, "delayMs", m_input.tooltipDelayMs);
+
+        const auto & tabSwitcher   = Common::Json::object(j, "tabSwitcher");
+        m_input.tabSwitcherDelayMs = Common::Json::number(tabSwitcher, "delayMs", m_input.tabSwitcherDelayMs);
     }
 
     // Each file under res/dock/ describes one dock (anchor, order, default

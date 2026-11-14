@@ -22,15 +22,16 @@
 namespace Ui::Res::Type {
 
 // UI input behaviour tunables loaded from res/input.json: scrollable-popup
-// scrolling + key-animation timing, read by the popup/dialog renderers. The
-// 3D viewport half (zoom/rotation/double-click) lives in viewport_t (host).
+// scrolling, read by the popup/dialog renderers, and how long the tooltip and the
+// Ctrl+Tab list wait. The 3D viewport half (zoom/rotation/double-click) lives in
+// viewport_t (host).
 struct alignas(32) input_t final {
     bool  scrollNatural {};
     fpx_t scrollSpeed { 40.0F };
     fpx_t scrollSmooth { 15.0F };
     fpx_t scrollSnapThreshold { 0.5F };
-    int   keyAnimationDelayMs { 120 };
-    int   tooltipDelayMs { 300 }; // a toolbar button's first tooltip waits for the pointer to rest
+    int   tooltipDelayMs { 300 };     // a toolbar button's first tooltip waits for the pointer to rest
+    int   tabSwitcherDelayMs { 200 }; // Ctrl held this long after Ctrl+Tab before its list goes up
 
     bool operator==(const input_t &) const = default;
 };

@@ -173,7 +173,7 @@ Locale string table keyed by JSON key.
 
 ## Sub-stores (Ui::Res::Store)
 
-The 7 logical loaders `ResManager` composes. Loaders that diff old-vs-new return
+The 8 logical loaders `ResManager` composes. Loaders that diff old-vs-new return
 a `Type::Changed` bit which the facade `|=` into its pending `changes_t` mask; loaders
 that never diff return `void`. `MenuStore` and `DockStore` are
 `Common::NonCopyable` and take injected `&` collaborators.
@@ -187,12 +187,35 @@ that never diff return `void`. `MenuStore` and `DockStore` are
   button-label table. `load()` returns `void`. `dialogTypeConfig(DialogType)` ->
   `Type::dialog_type_config_t`.
 - `ShortcutStore` (`store/shortcutstore.h`) - loads `res/shortcut.json`:
-  normalized key-combo -> actionKey map. `load()` returns `Changed::Shortcut`.
+  normalized key-combo -> the `EmitAction` `intent_t` it runs, its `"arg"` (optional,
+  empty when absent) riding with the `"action"`, as a menu item's does - so one action
+  bound twice can take two values (`CycleTab` `prior`/`next`). `load()` returns
+  `Changed::Shortcut`.
 - `LayoutStore` (`store/layoutstore.h`) - loads `res/layout.json` once, deriving
   BOTH `layout_t` (region geometry, `:root` CSS vars, dialog/tab/dock metrics)
   and `popup_t` (dropdown item/separator heights) from the single parse. Returns
   a `changes_t` of `Changed::Layout` and `Changed::Popup`, each when it changed. Dock definitions are committed
   separately via `setDocks()` (`ResManager::loadDocks` supplies them).
+- `AnimationStore` (`store/animationstore.h`) - loads `res/animation.json`: how
+  each element moves, apart from where it stands (layout) and how it looks (the
+  theme). A block per element, named as in both (`workspace-tab`), its
+  `transition` CSS's spelling (`"all 150ms ease-out"`, `"background 120ms ease,
+  color 120ms ease"`; `ui/animation/transitionsof.h`): `left`/`top`/`width`/
+  `height` glide, `background`/`color` fade. `load()` returns `void` - the main
+  renderer reads it every frame - and reads the file again in full, so a block
+  taken out stops on reload. `transitionsFor(block)`, reached as
+  `ResManager::transitionsFor(ElementKey)`. Read for the blocks a renderer
+  animates - the main renderer's `workspace-tab`, `workspace-tab-close`,
+  `toolbar-button`, `top-menu-button-label`; a menu's and a dock's
+  `top-menu-item` (a dock row is themed as a menu row); a dialog's
+  `dialog-button` and `dialog-close`, whose longest transition
+  (`ui/animation/durationof.h`) is also how long each step of a key's press
+  holds; any other block moves nothing, and with no file at all everything jumps
+  and a dialog's key acts at once. `workspace-tab` also carries `swap-at` (a number,
+  0..1, clamped): how far over a neighbour a dragged tab is drawn before they swap,
+  a share of the neighbour's width - 0.5 its leading edge at the neighbour's middle,
+  1.0 over it whole; `tabSwapAt()`, half when the key or the file is absent, so a
+  drag still reorders with no motion.
 - `ThemeStore` (`store/themestore.h`) - loads the active theme
   (`submenu/theme/<name>-<mode>.json` -> `theme_t`), resolves `var()` chains and
   `darker()`/`lighter()` modifiers, and owns the current name/mode. `loadCurrent`
@@ -287,10 +310,11 @@ Aggregate value blocks:
   so a misspelled key paints the element in the theme's error colour rather than
   leaving it unset. A test asking "is this block defined?" must compare against
   `colorError`, not against alpha.
-- `input_t` (`input.h`) - scroll, key-animation and tooltip tunables from `res/input.json`
-  (scrollNatural/Speed/Smooth/SnapThreshold, keyAnimationDelayMs - `keyAnimation.delayMs`, each
-  phase of a dialog's keyboard press, tooltipDelayMs - `tooltip.delayMs`, how long the pointer
-  rests on a toolbar button before its first tooltip shows). Every duration is whole milliseconds.
+- `input_t` (`input.h`) - scroll and wait tunables from `res/input.json`
+  (scrollNatural/Speed/Smooth/SnapThreshold, tooltipDelayMs - `tooltip.delayMs`, how long the pointer
+  rests on a toolbar button before its first tooltip shows, tabSwitcherDelayMs -
+  `tabSwitcher.delayMs`, how long Ctrl is held after Ctrl+Tab before the list goes up, so a
+  quick tap switches with none). Every duration is whole milliseconds.
 
 Menu / button / dialog / icon:
 
@@ -308,7 +332,13 @@ Menu / button / dialog / icon:
   `toolbar-button:disabled`'s `color` when no action is behind it. Its `tooltip` locale
   key shows in a popup beside it, shaped by `layout_t::tooltip` (height, padding
   round the text, margin off the button, border-radius) and styled by the
-  theme's `tooltip` block (font, color, background).
+  theme's `tooltip` block (font, color, background). The Ctrl+Tab list is shaped by
+  `layout_t::tabSwitcher` (narrowest width, margin off the window's edges,
+  border-radius), `tabSwitcherItem` (row height, padding) and
+  `tabSwitcherItemActive` (the highlight's margin and border-radius), and styled by
+  the theme's `tab-switcher` (background), `tab-switcher-item` (font, color),
+  `tab-switcher-item:active` (color, background) and `tab-switcher-description` /
+  `:active` (color) - `theme_t::tabSwitcher*` and `tabSwitcherFont`.
 - `dialog_t` + `dialog_button_config_t` + `dialog_type_config_t` +
   `DialogType`/`DialogAction` enums with `*FromName` mappers (`dialog.h`) -
   dialog definition (type, locale keys for title/content/link, icon, file,

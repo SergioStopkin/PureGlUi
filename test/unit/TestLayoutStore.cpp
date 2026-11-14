@@ -82,6 +82,17 @@ TEST(LayoutStore, ToolbarButtonAndTooltipSized)
     EXPECT_GT(store.layout().tooltip.height, 0.0F);
 }
 
+// layout.json alone sizes the Ctrl+Tab list: a block it leaves out makes its rows 0 px
+// tall, so the list shows none
+TEST(LayoutStore, TabSwitcherSized)
+{
+    LayoutStore store;
+    store.load(resPath().layoutFile());
+    EXPECT_GT(store.layout().tabSwitcher.width, 0.0F);
+    EXPECT_GT(store.layout().tabSwitcherItem.height, 0.0F);
+    EXPECT_GT(store.layout().tabSwitcherItem.padding, 0.0F);
+}
+
 TEST(LayoutStore, ReloadIdenticalIsNoOp)
 {
     LayoutStore store;

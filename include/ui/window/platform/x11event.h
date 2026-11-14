@@ -348,6 +348,11 @@ private:
             const_cast<XKeyEvent *>(&xev.xkey), // NOLINT(cppcoreguidelines-pro-type-const-cast)
             0);
             event.key.modifiers = convertX11Modifiers(xev.xkey.state);
+
+            // Named as its press is, so a Ctrl going up reads as one (the Ctrl+Tab list)
+            if (const char * keyname = XKeysymToString(event.key.keysym); keyname != nullptr) {
+                std::strncpy(event.key.name.data(), keyname, event.key.name.size() - 1);
+            }
         } break;
 
         case X11EventTypes::SELECTION_REQUEST: {

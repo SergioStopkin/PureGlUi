@@ -1,0 +1,24 @@
+{
+  "workspace-tab": {
+    "transition": "all 150ms ease-out",
+    "swap-at": 0.5
+  },
+  "workspace-tab-close": {
+    "transition": "background 120ms ease, color 120ms ease"
+  },
+  "toolbar-button": {
+    "transition": "background 120ms ease, color 120ms ease"
+  },
+  "top-menu-button-label": {
+    "transition": "background 120ms ease, color 120ms ease"
+  },
+  "top-menu-item": {
+    "transition": "background 120ms ease, color 120ms ease"
+  },
+  "dialog-button": {
+    "transition": "background 120ms ease, color 120ms ease"
+  },
+  "dialog-close": {
+    "transition": "background 120ms ease, color 120ms ease"
+  }
+}

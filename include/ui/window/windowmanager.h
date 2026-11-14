@@ -36,10 +36,12 @@
 #include "ui/interface/iwindow.h"
 #include "ui/pubsub/subscribe.h"
 #include "ui/render/dockcolumn.h"
+#include "ui/render/dragtrack.h"
 #include "ui/render/elementevent.h"
 #include "ui/render/eventkind.h"
 #include "ui/render/popup/dialogrenderer.h"
 #include "ui/render/popup/popuprenderer.h"
+#include "ui/render/popup/tabswitcherrenderer.h"
 #include "ui/render/popup/tooltiprenderer.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
@@ -57,6 +59,7 @@
 #include "ui/res/type/dialog.h"
 #include "ui/res/type/dialogaction.h"
 #include "ui/res/type/menu.h"
+#include "ui/tab.h"
 #include "ui/type.h"
 #include "ui/window/compositetexture.h"
 #include "ui/window/connector.h"
@@ -78,6 +81,7 @@
 #include "ui/window/renderqueue.h"
 #include "ui/window/scalefactorof.h"
 #include "ui/window/spentbuttonof.h"
+#include "ui/window/tabmoveof.h"
 #include "ui/window/tooltip.h"
 #include "ui/window/tooltipboundof.h"
 #include "ui/window/tooltipwantedof.h"
@@ -87,6 +91,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -159,6 +164,12 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     // cursor wanders into the content surface or another area.
     id_t                      m_dragElement = Ui::INVALID_ID;
     Ui::Render::UiElementType m_dragType    = Ui::Render::UiElementType::DockGrip;
+    id_t m_tabDragId = Ui::INVALID_ID; // a tab a left press holds: a click until the threshold, then a drag (dragTab)
+    Ui::Render::drag_track_t m_tabDragTrack;        // where it was pressed, along the strip
+    bool                     m_isTabMoving = false; // past the threshold: its release is no click
+    std::function<void(id_t, id_t)>
+    m_onTabMoved; // the tab, and the one it now stands right before (INVALID_ID the end)
+
     // The dock a slider drag belongs to: the captured element is a host row,
     // which names no dock
     id_t m_dragDock = Ui::INVALID_ID;
@@ -209,10 +220,17 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     Common::Time::point_t  m_tooltipDue;                   // when m_pendingTooltip shows
     tooltip_t              m_tooltip;                      // what the window shows, anchored in main-window CSS px
 
+    // Tab switcher pairing: the Ctrl+Tab list, a PopupWindow over the main window's middle
+    // (res's tab-switcher blocks), its rows hovered and clicked. What it shows is the shell's (Ui::TabSwitch)
+    using TabSwitcherConnector =
+    Ui::Window::Connector<Ui::Window::Popup::PopupWindow, Ui::Render::Popup::TabSwitcherRenderer>;
+    std::unique_ptr<TabSwitcherConnector> m_tabSwitcherWindow;
+
     CompositeTexture m_popupComposite;
     CompositeTexture m_submenuComposite;
     CompositeTexture m_dialogComposite;
     CompositeTexture m_tooltipComposite;
+    CompositeTexture m_tabSwitcherComposite;
 
     // Content surfaces by the host's id, which doubles as the render-queue entry.
     // m_activeContent is the only visible/interactive one (children overlap).
@@ -431,7 +449,7 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     }
 
     // Where the pointer is, main-window physical px, from an event of any window before
-    // routing rebases it: a popup, submenu, dialog or content surface stands on the main
+    // routing rebases it: a popup, submenu, dialog, the Ctrl+Tab list or content surface stands on the main
     // window at its bound (composited, all of them already report main-window px). A
     // leave takes it off: the next event from whichever window has it puts it back
     void trackPointer(const Event & event)
@@ -457,13 +475,14 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
             standsOn(m_popupWindow);
             standsOn(m_submenuWindow);
             standsOn(m_dialogWindow);
+            standsOn(m_tabSwitcherWindow);
         }
         m_pointerX = event.mouse.x + static_cast<int>(origin.x);
         m_pointerY = event.mouse.y + static_cast<int>(origin.y);
     }
 
     // A menu or dialog is open, and no tooltip shows over it
-    [[nodiscard]] bool isChromeOpen() const { return m_popupWindow || m_dialogWindow; }
+    [[nodiscard]] bool isChromeOpen() const { return m_popupWindow || m_dialogWindow || m_tabSwitcherWindow; }
 
     // A tooltip is wanted - presented or not yet (m_isTooltipShown)
     [[nodiscard]] bool hasTooltip() const { return !m_tooltip.text.empty(); }
@@ -621,6 +640,11 @@ public:
     /** @brief Host reaction to a slider row being dragged: (row id, 0..1) */
     void setOnRowValue(std::function<void(id_t, fpx_t)> callback) { m_onRowValue = std::move(callback); }
 
+    // A tab dragged along the strip moved: the tab, and the one it now stands right before
+    // (INVALID_ID the end), the host's to apply and project back. A stream like a slider's,
+    // a call per jump, so a hook rather than an intent
+    void setOnTabMoved(std::function<void(id_t, id_t)> callback) { m_onTabMoved = std::move(callback); }
+
     void setDialogContentResolver(std::function<std::wstring(const std::string &)> resolver)
     {
         m_dialogContentResolver = std::move(resolver);
@@ -628,6 +652,24 @@ public:
 
     void requestRender(id_t windowId) { m_renderQueue.request(windowId); }
     void requestMainRender() { m_renderQueue.request(MAIN_WINDOW_ID); }
+
+    // A glide or a fade the last frame drew midway asks for the next, once a pass of the run
+    // loop - at the display's pace, and with nothing gliding, none. The main window's, and a
+    // menu's, a submenu's or a dialog's, each of which draws its own
+    void keepGliding()
+    {
+        if (hasUiRenderer() && m_main->renderer().isGliding()) {
+            requestMainRender();
+        }
+        const auto keepPopup = [this](const auto & slot) {
+            if (slot && slot->hasRenderer() && slot->renderer().isGliding()) {
+                m_renderQueue.request(slot->window().subscribeId());
+            }
+        };
+        keepPopup(m_popupWindow);
+        keepPopup(m_submenuWindow);
+        keepPopup(m_dialogWindow);
+    }
 
     void requestContentRefresh()
     {
@@ -925,17 +967,8 @@ public:
         if (entry.window == nullptr) {
             return;
         }
-        const int w = static_cast<int>(entry.window->bound().w);
-        const int h = static_cast<int>(entry.window->bound().h);
-        if (w <= 0 || h <= 0) {
-            return;
-        }
         entry.window->makeCurrent();
-        entry.composite.pixels.resize(static_cast<size_t>(w) * h * 4);
-        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, entry.composite.pixels.data());
-        entry.composite.w     = w;
-        entry.composite.h     = h;
-        entry.composite.dirty = true;
+        entry.composite.capture(static_cast<int>(entry.window->bound().w), static_cast<int>(entry.window->bound().h));
     }
 
     // Place a content surface at the current viewport rect. On Wayland the X11
@@ -1017,6 +1050,23 @@ public:
             m_subscribe.notify(Ui::idOf(Ui::IdKind::Event, event.type));
             syncTooltip();
             return;
+        }
+
+        // The Ctrl+Tab list, over everything but a dialog: its rows hovered and clicked, the
+        // shell reading what they offered after this (tabSwitcherHoveredRow, the click)
+        if (m_tabSwitcherWindow) {
+            if (auto * hit = matchPopupTarget<TabSwitcherConnector>(event, { m_tabSwitcherWindow.get() });
+                hit != nullptr) {
+                m_currentEvent = event;
+                routePopupEvent(event, *hit);
+                m_subscribe.notify(Ui::idOf(Ui::IdKind::Event, event.type));
+                syncTooltip();
+                return;
+            }
+            // A move off it hovers no row, or the shell hands the highlight back to the last one
+            if (event.type == EventType::MouseMove) {
+                m_tabSwitcherWindow->onMouseLeave();
+            }
         }
 
         // Classify event source window.
@@ -1587,6 +1637,17 @@ public:
             m_main->window().requestRender();
         }
 
+        // Every open list and dialog, so one left open lands on a new theme with the main window
+        const auto applyPopup = [changed](const auto & slot) {
+            if (slot) {
+                slot->apply(changed);
+            }
+        };
+        applyPopup(m_popupWindow);
+        applyPopup(m_submenuWindow);
+        applyPopup(m_dialogWindow);
+        applyPopup(m_tabSwitcherWindow);
+
         // Content surfaces: each setBackground() makes its own context current.
         for (auto & [id, entry] : m_contentSurfaces) {
             if (entry.window == nullptr) {
@@ -1799,6 +1860,101 @@ public:
             return renderer->hoveredItemId();
         }
         return Ui::INVALID_ID;
+    }
+
+    // The Ctrl+Tab list over the main window's middle: `rows` most recent first, fitted to
+    // the window, as many shown as fit, `selectedRow` highlighted. Brought up as a menu's
+    // popup is: corners captured off a fresh main frame and drawn in before its swap
+    // (composited), else its first frame presented before it shows. Replaces one up
+    void openTabSwitcher(std::vector<Ui::tab_t> rows, std::size_t selectedRow)
+    {
+        closeTabSwitcher();
+        if (rows.empty() || !m_main) {
+            return;
+        }
+        const fpx_t margin  = m_resManager.layout().tabSwitcher.margin; // kept clear of the window's edges
+        const fpx_t rowH    = m_resManager.layout().tabSwitcherItem.height;
+        const fpx_t windowW = toCss(m_windowWidth);
+        const fpx_t windowH = toCss(m_windowHeight);
+        m_main->window().makeCurrent();
+        const fpx_t       width   = m_main->renderer().fitTabSwitcherRows(windowW - (margin * 2), rows);
+        const std::size_t fitting = rowH > 0 ? static_cast<std::size_t>((windowH - (margin * 2)) / rowH) : 0;
+        const fpx_t       height  = static_cast<fpx_t>(std::clamp<std::size_t>(fitting, 1, rows.size())) * rowH;
+        const Ui::Res::Type::bound_t bound = { .x = toPhysEdge((windowW - width) / 2),
+                                               .y = toPhysEdge((windowH - height) / 2),
+                                               .w = toPhysRound(width),
+                                               .h = toPhysRound(height) };
+
+        if (!makePopupWindow(
+            bound,
+            m_resManager.layout().tabSwitcher.border.scaled(g_config.scale),
+            m_resManager.theme().tabSwitcher.bg,
+            false,
+            [this]() { recaptureCorners(*m_tabSwitcherWindow, m_tabSwitcherComposite); },
+            m_tabSwitcherWindow)) {
+            std::cerr << "[WindowManager] Failed to create the tab switcher window" << std::endl;
+            return;
+        }
+
+        renderMainWindow(true);
+        auto & window   = m_tabSwitcherWindow->window();
+        auto & renderer = m_tabSwitcherWindow->emplaceRenderer([&window] { window.makeCurrent(); },
+                                                               m_resManager,
+                                                               std::move(rows));
+        renderer.resize(bound.w, bound.h);
+        renderer.setAlpha(window.hasAlpha());
+        renderer.setSelectedRow(selectedRow);
+        recaptureCorners(*m_tabSwitcherWindow, m_tabSwitcherComposite);
+        drawPopupComposite();
+        swapMainWindow();
+
+        if (!g_config.isCompositing) {
+            if (m_tabSwitcherWindow->render()) {
+                window.swapBuffers();
+            }
+            window.show();
+        }
+        m_main->window().makeCurrent();
+    }
+
+    // The Ctrl+Tab list's highlight on `row`, scrolled to show it
+    void setTabSwitcherSelection(std::size_t row)
+    {
+        if (m_tabSwitcherWindow && m_tabSwitcherWindow->hasRenderer()) {
+            m_tabSwitcherWindow->renderer().setSelectedRow(row);
+            m_tabSwitcherWindow->window().requestRender();
+        }
+    }
+
+    // The row of the Ctrl+Tab list the pointer is over; none off it, or with no list
+    [[nodiscard]] std::optional<std::size_t> tabSwitcherHoveredRow()
+    {
+        if (!m_tabSwitcherWindow || !m_tabSwitcherWindow->hasRenderer()) {
+            return std::nullopt;
+        }
+        return m_tabSwitcherWindow->renderer().hoveredRow();
+    }
+
+    [[nodiscard]] bool hasTabSwitcher() const { return m_tabSwitcherWindow != nullptr; }
+
+    // The Ctrl+Tab list's window, nullptr with none
+    [[nodiscard]] const Ui::Window::Popup::PopupWindow * tabSwitcherWindow() const
+    {
+        return m_tabSwitcherWindow ? &m_tabSwitcherWindow->window() : nullptr;
+    }
+
+    // Takes the Ctrl+Tab list down; the main window's hover catches up with the pointer
+    void closeTabSwitcher()
+    {
+        if (!m_tabSwitcherWindow) {
+            return;
+        }
+        closePopupWindow(m_tabSwitcherWindow, m_tabSwitcherComposite);
+        if (m_main) {
+            m_main->window().makeCurrent();
+        }
+        requestMainRender();
+        rehover();
     }
 
     // Re-highlight an item on whichever of the popup/submenu actually holds it.
@@ -2344,6 +2500,9 @@ public:
         if (m_dialogWindow && !m_dialogComposite.pixels.empty()) {
             drawCompositeTexture(m_dialogComposite, m_dialogWindow->window().bound());
         }
+        if (m_tabSwitcherWindow && !m_tabSwitcherComposite.pixels.empty()) {
+            drawCompositeTexture(m_tabSwitcherComposite, m_tabSwitcherWindow->window().bound());
+        }
         if (m_tooltipWindow && !m_tooltipComposite.pixels.empty()) {
             drawCompositeTexture(m_tooltipComposite, m_tooltipWindow->window().bound());
         }
@@ -2430,8 +2589,10 @@ public:
                                 && pending.contains(m_submenuWindow->window().subscribeId());
         const bool renderDialog  = m_dialogWindow && pending.contains(m_dialogWindow->window().subscribeId());
         // A kept, hidden tooltip is not drawn, or composited it would be drawn in again
-        const bool renderTooltip = !isRecaptured && m_tooltipWindow && hasTooltip()
-                                && pending.contains(m_tooltipWindow->window().subscribeId());
+        const bool renderTooltip     = !isRecaptured && m_tooltipWindow && hasTooltip()
+                                    && pending.contains(m_tooltipWindow->window().subscribeId());
+        const bool renderTabSwitcher = !isRecaptured && m_tabSwitcherWindow
+                                    && pending.contains(m_tabSwitcherWindow->window().subscribeId());
 
         // 1. Render main window
         if (renderMain) {
@@ -2450,6 +2611,9 @@ public:
         }
         if (renderDialog && m_dialogWindow) {
             renderPopupWindow(*m_dialogWindow, m_dialogComposite);
+        }
+        if (renderTabSwitcher && m_tabSwitcherWindow) {
+            renderPopupWindow(*m_tabSwitcherWindow, m_tabSwitcherComposite);
         }
         if (renderTooltip && m_tooltipWindow) {
             renderPopupWindow(*m_tooltipWindow, m_tooltipComposite);
@@ -2571,8 +2735,9 @@ public:
     void recaptureSubmenuCorners() { recaptureCorners(*m_submenuWindow, m_submenuComposite); }
 
     // Recapture the parent-behind-the-corners pixels and push them into the
-    // popup/dialog renderer for software-rounded corners. Works on any popup-type
-    // connector (its renderer derives PopupRendererBase, which has setCornerPixels).
+    // popup/dialog renderer for software-rounded corners - or, for a popup whose
+    // background is see-through, the pixels behind its whole rect. Works on any
+    // popup-type connector (its renderer derives PopupRendererBase).
     template <typename C>
     void recaptureCorners(C & connector, CompositeTexture & texture)
     {
@@ -2580,15 +2745,22 @@ public:
             return;
         }
 
-        const auto & cb = connector.window().bound();
-        const auto & cr = connector.window().cornerRadii();
+        const auto &    cb         = connector.window().bound();
+        const auto &    cr         = connector.window().cornerRadii();
+        const Ui::Color background = connector.window().background();
 
-        std::array<std::vector<uint8_t>, 4> cornerPixels;
-        Ui::Res::Type::border_t             capturedRadii {};
-        captureCornerPixels(cb, cr, connector.window().background(), cornerPixels, capturedRadii);
-
-        connector.window().makeCurrent();
-        connector.renderer().setCornerPixels(std::move(cornerPixels), capturedRadii);
+        // A see-through background shows what stands under the whole popup, not only its corners
+        if (background.a() < 255) {
+            const std::vector<uint8_t> underlay = captureUnderlayPixels(cb, background);
+            connector.window().makeCurrent();
+            connector.renderer().setUnderlay(underlay, static_cast<int>(cb.w), static_cast<int>(cb.h));
+        } else {
+            std::array<std::vector<uint8_t>, 4> cornerPixels;
+            Ui::Res::Type::border_t             capturedRadii {};
+            captureCornerPixels(cb, cr, background, cornerPixels, capturedRadii);
+            connector.window().makeCurrent();
+            connector.renderer().setCornerPixels(std::move(cornerPixels), capturedRadii);
+        }
         connector.render();
 
         // Composited, it is read now and the main frame that recaptured it draws it
@@ -2801,184 +2973,119 @@ public:
             return false;
         }
 
-        const int parentW = static_cast<int>(m_windowWidth);
-        const int parentH = static_cast<int>(m_windowHeight);
-
         outRadii = clampRadii(cornerRadii, popupBound.w, popupBound.h);
 
-        bool anyCapture = false;
-        m_main->window().makeCurrent();
-
-        // Corner capture rects and buffers (indexed TL=0, TR=1, BR=2, BL=3), and each
-        // corner's own square, which its buffer covers
-        std::array<Ui::Res::Type::bound_t, 4> caps {};
-        std::array<Ui::Res::Type::bound_t, 4> corners {};
-
+        // Each corner's own square (TL=0, TR=1, BR=2, BL=3), what stands under it its buffer
+        const int popX       = static_cast<int>(popupBound.x);
+        const int popY       = static_cast<int>(popupBound.y);
+        const int popW       = static_cast<int>(popupBound.w);
+        const int popH       = static_cast<int>(popupBound.h);
+        bool      anyCapture = false;
         for (id_t i = 0; i < 4; ++i) {
             const auto radius = static_cast<int>(Ui::Gl::Rounded::borderRadius(outRadii, i));
             if (radius <= 0) {
                 outPixels.at(i).clear();
                 continue;
             }
+            const bool isRight  = i == 1 || i == 2;
+            const bool isBottom = i == 2 || i == 3;
+            outPixels.at(i) = captureUnderlayPixels({ .x = static_cast<fpx_t>(isRight ? popX + popW - radius : popX),
+                                                      .y = static_cast<fpx_t>(isBottom ? popY + popH - radius : popY),
+                                                      .w = static_cast<fpx_t>(radius),
+                                                      .h = static_cast<fpx_t>(radius) },
+                                                    bgColor);
+            anyCapture      = true;
+        }
+        return anyCapture;
+    }
 
-            const int popX = static_cast<int>(popupBound.x);
-            const int popY = static_cast<int>(popupBound.y);
-            const int popW = static_cast<int>(popupBound.w);
-            const int popH = static_cast<int>(popupBound.h);
+    // What stands under `area` (main-window physical px) - a corner's square, or the whole rect of
+    // a popup whose background lets it show through: RGBA rows from the top, the area's size,
+    // `bgColor` where it runs off the main window. Read from the main back buffer; a content
+    // surface that is a window of its own - not composited - is read for its overlap from its
+    // renderer, only the pixels it needs, never the frame. Leaves the main window's context current
+    [[nodiscard]] std::vector<uint8_t> captureUnderlayPixels(const Ui::Res::Type::bound_t & area,
+                                                             const Ui::Color &              bgColor)
+    {
+        const int areaX = static_cast<int>(area.x);
+        const int areaY = static_cast<int>(area.y);
+        const int areaW = static_cast<int>(area.w);
+        const int areaH = static_cast<int>(area.h);
+        if (!m_main || areaW <= 0 || areaH <= 0) {
+            return {};
+        }
+        m_main->window().makeCurrent();
 
-            // Corner origin in parent coords
-            int cx = 0;
-            int cy = 0;
-            switch (i) {
-            case 0:
-                cx = popX;
-                cy = popY;
-                break;
-            case 1:
-                cx = popX + popW - radius;
-                cy = popY;
-                break;
-            case 2:
-                cx = popX + popW - radius;
-                cy = popY + popH - radius;
-                break;
-            case 3:
-                cx = popX;
-                cy = popY + popH - radius;
-                break;
-            default: continue;
-            }
-
-            // Clamp capture rect to parent bounds
-            const int capX = std::max(0, cx);
-            const int capY = std::max(0, cy);
-            int       capW = std::min(radius, parentW - capX);
-            int       capH = std::min(radius, parentH - capY);
-            if (cx < 0) {
-                capW = std::min(capW, radius + cx);
-            }
-            if (cy < 0) {
-                capH = std::min(capH, radius + cy);
-            }
-            capW = std::max(0, capW);
-            capH = std::max(0, capH);
-
-            caps.at(i)    = { .x = static_cast<fpx_t>(capX),
-                              .y = static_cast<fpx_t>(capY),
-                              .w = static_cast<fpx_t>(capW),
-                              .h = static_cast<fpx_t>(capH) };
-            corners.at(i) = { .x = static_cast<fpx_t>(cx),
-                              .y = static_cast<fpx_t>(cy),
-                              .w = static_cast<fpx_t>(radius),
-                              .h = static_cast<fpx_t>(radius) };
-
-            // Init buffer with bg color
-            auto & buf = outPixels.at(i);
-            buf.resize(static_cast<size_t>(radius) * radius * 4);
-            for (int j = 0; j < radius * radius; ++j) {
-                const size_t pixel = static_cast<size_t>(j) * 4;
-                buf.at(pixel + 0)  = bgColor.r();
-                buf.at(pixel + 1)  = bgColor.g();
-                buf.at(pixel + 2)  = bgColor.b();
-                buf.at(pixel + 3)  = 255;
-            }
-
-            if (capW <= 0 || capH <= 0) {
-                anyCapture = true;
-                continue;
-            }
-
-            // Read from GL back buffer (bottom-left origin), flip to top-left
-            std::vector<uint8_t> regionPixels(static_cast<size_t>(capW * capH * 4));
-            glReadPixels(capX, parentH - capY - capH, capW, capH, GL_RGBA, GL_UNSIGNED_BYTE, regionPixels.data());
-
-            const int rowBytes = capW * 4;
-            int       row      = 0;
-            while (row < capH / 2) {
-                std::swap_ranges(regionPixels.begin() + (row * rowBytes),
-                                 regionPixels.begin() + ((row + 1) * rowBytes),
-                                 regionPixels.begin() + ((capH - 1 - row) * rowBytes));
-                ++row;
-            }
-
-            // Blit into corner buffer at offset
-            const int offX = capX - cx;
-            const int offY = capY - cy;
-            for (int py = 0; py < capH; ++py) {
-                for (int px = 0; px < capW; ++px) {
-                    const int dX = px + offX;
-                    const int dY = py + offY;
-                    if (dX < 0 || dX >= radius || dY < 0 || dY >= radius) {
-                        continue;
-                    }
-                    const size_t srcIdx = ((static_cast<size_t>(py) * capW) + px) * 4;
-                    const size_t dstIdx = ((static_cast<size_t>(dY) * radius) + dX) * 4;
-                    buf.at(dstIdx + 0)  = regionPixels.at(srcIdx + 0);
-                    buf.at(dstIdx + 1)  = regionPixels.at(srcIdx + 1);
-                    buf.at(dstIdx + 2)  = regionPixels.at(srcIdx + 2);
-                    buf.at(dstIdx + 3)  = 255;
+        std::vector<uint8_t> pixels(static_cast<size_t>(areaW) * areaH * 4);
+        for (size_t at = 0; at < pixels.size(); at += 4) {
+            pixels.at(at + 0) = bgColor.r();
+            pixels.at(at + 1) = bgColor.g();
+            pixels.at(at + 2) = bgColor.b();
+            pixels.at(at + 3) = 255;
+        }
+        // `source`'s rows, `sourceW` wide and bottom-up when `isBottomUp` as GL reads them, into
+        // the area's at main-window pixel (left, top)
+        const auto blit =
+        [&pixels,
+         areaX,
+         areaY,
+         areaW](const std::vector<uint8_t> & source, int left, int top, int sourceW, int sourceH, bool isBottomUp) {
+            for (int row = 0; row < sourceH; ++row) {
+                const int    sourceRow = isBottomUp ? sourceH - 1 - row : row;
+                const size_t from      = static_cast<size_t>(sourceRow) * sourceW * 4;
+                const size_t to        = ((static_cast<size_t>(top - areaY + row) * areaW) + (left - areaX)) * 4;
+                for (int column = 0; column < sourceW; ++column) {
+                    const size_t pixel        = static_cast<size_t>(column) * 4;
+                    pixels.at(to + pixel + 0) = source.at(from + pixel + 0);
+                    pixels.at(to + pixel + 1) = source.at(from + pixel + 1);
+                    pixels.at(to + pixel + 2) = source.at(from + pixel + 2);
                 }
             }
+        };
 
-            anyCapture = true;
+        // The part of the area inside the main window
+        const int left   = std::max(0, areaX);
+        const int top    = std::max(0, areaY);
+        const int right  = std::min(static_cast<int>(m_windowWidth), areaX + areaW);
+        const int bottom = std::min(static_cast<int>(m_windowHeight), areaY + areaH);
+        if (right <= left || bottom <= top) {
+            return pixels;
         }
+        std::vector<uint8_t> region(static_cast<size_t>(right - left) * (bottom - top) * 4);
+        glReadPixels(left,
+                     static_cast<int>(m_windowHeight) - bottom,
+                     right - left,
+                     bottom - top,
+                     GL_RGBA,
+                     GL_UNSIGNED_BYTE,
+                     region.data());
+        blit(region, left, top, right - left, bottom - top, true);
 
-        // A content surface under a corner (only the active, ready one is visible).
-        // Composited, the main frame drew it into the buffer read above
-        // (renderMainWindow); otherwise it is a window of its own, so each corner
-        // reads its overlap from the renderer - a few pixels, never the frame
+        // Composited, the main frame drew the content surface into the buffer read above
         const auto content = m_contentSurfaces.find(m_activeContent);
         if (g_config.isCompositing || content == m_contentSurfaces.end() || content->second.window == nullptr
             || content->second.pairing == nullptr || !content->second.isReady) {
-            m_main->window().makeCurrent();
-            return anyCapture;
+            return pixels;
         }
         const Ui::Res::Type::bound_t & contentBound = content->second.window->bound();
-        for (id_t i = 0; i < 4; ++i) {
-            const Ui::Res::Type::bound_t & cap    = caps.at(i);
-            const Ui::Res::Type::bound_t & corner = corners.at(i);
-            const int                      radius = static_cast<int>(corner.w);
-            // The corner's overlap with the surface, in main-window pixels
-            const int left   = static_cast<int>(std::max(cap.x, contentBound.x));
-            const int top    = static_cast<int>(std::max(cap.y, contentBound.y));
-            const int right  = static_cast<int>(std::min(cap.x + cap.w, contentBound.x + contentBound.w));
-            const int bottom = static_cast<int>(std::min(cap.y + cap.h, contentBound.y + contentBound.h));
-            if (radius <= 0 || right <= left || bottom <= top) {
-                continue;
-            }
-            const int                  overlapW = right - left;
-            const int                  overlapH = bottom - top;
+        const int                      overlapLeft  = std::max(left, static_cast<int>(contentBound.x));
+        const int                      overlapTop   = std::max(top, static_cast<int>(contentBound.y));
+        const int overlapRight  = std::min(right, static_cast<int>(contentBound.x + contentBound.w));
+        const int overlapBottom = std::min(bottom, static_cast<int>(contentBound.y + contentBound.h));
+        if (overlapRight > overlapLeft && overlapBottom > overlapTop) {
+            const int                  overlapW = overlapRight - overlapLeft;
+            const int                  overlapH = overlapBottom - overlapTop;
             const std::vector<uint8_t> overlap  = content->second.pairing->readPixels(
-            { .x = static_cast<fpx_t>(left) - contentBound.x,
-              .y = static_cast<fpx_t>(top) - contentBound.y,
+            { .x = static_cast<fpx_t>(overlapLeft) - contentBound.x,
+              .y = static_cast<fpx_t>(overlapTop) - contentBound.y,
               .w = static_cast<fpx_t>(overlapW),
               .h = static_cast<fpx_t>(overlapH) });
-            if (overlap.size() != static_cast<size_t>(overlapW) * overlapH * 4) {
-                continue;
-            }
-
-            auto &    buf     = outPixels.at(i);
-            const int cornerX = static_cast<int>(corner.x);
-            const int cornerY = static_cast<int>(corner.y);
-            for (int py = 0; py < overlapH; ++py) {
-                for (int px = 0; px < overlapW; ++px) {
-                    const int dX = left - cornerX + px;
-                    const int dY = top - cornerY + py;
-                    if (dX < 0 || dX >= radius || dY < 0 || dY >= radius) {
-                        continue;
-                    }
-                    const size_t srcIdx = ((static_cast<size_t>(py) * overlapW) + px) * 4;
-                    const size_t dstIdx = ((static_cast<size_t>(dY) * radius) + dX) * 4;
-                    buf.at(dstIdx + 0)  = overlap.at(srcIdx + 0);
-                    buf.at(dstIdx + 1)  = overlap.at(srcIdx + 1);
-                    buf.at(dstIdx + 2)  = overlap.at(srcIdx + 2);
-                    buf.at(dstIdx + 3)  = 255;
-                }
+            if (overlap.size() == static_cast<size_t>(overlapW) * overlapH * 4) {
+                blit(overlap, overlapLeft, overlapTop, overlapW, overlapH, false);
             }
         }
-
         m_main->window().makeCurrent();
-        return anyCapture;
+        return pixels;
     }
 
     /**
@@ -3138,6 +3245,9 @@ public:
         if (m_dragElement != Ui::INVALID_ID && dragMove(toCss(x), toCss(y))) {
             return true;
         }
+        if (m_tabDragId != Ui::INVALID_ID && dragTab(toCss(x))) {
+            return true;
+        }
 
         // Hover update on all docks (cheap, none capture by default).
         bool dockHoverChanged = false;
@@ -3252,6 +3362,54 @@ public:
         return true;
     }
 
+    // A held tab on the move: nothing while the pointer is short of the click threshold -
+    // still a click, hover going on as usual - then a drag, the pointer taken as a dock
+    // drag takes it, the tab drawn under it, and a jump reported once the tab is drawn
+    // animation.json's `swap-at` of the way over a neighbour
+    bool dragTab(fpx_t cssX)
+    {
+        if (!m_isTabMoving) {
+            if (m_tabDragTrack.travelFrom(cssX) < m_resManager.layout().dockDefaults.clickThreshold) {
+                return false;
+            }
+            m_isTabMoving = true;
+            // No longer a click: the tab shows pressed no more
+            if (m_main && m_main->onMouseLeave()) {
+                requestMainRender();
+            }
+        }
+        // Where the drag draws the tab, before the renderer holds it to the strip
+        const fpx_t left = m_tabDragTrack.valueAt(cssX);
+        if (hasUiRenderer()) {
+            m_main->renderer().holdTab(m_tabDragId, left);
+            requestMainRender();
+        }
+        const std::optional<id_t> beforeId = Ui::Window::tabMoveOf(
+        m_resManager.tabBar(),
+        [this](id_t id) { return elementBound(id); },
+        m_tabDragId,
+        left,
+        m_resManager.tabSwapAt());
+        if (beforeId.has_value() && m_onTabMoved) {
+            m_onTabMoved(m_tabDragId, beforeId.value());
+        }
+        return true;
+    }
+
+    // A held tab let go, its release seen or not: dragged, it glides from where it was
+    // drawn to its place. Whether it had been dragged - short of that it was a click
+    bool dropTab()
+    {
+        const bool wasMoving = m_isTabMoving;
+        m_tabDragId          = Ui::INVALID_ID;
+        m_isTabMoving        = false;
+        if (wasMoving && hasUiRenderer()) {
+            m_main->renderer().releaseTab();
+            requestMainRender();
+        }
+        return wasMoving;
+    }
+
     void reportRowValue(fpx_t ratio)
     {
         if (m_onRowValue) {
@@ -3347,6 +3505,16 @@ public:
                 m_renderQueue.request(MAIN_WINDOW_ID);
                 return { .changed = true };
             }
+            // A tab held - its close glyph is no tab - and the press goes on as one, so a
+            // release short of the click threshold is still its click (dragTab)
+            const Ui::Render::UiElement * pressed = m_main->renderer().hitTest(cssX,
+                                                                               cssY,
+                                                                               Ui::Render::EventKind::LeftClick);
+            if (pressed != nullptr && pressed->type == Ui::Render::UiElementType::Tab) {
+                m_tabDragId = pressed->id;
+                m_tabDragTrack.begin(cssX, pressed->bound.x, 1.0F);
+                m_isTabMoving = false;
+            }
         }
 
         if (auto hit = hitTestActiveContent(x, y); hit.pairing != nullptr) {
@@ -3361,6 +3529,13 @@ public:
         // only have started on Left, so only Left ends it
         if (m_dragElement != Ui::INVALID_ID && button == Ui::Window::MouseButton::Left) {
             endDrag(toCss(x));
+            return {};
+        }
+
+        // A held tab let go: a drag ends there, no click, and the hover catches up; short of
+        // the threshold it was a click, and goes on as one
+        if (button == Ui::Window::MouseButton::Left && dropTab()) {
+            rehover();
             return {};
         }
 
@@ -3410,6 +3585,8 @@ public:
             reflowDocksAndViewport();
             changed = true;
         }
+        // A tab drag too, as its release may never come (a dialog opening, a capture lost)
+        changed |= dropTab();
 
         return changed;
     }
@@ -3493,6 +3670,7 @@ public:
         m_isRunning = false;
 
         destroyTooltip();
+        closePopupWindow(m_tabSwitcherWindow, m_tabSwitcherComposite);
         destroyPopup(true);
         m_dialogWindow.reset();
 
@@ -3503,6 +3681,7 @@ public:
         m_submenuComposite.destroy();
         m_dialogComposite.destroy();
         m_tooltipComposite.destroy();
+        m_tabSwitcherComposite.destroy();
         // Content surfaces are owned by the host; we only drop our
         // composite textures + non-owning registry entries (windows already gone
         // or about to be torn down by the host).

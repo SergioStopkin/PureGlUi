@@ -19,6 +19,8 @@
 
 #include "common/bit.h"
 #include "common/noncopyable.h"
+#include "common/time.h"
+#include "ui/animation/animator.h"
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/fontrec.h"
@@ -29,9 +31,11 @@
 #include "ui/gl/svgrenderer.h"
 #include "ui/interface/irenderer.h"
 #include "ui/render/elementevent.h"
+#include "ui/res/key/element.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/border.h"
 #include "ui/res/type/changed.h"
+#include "ui/res/type/colorpair.h"
 #include "ui/type.h"
 
 #include <algorithm>
@@ -84,6 +88,13 @@ public:
         m_rounded.setCornerPixels(std::move(pixels), radii);
     }
 
+    // What stands under the whole window, for one whose background lets it show through, in
+    // place of the corner pixels; RGBA, top-left origin, `width` x `height` physical pixels
+    void setUnderlay(const std::vector<uint8_t> & pixels, int width, int height)
+    {
+        m_rounded.setUnderlay(pixels, width, height);
+    }
+
     [[nodiscard]] bool hasCornerPixels() const { return m_rounded.hasCornerPixels(); }
 
     // -- Ui::IRenderer boilerplate --
@@ -96,7 +107,13 @@ public:
         }
     }
 
-    void apply(Ui::Res::Type::changes_t /*changed*/) override { }
+    // A theme switch is no change of state: every colour lands on the new theme's at once
+    void apply(Ui::Res::Type::changes_t changed) override
+    {
+        if (changed.has(Ui::Res::Type::Changed::Theme)) {
+            m_animator = Ui::Animation::Animator<id_t> {};
+        }
+    }
 
     void cleanup() override
     {
@@ -108,12 +125,16 @@ public:
 
     Ui::Render::element_event_t onScroll(int /*x*/, int /*y*/, fpx_t /*deltaY*/) override { return {}; }
 
+    // Whether the last frame drew a colour midway along its fade, so another frame is due
+    [[nodiscard]] bool isGliding() const { return m_animator.isRunning(m_frameTime); }
+
 protected:
     // Begin a render frame: clear, viewport, blend, corner underlay. An opaque
     // window clears to its own background.
     // Returns true if premultiplied alpha is active.
     bool beginRender(const Ui::Color & background)
     {
+        m_frameTime = Common::Time::now();
         if (m_width <= 0 || m_height <= 0) {
             return false;
         }
@@ -195,6 +216,16 @@ protected:
 
     static void endSvgDraw() { Ui::Gl::SvgRenderer::end(); }
 
+    // The colours `key` is drawn in this frame: `target`, the theme's for its state, faded along
+    // `block`'s transition in animation.json. Popup colours blend premultiplied, so a target of
+    // none is the caller's ground (inheritBg), never a fade through clear
+    [[nodiscard]] Ui::Res::Type::color_pair_t colorsOf(id_t                                key,
+                                                       const Ui::Res::Type::color_pair_t & target,
+                                                       Ui::Res::Key::ElementKey            block)
+    {
+        return m_animator.colorsOf(key, target, m_resManager.transitionsFor(block), m_frameTime);
+    }
+
     // -- Shared members --
 
     const Ui::Res::ResManager & m_resManager;
@@ -204,6 +235,10 @@ protected:
     Ui::Gl::FontRenderer        m_fontRenderer;
     Ui::Gl::SvgRenderer         m_svgRenderer;
     Ui::Gl::Rounded             m_rounded;
+
+    // A popup lives as long as what it shows, so nothing in it is swept
+    Ui::Animation::Animator<id_t> m_animator;
+    Common::Time::point_t         m_frameTime; // when the last frame began (beginRender)
 };
 
 } // namespace Ui::Render::Popup
