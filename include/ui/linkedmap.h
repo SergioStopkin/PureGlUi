@@ -37,8 +37,8 @@ namespace Ui {
 // A place is named by a neighbour's key, never an index: an index is O(n) here, and
 // no structure keeps both O(1) - list indexing is Omega(log n / log log n) (Fredman-Saks)
 //
-// A value is reached through visit, never a pointer: the reference lives only for the
-// call, so it cannot outlast a remove. A key comes back as a copy, none when there is none
+// A value is reached through visit or forEach, never a pointer: the reference lives only for
+// the call, so it cannot outlast a remove. A key comes back as a copy, none when there is none
 //
 // The caller supplies the key, and an active element lives on its owner, since only
 // some collections have one. Key is a parameter because a numeric id_t is reassigned
@@ -111,6 +111,18 @@ public:
     // In order, as a view: a walk copies nothing
     [[nodiscard]] auto keys() const { return m_entries | std::views::keys; }
 
+    // Calls fn with each key and its value, in order, one pass with no lookup. fn must not
+    // add, remove or move a key: the walk stands on the node it is at. Called once per
+    // key, so never forwarded
+    template <typename Fn>
+        requires std::invocable<const Fn &, const Key &, const T &>
+    void forEach(const Fn & fn) const
+    {
+        for (const auto & [key, value] : m_entries) {
+            std::invoke(fn, key, value);
+        }
+    }
+
     // The key right after key; none for the last or an absent one
     [[nodiscard]] std::optional<Key> keyAfter(const Key & key) const
     {
@@ -171,9 +183,39 @@ public:
         return true;
     }
 
+    // Calls fn with each key and its value to change in place, in order; as the read side, fn
+    // must not add, remove or move a key
+    template <typename Fn>
+        requires std::invocable<const Fn &, const Key &, T &>
+    void forEach(const Fn & fn)
+    {
+        for (auto & [key, value] : m_entries) {
+            std::invoke(fn, key, value);
+        }
+    }
+
     // At the end; nothing for a key already held. Moved in, never by value: MSVC passes no
     // over-aligned value (C2719)
     void add(const Key & key, T && value) { nodeOf(key, key, std::move(value)); }
+
+    // At the end, built in its node from args, so a value that can be neither copied nor
+    // moved is held directly; nothing for a key already held, args left unused
+    template <typename... Args>
+        requires std::constructible_from<T, Args...>
+    void emplace(const Key & key, Args &&... args)
+    {
+        nodeOf(key,
+               std::piecewise_construct,
+               std::forward_as_tuple(key),
+               std::forward_as_tuple(std::forward<Args>(args)...));
+    }
+
+    // Every key and value gone, whatever the value can or cannot do
+    void clear()
+    {
+        m_nodes.clear();
+        m_entries.clear();
+    }
 
     void remove(const Key & key)
     {

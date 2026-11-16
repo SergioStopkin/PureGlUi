@@ -277,6 +277,14 @@ public:
         return m_menuStore.findMenuItem(elementId);
     }
 
+    // The menu node `elementId` names handed to fn where it is; whether there was one
+    // (MenuStore::visitMenuItem)
+    template <typename Fn>
+    bool visitMenuItem(id_t elementId, Fn && fn) const
+    {
+        return m_menuStore.visitMenuItem(elementId, std::forward<Fn>(fn));
+    }
+
     [[nodiscard]] Ui::Res::Type::menu_t findMenuItemByKey(const Ui::key_t & key) const
     {
         return m_menuStore.findMenuItemByKey(key);
@@ -343,9 +351,9 @@ public:
 
     // Host-owned theme values, read from each theme file's "host" block as it is
     // parsed. See ThemeStore::registerThemeParam - call before the first load.
-    void registerThemeParam(std::string key, Ui::action_fn_t apply)
+    void registerThemeParam(const std::string & key, Ui::action_fn_t apply)
     {
-        m_themeStore.registerThemeParam(std::move(key), std::move(apply));
+        m_themeStore.registerThemeParam(key, std::move(apply));
     }
 
     // Register a host-provided value getter for a stateful (radio) action's

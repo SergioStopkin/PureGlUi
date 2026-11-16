@@ -22,6 +22,7 @@
 #include "nlohmann/json.hpp"
 #include "ui/color.h"
 #include "ui/convert.h"
+#include "ui/linkedmap.h"
 #include "ui/res/key/cssprop.h"
 #include "ui/res/key/element.h"
 #include "ui/res/key/theme.h"
@@ -32,6 +33,7 @@
 #include "ui/res/type/colorpair.h"
 #include "ui/res/type/font.h"
 #include "ui/res/type/fontweight.h"
+#include "ui/res/type/hostparam.h"
 #include "ui/res/type/theme.h"
 #include "ui/type.h"
 
@@ -39,6 +41,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -58,11 +61,9 @@ class ThemeStore final {
     // Theme key -> {dark variant, light variant}; each variant = {cl-main, bg-main}.
     std::unordered_map<std::string, std::pair<Ui::Res::Type::color_pair_t, Ui::Res::Type::color_pair_t>>
     m_themePreviewColors;
-    // Keys of the theme file's "host" block: {key, what to do with its value}
-    std::vector<std::pair<std::string, Ui::action_fn_t>> m_hostParams;
-    // What was last handed to each of them. Opaque strings the framework cannot
-    // read, but comparing them is what lets a host-only edit report Changed.
-    std::unordered_map<std::string, std::string> m_hostValues;
+    // Keys of the theme file's "host" block, in the order registered: what to do with
+    // each value, and the one last handed over
+    Ui::LinkedMap<std::string, Ui::Res::Type::host_param_t> m_hostParams;
 
 public:
     // Let a host pull its own values out of every theme file. The framework hands
@@ -71,10 +72,11 @@ public:
     // section. Keys live in the theme's "host" block, never in :root, so the two
     // owners cannot collide.
     //
-    // Register before the first theme load, the way domain actions are.
-    void registerThemeParam(std::string key, Ui::action_fn_t apply)
+    // Register before the first theme load, the way domain actions are. A key
+    // registered again keeps its first.
+    void registerThemeParam(const std::string & key, Ui::action_fn_t apply)
     {
-        m_hostParams.emplace_back(std::move(key), std::move(apply));
+        m_hostParams.add(key, Ui::Res::Type::host_param_t { .apply = std::move(apply), .value = std::nullopt });
     }
 
     [[nodiscard]] const Ui::Res::Type::theme_t & theme() const { return m_theme; }
@@ -297,22 +299,19 @@ public:
         bool isHostChanged = false;
         if (!m_hostParams.empty()) {
             const auto & hostBlock = Common::Json::object(j, elementKeyName(ElementKey::Host));
-            for (const auto & [key, apply] : m_hostParams) {
+            m_hostParams.forEach([&hostBlock, &isHostChanged, &resolveVarValue](const std::string &           key,
+                                                                                Ui::Res::Type::host_param_t & param) {
                 const std::string raw = Common::Json::string(hostBlock, key, "");
                 if (raw.empty()) {
-                    continue;
+                    return;
                 }
                 const std::string value = resolveVarValue(raw);
-                const auto        it    = m_hostValues.find(key);
-                if (it == m_hostValues.end()) {
-                    m_hostValues.emplace(key, value);
-                    isHostChanged = true;
-                } else if (it->second != value) {
-                    it->second    = value;
+                if (param.value != value) {
+                    param.value   = value;
                     isHostChanged = true;
                 }
-                apply(value);
-            }
+                param.apply(value);
+            });
         }
 
         // Resolve var(--X) references in a string value

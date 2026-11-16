@@ -61,7 +61,11 @@ Read accessors (all return `const &` unless noted):
 Menu queries and mutation:
 
 - `actionKeyFor(id_t elementId)` -> `std::string` - actionKey for a clicked id.
-- `findMenuItem(id_t elementId)` -> `Type::menu_t` - resolve a node by numeric id.
+- `findMenuItem(id_t elementId)` -> `Type::menu_t` - resolve a node by numeric id,
+  a copy of it and its subtree.
+- `visitMenuItem(id_t elementId, fn)` -> `bool` - the same node handed to `fn(const
+  Type::menu_t &)` where it is, no copy; whether there was one. What the chrome reads
+  per element per frame or per pointer move goes through this.
 - `findMenuItemByKey(const key_t& key)` -> `Type::menu_t` - resolve by
   hierarchical key ("View:Theme:default"); survives a reload that renumbers ids.
 - `isActiveItem(const Type::menu_t&)` -> `bool` - radio highlight (item.label ==

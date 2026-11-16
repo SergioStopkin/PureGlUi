@@ -43,6 +43,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <concepts>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -180,6 +181,21 @@ public:
     // Find a menu item by its element ID. Empty menu_t when the id is unknown -
     // the callers read fields off the result without checking.
     [[nodiscard]] Ui::Res::Type::menu_t findMenuItem(id_t elementId) const { return lookup(m_menuById, elementId); }
+
+    // Calls fn with the menu node `elementId` names, at any depth, read where it is: no
+    // copy of it and its subtree, for the chrome reading a field per element per frame.
+    // Whether there was one
+    template <typename Fn>
+        requires std::invocable<Fn, const Ui::Res::Type::menu_t &>
+    bool visitMenuItem(id_t elementId, Fn && fn) const
+    {
+        const auto it = m_menuById.find(elementId);
+        if (it == m_menuById.end()) {
+            return false;
+        }
+        std::invoke(std::forward<Fn>(fn), it->second.get());
+        return true;
+    }
 
     // Resolve a node by its hierarchical key ("View", "View:Theme",
     // "View:Theme:default"). The cross-reload anchor: keys are label-derived so

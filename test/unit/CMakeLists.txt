@@ -8,6 +8,7 @@ add_executable(
     TestRevealedOffsetOf.cpp
     TestTabSwitch.cpp
     TestTabMoveOf.cpp
+    TestOutermostFirstOf.cpp
     TestEasedOf.cpp
     TestTransitionsOf.cpp
     TestAnimator.cpp

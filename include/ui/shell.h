@@ -1474,19 +1474,26 @@ private:
         // The newest hover is the one owed: one held off before it is dropped
         m_heldMenuId = Ui::INVALID_ID;
 
+        // One read of the menu where it is: an unknown id reads as an enabled menu with no
+        // action, as an empty one does
+        bool isActionMenu = false;
+        bool isEnabled    = true;
+        m_resManager.visitMenuItem(menuId, [&isActionMenu, &isEnabled](const Ui::Res::Type::menu_t & menu) {
+            isActionMenu = !menu.actionKey.empty();
+            isEnabled    = menu.enabled;
+        });
+
         // Skip action menus (icon buttons with no popup)
-        for (const auto & menu : m_resManager.menus()) {
-            if (menu.id == menuId && !menu.actionKey.empty()) {
-                traceMenuHover("skipped, an action button", menuId);
-                return;
-            }
+        if (isActionMenu) {
+            traceMenuHover("skipped, an action button", menuId);
+            return;
         }
 
         // A disabled top menu has no usable dropdown: skip it. Leave the menu
         // state untouched - moving across a disabled menu keeps the currently-open
         // popup open (so moving back to it finds it still open) and never opens a
         // dropdown of its own.
-        if (!m_resManager.findMenuItem(menuId).enabled) {
+        if (!isEnabled) {
             traceMenuHover("skipped, disabled", menuId);
             return;
         }
@@ -1593,25 +1600,20 @@ private:
     // A top-bar dropdown, hung under its menu button
     void createMenuPopup(id_t menuId)
     {
-        const auto & menus = m_resManager.menus();
-        const auto   it    = std::ranges::find(menus, menuId, &Ui::Res::Type::menu_t::id);
-
-        if (it == menus.end()) {
-            std::cerr << "[Shell] Menu not found: " << menuId << std::endl;
-            return;
-        }
-
-        const auto & menu = *it;
-
         // Under its button where the layout put it - empty before the first layout, the
         // window's top-left then
         const Ui::Res::Type::bound_t & button = m_windowManager.elementBound(menuId);
 
-        if constexpr (SHELL_DEBUG) {
-            std::cout << "[Shell] Popup position: menuId=" << menuId << " X=" << button.x
-                      << " Y=" << button.y + button.h << std::endl;
+        const bool isMenu = m_resManager.visitMenuItem(menuId, [this, &button](const Ui::Res::Type::menu_t & menu) {
+            if constexpr (SHELL_DEBUG) {
+                std::cout << "[Shell] Popup position: menuId=" << menu.id << " X=" << button.x
+                          << " Y=" << button.y + button.h << std::endl;
+            }
+            showMenuPopup(menu, button.x, button.y + button.h);
+        });
+        if (!isMenu) {
+            std::cerr << "[Shell] Menu not found: " << menuId << std::endl;
         }
-        showMenuPopup(menu, button.x, button.y + button.h);
     }
 
     // Everything a popup menu needs once its anchor is known, for a top-bar dropdown

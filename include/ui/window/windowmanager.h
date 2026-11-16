@@ -34,6 +34,7 @@
 #include "ui/interface/ieventapp.h"
 #include "ui/interface/irenderer.h"
 #include "ui/interface/iwindow.h"
+#include "ui/linkedmap.h"
 #include "ui/pubsub/subscribe.h"
 #include "ui/render/dockcolumn.h"
 #include "ui/render/dragtrack.h"
@@ -75,6 +76,7 @@
 #include "ui/window/mousebutton.h"
 #include "ui/window/nativewindow.h"
 #include "ui/window/nativewindowhandle.h"
+#include "ui/window/outermostfirstof.h"
 #include "ui/window/pointershape.h"
 #include "ui/window/popup/dialogwindow.h"
 #include "ui/window/popup/popupwindow.h"
@@ -159,8 +161,9 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     // so the map key doubles as the Subscribe source id for state-change
     // events. Built in initialize() from m_resManager.layout().docks and
     // rebuilt in apply() on Ui::Res::Type::Changed::Layout (resource reload picks up new
-    // or removed dock files).
-    std::unordered_map<id_t, Ui::Render::DockColumn> m_docks;
+    // or removed dock files) - outermost first (outermostFirstOf), so every walk runs
+    // in one order and layout packs them as it walks
+    Ui::LinkedMap<id_t, Ui::Render::DockColumn> m_docks;
 
     // The element holding the pointer between DragStart and DragEnd, chosen by
     // its declared accepts mask rather than by type. Ui::INVALID_ID = no drag.
@@ -498,19 +501,15 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
     [[nodiscard]] bool hasTooltip() const { return !m_tooltip.text.empty(); }
 
     // A toolbar or menu-bar button's tooltip text, empty for one without. A menu-bar
-    // button is a top-level menu, read where it is rather than copied out of the
-    // index - this runs on every move over one
+    // button is a top-level menu, read in the index where it is rather than copied out
+    // of it - this runs on every move over one
     [[nodiscard]] std::string tooltipTextOf(id_t buttonId) const
     {
         std::string key;
         if (const Ui::Res::Type::button_t * button = m_resManager.findButton(buttonId)) {
             key = button->tooltip;
         }
-        for (const Ui::Res::Type::menu_t & menu : m_resManager.menus()) {
-            if (menu.id == buttonId) {
-                key = menu.tooltip;
-            }
-        }
+        m_resManager.visitMenuItem(buttonId, [&key](const Ui::Res::Type::menu_t & menu) { key = menu.tooltip; });
         return key.empty() ? std::string {} : m_resManager.localeManager().get(key);
     }
 
@@ -631,6 +630,31 @@ class WindowManager final : public Ui::IEventApp, private Common::NonCopyable {
         requestMainRender();
     }
 
+    // One dock per configured one, outermost first, each its state from the session (the
+    // DockColumn constructor); its id the Dock kind over its place in the config
+    void makeDocks()
+    {
+        m_docks.clear();
+        const auto & dockConfigs = m_resManager.layout().docks;
+        for (const std::size_t index : outermostFirstOf(dockConfigs)) {
+            const id_t id = Ui::idOf(Ui::IdKind::Dock, index);
+            m_docks.emplace(id, id, dockConfigs.at(index), m_resManager);
+        }
+    }
+
+    // The first dock, outermost first, `isWanted` holds for; Ui::INVALID_ID for none
+    template <typename Pred>
+    [[nodiscard]] id_t dockIdWhere(const Pred & isWanted) const
+    {
+        id_t found = Ui::INVALID_ID;
+        m_docks.forEach([&found, &isWanted](id_t id, const Ui::Render::DockColumn & dock) {
+            if (found == Ui::INVALID_ID && isWanted(dock)) {
+                found = id;
+            }
+        });
+        return found;
+    }
+
 public:
     explicit WindowManager(const Ui::Res::ResManager & resManager)
         : m_resManager(resManager)
@@ -731,15 +755,13 @@ public:
                 std::cerr << "[WindowManager] Dock row id " << row.id << " carries no host kind" << std::endl;
             }
         }
-        for (auto & [id, dock] : m_docks) {
-            if (dock.name() == dockName) {
-                dock.setRows(std::move(rows));
-                // Rows are drawn live but hit-tested from the element list, which
-                // only setContent() rebuilds - a repaint alone would leave every
-                // row clickable at the position it held before this call
-                requestContentRefresh();
-                return;
-            }
+        const id_t dockId = dockIdWhere(
+        [dockName](const Ui::Render::DockColumn & dock) { return dock.name() == dockName; });
+        if (m_docks.visit(dockId, [&rows](Ui::Render::DockColumn & dock) { dock.setRows(std::move(rows)); })) {
+            // Rows are drawn live but hit-tested from the element list, which
+            // only setContent() rebuilds - a repaint alone would leave every
+            // row clickable at the position it held before this call
+            requestContentRefresh();
         }
     }
 
@@ -747,12 +769,13 @@ public:
     // dock is asked, since an element carries the row and not the dock it came from
     [[nodiscard]] std::string rowMenuKey(id_t elementId) const
     {
-        for (const auto & [id, dock] : m_docks) {
-            if (std::string key = dock.menuKeyOf(elementId); !key.empty()) {
-                return key;
+        std::string key;
+        m_docks.forEach([&key, elementId](id_t /*id*/, const Ui::Render::DockColumn & dock) {
+            if (key.empty()) {
+                key = dock.menuKeyOf(elementId);
             }
-        }
-        return {};
+        });
+        return key;
     }
 
     // Back to the top. setDockRows cannot decide this itself: it cannot tell "same
@@ -760,12 +783,10 @@ public:
     // host knows which it just projected
     void resetDockScroll(std::string_view dockName)
     {
-        for (auto & [id, dock] : m_docks) {
-            if (dock.name() == dockName) {
-                dock.resetScroll();
-                requestContentRefresh(); // same stale hit rects as setDockRows
-                return;
-            }
+        const id_t dockId = dockIdWhere(
+        [dockName](const Ui::Render::DockColumn & dock) { return dock.name() == dockName; });
+        if (m_docks.visit(dockId, [](Ui::Render::DockColumn & dock) { dock.resetScroll(); })) {
+            requestContentRefresh(); // same stale hit rects as setDockRows
         }
     }
 
@@ -1271,21 +1292,14 @@ public:
         // (IdKind::Dock + index in the parsed array) so any Subscribe wiring that
         // happens later can address a dock by id. Initial state is pulled
         // from the session via ResManager::dockState(name) inside the ctor.
-        m_docks.clear();
-        const auto & dockConfigs = m_resManager.layout().docks;
-        for (size_t i = 0; i < dockConfigs.size(); ++i) {
-            const id_t id = Ui::idOf(Ui::IdKind::Dock, i);
-            m_docks.try_emplace(id, id, dockConfigs.at(i), m_resManager);
-        }
+        makeDocks();
 
         // Session-restored widths might overflow the current window (smaller
         // screen than last run, or hand-edited session.json). Clamp each
         // committed width against viewport availability now, before the
         // first layout/render pass, using the same maxDockContentWidth path
         // that drag-time and double-click-restore reuse.
-        for (auto & [id, dock] : m_docks) {
-            clampDockStateToViewport(dock);
-        }
+        m_docks.forEach([this](id_t /*id*/, Ui::Render::DockColumn & dock) { clampDockStateToViewport(dock); });
 
         // Preload the grip glyph so Ui::Render::DockColumn::render's first-frame size
         // query against SvgRenderer's cache hits rather than falling back to
@@ -1388,14 +1402,14 @@ public:
     // resets to toolbar widths then re-applies).
     void applyDockMargins()
     {
-        for (const auto & [id, dock] : m_docks) {
+        m_docks.forEach([this](id_t /*id*/, const Ui::Render::DockColumn & dock) {
             const fpx_t w = toPhys(dock.currentWidth());
             if (dock.anchor() == Ui::Res::Dock::DockAnchor::Left) {
                 m_uiLeft += w;
             } else {
                 m_uiRight += w;
             }
-        }
+        });
     }
 
     // Recompute dock-driven margins from scratch (toolbar baselines + current
@@ -1459,12 +1473,11 @@ public:
         const auto & layout    = m_resManager.layout();
         const fpx_t  windowCss = toCss(m_windowWidth);
         fpx_t        othersSum = 0.0F;
-        for (const auto & [id, other] : m_docks) {
-            if (&other == &dock) {
-                continue;
+        m_docks.forEach([&dock, &othersSum](id_t /*id*/, const Ui::Render::DockColumn & other) {
+            if (&other != &dock) {
+                othersSum += other.currentWidth();
             }
-            othersSum += other.currentWidth();
-        }
+        });
         const fpx_t available = windowCss - layout.leftToolbar.width - layout.rightToolbar.width - othersSum;
         return std::max(0.0F, available - layout.dockDefaults.gripWidth);
     }
@@ -1496,51 +1509,30 @@ public:
     // edge stays put, so the gesture-followed edge is the grip itself rather
     // than some far edge.
     //
-    // Walk order DESC so the outermost dock is positioned first against the
-    // toolbar, then each inner dock packs against the previous. CSS units
-    // throughout - Ui::Render::UiRenderer's draw ops are CSS-native.
+    // The docks are held outermost first (outermostFirstOf), so one walk positions
+    // each edge's outermost first against its toolbar, then each inner dock packs
+    // against the previous. CSS units throughout - Ui::Render::UiRenderer's draw
+    // ops are CSS-native.
     void layoutDocks()
     {
-        if (m_docks.empty()) {
-            return;
-        }
-        const auto & layout          = m_resManager.layout();
-        const fpx_t  bodyTop         = toCss(m_uiTop);
-        const fpx_t  bodyH           = std::max(1.0F, toCss(m_windowHeight - m_uiTop - m_uiBottom));
-        const fpx_t  leftToolbarCss  = layout.leftToolbar.width;
-        const fpx_t  rightToolbarCss = layout.rightToolbar.width;
-        const fpx_t  windowWidthCss  = toCss(m_windowWidth);
+        const auto & layout  = m_resManager.layout();
+        const fpx_t  bodyTop = toCss(m_uiTop);
+        const fpx_t  bodyH   = std::max(1.0F, toCss(m_windowHeight - m_uiTop - m_uiBottom));
 
-        std::vector<Ui::Render::DockColumn *> left;
-        std::vector<Ui::Render::DockColumn *> right;
-        for (auto & [id, dock] : m_docks) {
+        // A left dock packs rightward from the left toolbar's inner edge, its
+        // innerEdgeX its viewport-facing (right) edge; a right dock leftward from the
+        // right toolbar's, its innerEdgeX its left edge
+        fpx_t leftEdge  = layout.leftToolbar.width;
+        fpx_t rightEdge = toCss(m_windowWidth) - layout.rightToolbar.width;
+        m_docks.forEach([bodyTop, bodyH, &leftEdge, &rightEdge](id_t /*id*/, Ui::Render::DockColumn & dock) {
             if (dock.anchor() == Ui::Res::Dock::DockAnchor::Left) {
-                left.emplace_back(&dock);
+                leftEdge += dock.currentWidth();
+                dock.setLayout(bodyTop, bodyH, leftEdge);
             } else {
-                right.emplace_back(&dock);
+                rightEdge -= dock.currentWidth();
+                dock.setLayout(bodyTop, bodyH, rightEdge);
             }
-        }
-        // DESC: highest order first (outermost), packs inward as we walk.
-        std::ranges::sort(left, std::ranges::greater {}, &Ui::Render::DockColumn::order);
-        std::ranges::sort(right, std::ranges::greater {}, &Ui::Render::DockColumn::order);
-
-        // Left docks: pack rightward from the left toolbar's inner edge.
-        // innerEdgeX for a Left dock is its viewport-facing (right) edge.
-        fpx_t leftEdge = leftToolbarCss;
-        for (auto * d : left) {
-            const fpx_t rightEdgeOfDock = leftEdge + d->currentWidth();
-            d->setLayout(bodyTop, bodyH, rightEdgeOfDock);
-            leftEdge = rightEdgeOfDock;
-        }
-
-        // Right docks: pack leftward from the right toolbar's inner edge.
-        // innerEdgeX for a Right dock is its viewport-facing (left) edge.
-        fpx_t rightEdge = windowWidthCss - rightToolbarCss;
-        for (auto * d : right) {
-            const fpx_t leftEdgeOfDock = rightEdge - d->currentWidth();
-            d->setLayout(bodyTop, bodyH, leftEdgeOfDock);
-            rightEdge = leftEdgeOfDock;
-        }
+        });
     }
 
     // Set the main-window icon from icon-defaults.json roles. The symbolic icon
@@ -1616,29 +1608,22 @@ public:
             m_dragElement = Ui::INVALID_ID;
 
             std::unordered_map<std::string, std::vector<Ui::Res::Dock::row_t>> carriedRows;
-            for (auto & [id, dock] : m_docks) {
+            m_docks.forEach([&carriedRows](id_t /*id*/, const Ui::Render::DockColumn & dock) {
                 if (!dock.rows().empty()) {
                     carriedRows.emplace(dock.name(), dock.rows());
                 }
-            }
+            });
 
-            m_docks.clear();
-            const auto & dockConfigs = m_resManager.layout().docks;
-            for (size_t i = 0; i < dockConfigs.size(); ++i) {
-                const id_t id = Ui::idOf(Ui::IdKind::Dock, i);
-                m_docks.try_emplace(id, id, dockConfigs.at(i), m_resManager);
-            }
+            makeDocks();
             // A dock the reload removed simply has no taker; one it added comes
             // up empty until the host projects into it.
-            for (auto & [id, dock] : m_docks) {
+            m_docks.forEach([this, &carriedRows](id_t /*id*/, Ui::Render::DockColumn & dock) {
                 const auto carried = carriedRows.find(dock.name());
                 if (carried != carriedRows.end()) {
                     dock.setRows(std::move(carried->second));
                 }
-            }
-            for (auto & [id, dock] : m_docks) {
                 clampDockStateToViewport(dock);
-            }
+            });
             if (!m_docks.empty()) {
                 const std::string & iconName = m_resManager.layout().dockDefaults.gripIcon;
                 if (!iconName.empty()) {
@@ -2462,14 +2447,11 @@ public:
         m_resManager);
         m_main->renderer().setContent();
         m_main->renderer().setExtraOpsHook([this](Ui::Render::UiRenderer & out) {
-            for (const auto & [id, dock] : m_docks) {
-                dock.render(out);
-            }
+            m_docks.forEach([&out](id_t /*id*/, const Ui::Render::DockColumn & dock) { dock.render(out); });
         });
         m_main->renderer().setExtraElementsHook([this](Ui::Render::UiLayout & layout) {
-            for (const auto & [id, dock] : m_docks) {
-                dock.appendElements(layout);
-            }
+            m_docks.forEach(
+            [&layout](id_t /*id*/, const Ui::Render::DockColumn & dock) { dock.appendElements(layout); });
         });
     }
 
@@ -3200,9 +3182,7 @@ public:
         // the persisted value tracks what the user can see. Refresh the
         // dock-driven m_uiLeft / m_uiRight against the clamped widths so the
         // content surface math below uses the post-clamp totals.
-        for (auto & [id, dock] : m_docks) {
-            clampDockStateToViewport(dock);
-        }
+        m_docks.forEach([this](id_t /*id*/, Ui::Render::DockColumn & dock) { clampDockStateToViewport(dock); });
         const auto & layout = m_resManager.layout();
         m_uiLeft            = toPhys(layout.leftToolbar.width);
         m_uiRight           = toPhys(layout.rightToolbar.width);
@@ -3278,10 +3258,10 @@ public:
         // Hover update on all docks (cheap, none capture by default).
         bool dockHoverChanged = false;
         bool overGrip         = false;
-        for (auto & [id, dock] : m_docks) {
+        m_docks.forEach([&dockHoverChanged, &overGrip, x, y](id_t /*id*/, Ui::Render::DockColumn & dock) {
             dockHoverChanged |= dock.onMouseMove(toCss(x), toCss(y));
             overGrip |= dock.isHoveredGrip();
-        }
+        });
         if (dockHoverChanged) {
             m_renderQueue.request(MAIN_WINDOW_ID);
         }
@@ -3337,29 +3317,35 @@ public:
         m_dragType = element.type;
 
         if (element.type == Ui::Render::UiElementType::DockSlider) {
-            for (auto & [id, dock] : m_docks) {
-                if (!dock.hasSliderRow(element.id)) {
-                    continue;
-                }
-                m_dragElement = element.id;
-                m_dragDock    = id;
-                if (const std::optional<fpx_t> jumped = dock.beginSliderGesture(element.id, cssX)) {
-                    reportRowValue(*jumped);
-                }
-                return true;
+            const id_t sliderDock = dockIdWhere(
+            [&element](const Ui::Render::DockColumn & dock) { return dock.hasSliderRow(element.id); });
+            std::optional<fpx_t> jumped;
+            if (!m_docks.visit(sliderDock, [&jumped, &element, cssX](Ui::Render::DockColumn & dock) {
+                    jumped = dock.beginSliderGesture(element.id, cssX);
+                })) {
+                return false;
             }
-            return false;
+            m_dragElement = element.id;
+            m_dragDock    = sliderDock;
+            if (jumped.has_value()) {
+                reportRowValue(*jumped);
+            }
+            return true;
         }
 
         // Pressing the track pages instead of grabbing, so the gesture can be over
         // before it starts - isDraggingScroll() is what decides whether to capture
         if (element.type == Ui::Render::UiElementType::DockScrollbar) {
-            auto scrolled = m_docks.find(toDockId(element.id));
-            if (scrolled == m_docks.end()) {
+            bool       isDraggingScroll = false;
+            const bool isHeld           = m_docks.visit(toDockId(element.id),
+                                                        [&isDraggingScroll, cssY](Ui::Render::DockColumn & dock) {
+                                                  dock.beginScrollGesture(cssY);
+                                                  isDraggingScroll = dock.isDraggingScroll();
+                                                        });
+            if (!isHeld) {
                 return false;
             }
-            scrolled->second.beginScrollGesture(cssY);
-            if (scrolled->second.isDraggingScroll()) {
+            if (isDraggingScroll) {
                 m_dragElement = element.id;
             }
             requestContentRefresh();
@@ -3369,20 +3355,25 @@ public:
         if (element.type != Ui::Render::UiElementType::DockGrip) {
             return false;
         }
-        auto it = m_docks.find(toDockId(element.id));
-        if (it == m_docks.end()) {
+        bool       isDragging = false;
+        const bool isHeld     = m_docks.visit(toDockId(element.id),
+                                              [&isDragging, cssX, clickCount](Ui::Render::DockColumn & dock) {
+                                              dock.beginGripGesture(cssX, clickCount);
+                                              isDragging = dock.isDragging();
+                                              });
+        if (!isHeld) {
             return false;
         }
-        it->second.beginGripGesture(cssX, clickCount);
         // Double-click resolves immediately (no drag), so reflow now and hold
         // nothing. A normal press keeps the pointer until its release.
-        if (it->second.isDragging()) {
+        if (isDragging) {
             m_dragElement = element.id;
         } else {
             // Restore via memoryX may exceed what fits now (other docks may
             // have grown since the size was captured), so clamp against
             // current viewport availability before the layout pass sees it.
-            clampDockStateToViewport(it->second);
+            m_docks.visit(toDockId(element.id),
+                          [this](Ui::Render::DockColumn & dock) { clampDockStateToViewport(dock); });
             reflowDocksAndViewport();
         }
         return true;
@@ -3448,38 +3439,45 @@ public:
     bool dragMove(fpx_t cssX, fpx_t cssY)
     {
         if (m_dragType == Ui::Render::UiElementType::DockSlider) {
-            auto dragged = m_docks.find(m_dragDock);
-            if (dragged == m_docks.end()) {
+            fpx_t ratio = 0.0F;
+            if (!m_docks.visit(m_dragDock,
+                               [&ratio, cssX](Ui::Render::DockColumn & dock) { ratio = dock.onSliderDrag(cssX); })) {
                 m_dragElement = Ui::INVALID_ID; // dock vanished; release capture
                 return false;
             }
-            reportRowValue(dragged->second.onSliderDrag(cssX));
+            reportRowValue(ratio);
             return true;
         }
 
         if (m_dragType == Ui::Render::UiElementType::DockScrollbar) {
-            auto scrolled = m_docks.find(toDockId(m_dragElement));
-            if (scrolled == m_docks.end()) {
+            bool isScrolled = false;
+            if (!m_docks.visit(toDockId(m_dragElement), [&isScrolled, cssY](Ui::Render::DockColumn & dock) {
+                    isScrolled = dock.onScrollDrag(cssY);
+                })) {
                 m_dragElement = Ui::INVALID_ID; // dock vanished; release capture
                 return false;
             }
-            if (scrolled->second.onScrollDrag(cssY)) {
+            if (isScrolled) {
                 requestContentRefresh();
             }
             return true;
         }
 
-        auto it = m_docks.find(toDockId(m_dragElement));
-        if (it == m_docks.end()) {
+        bool isResized = false;
+        if (!m_docks.visit(toDockId(m_dragElement), [this, &isResized, cssX, cssY](Ui::Render::DockColumn & dock) {
+                // Transient width changed. Clamp to what the viewport can actually
+                // fit (so the dock cannot push the content surface below zero)
+                if (dock.onMouseMove(cssX, cssY)) {
+                    clampDraggingDockToViewport(dock);
+                    isResized = true;
+                }
+            })) {
             m_dragElement = Ui::INVALID_ID; // dock vanished; release capture
             return false;
         }
-        if (it->second.onMouseMove(cssX, cssY)) {
-            // Transient width changed. Clamp to what the viewport can actually
-            // fit (so the dock cannot push the content surface below zero),
-            // then reflow margins + dock positions + content surface size in
-            // one pass. The content child shrinks/grows live as the user drags.
-            clampDraggingDockToViewport(it->second);
+        if (isResized) {
+            // Margins + dock positions + content surface size in one pass. The content
+            // child shrinks/grows live as the user drags.
             reflowDocksAndViewport();
         }
         return true;
@@ -3490,25 +3488,18 @@ public:
         // A slider and a scrollbar commit on every move, so a release only ends
         // the grab and frees the pointer
         if (m_dragType == Ui::Render::UiElementType::DockSlider) {
-            if (auto dragged = m_docks.find(m_dragDock); dragged != m_docks.end()) {
-                dragged->second.endSliderDrag();
-            }
+            m_docks.visit(m_dragDock, [](Ui::Render::DockColumn & dock) { dock.endSliderDrag(); });
             m_dragElement = Ui::INVALID_ID;
             return;
         }
 
         if (m_dragType == Ui::Render::UiElementType::DockScrollbar) {
-            if (auto scrolled = m_docks.find(toDockId(m_dragElement)); scrolled != m_docks.end()) {
-                scrolled->second.endScrollDrag();
-            }
+            m_docks.visit(toDockId(m_dragElement), [](Ui::Render::DockColumn & dock) { dock.endScrollDrag(); });
             m_dragElement = Ui::INVALID_ID;
             return;
         }
 
-        auto it = m_docks.find(toDockId(m_dragElement));
-        if (it != m_docks.end()) {
-            it->second.onMouseUp(cssX);
-        }
+        m_docks.visit(toDockId(m_dragElement), [cssX](Ui::Render::DockColumn & dock) { dock.onMouseUp(cssX); });
         m_dragElement = Ui::INVALID_ID;
         reflowDocksAndViewport();
     }
@@ -3596,9 +3587,7 @@ public:
         // Cursor wandering into the content surface mid-drag doesn't reach here - that's
         // handled by the capture in onMouseMove.
         const bool wasDragging = (m_dragElement != Ui::INVALID_ID);
-        for (auto & [id, dock] : m_docks) {
-            dock.onMouseLeave();
-        }
+        m_docks.forEach([](id_t /*id*/, Ui::Render::DockColumn & dock) { dock.onMouseLeave(); });
         if (wasDragging) {
             m_dragElement = Ui::INVALID_ID;
             // Width may have changed (either committed-on-leave or, below threshold,
@@ -3618,11 +3607,13 @@ public:
         // A dock owns the wheel over its own column, ahead of the content surface
         // - the same precedence the DragStart hit test takes on press. The caller
         // discards this result, so the repaint is requested here
-        for (auto & [id, dock] : m_docks) {
-            if (!dock.outer().contains(toCss(x), toCss(y))) {
-                continue;
-            }
-            if (!dock.onScroll(deltaY)) {
+        const id_t underId = dockIdWhere(
+        [x, y](const Ui::Render::DockColumn & dock) { return dock.outer().contains(toCss(x), toCss(y)); });
+        bool isScrolled = false;
+        if (m_docks.visit(underId, [&isScrolled, deltaY](Ui::Render::DockColumn & dock) {
+                isScrolled = dock.onScroll(deltaY);
+            })) {
+            if (!isScrolled) {
                 return {};
             }
             requestContentRefresh();

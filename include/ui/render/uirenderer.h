@@ -785,10 +785,12 @@ private:
                 return { .fg = theme.menuItemDisabledColor, .bg = theme.topMenuButton.bg };
             }
             // Action menus (icon buttons): no bg change on hover/active
-            for (const auto & menu : m_resManager.menus()) {
-                if (menu.id == el.id && !menu.actionKey.empty()) {
-                    return theme.topMenuButton;
-                }
+            bool isActionMenu = false;
+            m_resManager.visitMenuItem(el.id, [&isActionMenu](const Ui::Res::Type::menu_t & menu) {
+                isActionMenu = !menu.actionKey.empty();
+            });
+            if (isActionMenu) {
+                return theme.topMenuButton;
             }
             const bool isOpenMenu = (el.id == m_resManager.activeMenuId());
             if (isOpenMenu || el.state == UiElementState::Active) {
@@ -860,18 +862,14 @@ private:
         case UiElementType::MenuButton:
             style.font = m_layout.menuFont();
             style.padH = layout.menuButtonPadH;
-            for (const auto & menu : m_resManager.menus()) {
-                if (menu.id != el.id) {
-                    continue;
-                }
+            m_resManager.visitMenuItem(el.id, [this, &style, &localeMgr](const Ui::Res::Type::menu_t & menu) {
                 // An icon menu draws the theme icon, not the icon under its own key
                 if (menu.icon.empty()) {
                     style.text = localeMgr.get(menu.label);
                 } else {
                     style.imageSrc = m_resManager.resPath().icon(m_resManager.themeIcon());
                 }
-                break;
-            }
+            });
             return style;
         case UiElementType::ToolbarButton:
             if (const Ui::Res::Type::button_t * button = m_resManager.findButton(el.id)) {

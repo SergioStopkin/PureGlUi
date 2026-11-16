@@ -231,6 +231,7 @@ public:
     bool visit(const Key & key, Fn && fn) const;                 // fn(const T &) when held; whether it was
     [[nodiscard]] bool contains(const Key & key) const;
     [[nodiscard]] auto keys() const;                             // a view of the keys in order
+    void forEach(const Fn & fn) const;                           // fn(const Key &, const T &) per key, in order
     [[nodiscard]] std::optional<Key> keyAfter(const Key & key) const;  // none for the last or an absent key
     [[nodiscard]] std::optional<Key> keyBefore(const Key & key) const; // none for the first or an absent key
     [[nodiscard]] std::optional<Key> firstKey() const;           // none while empty
@@ -240,8 +241,11 @@ public:
 
     // mutate side
     bool visit(const Key & key, Fn && fn);                       // fn(T &) to change it in place
+    void forEach(const Fn & fn);                                 // fn(const Key &, T &) per key, in place
     void add(const Key & key, T && value);                       // at the end; no-op if key exists
+    void emplace(const Key & key, Args &&... args);              // at the end, built in its node from args; no-op if key exists
     void remove(const Key & key);
+    void clear();                                                // every key and value gone
     void moveBefore(const Key & key, const Key & anchor);        // no-op while either is absent
     void moveToBack(const Key & key);
     void visitOrAdd(const Key & key, Fn && fn);                  // fn(T &) on it, default-constructed at the end first if absent
@@ -250,16 +254,14 @@ public:
 
 The key is a template parameter, so a map is not limited to `id_t`. A place in the order is named by a neighbour's key, never an index: the i-th key or a key's index is O(n) here, and no structure keeps them O(1) beside an O(1) insert and remove (list indexing is Omega(log n / log log n) per operation, Fredman-Saks).
 
-No pointer ever leaves it. A value is reached through `visit` - the check in one place, and a reference that lives only for the call, so it cannot outlast a remove (Boost.Unordered's `concurrent_flat_map::visit` is the same shape); a key comes back as a copy, `std::optional` when there may be none, so `keyAfter(id).value_or(...)` turns "none" into a fallback with no branch. A value's address holds until its own key is removed, whatever else is added, moved or removed; `visitOrAdd` builds a value in its node, so one that cannot move (an atomic) is held directly, and hands it to `fn` as `visit` does - a held key keeps its place; a copy points its lookups at nodes of its own. A value is moved in, never passed by value: MSVC passes no over-aligned one (C2719), and `tab_t` is `alignas(128)`.
+No pointer ever leaves it. A value is reached through `visit` - the check in one place, and a reference that lives only for the call, so it cannot outlast a remove (Boost.Unordered's `concurrent_flat_map::visit` is the same shape) - or, every one in order, through `forEach`, one pass down the list with no lookup, its `fn` adding, removing or moving no key, since the walk stands on the node it is at; a key comes back as a copy, `std::optional` when there may be none, so `keyAfter(id).value_or(...)` turns "none" into a fallback with no branch. A value's address holds until its own key is removed, whatever else is added, moved or removed; `visitOrAdd` builds a value in its node, so one that cannot move (an atomic) is held directly, and hands it to `fn` as `visit` does - a held key keeps its place; `emplace` builds one in its node from constructor arguments, so a value that can be neither copied nor moved (a `DockColumn`) is held too; a copy points its lookups at nodes of its own. A value is moved in, never passed by value: MSVC passes no over-aligned one (C2719), and `tab_t` is `alignas(128)`.
 
 ```cpp
 Ui::LinkedMap<Ui::id_t, Ui::tab_t> tabs;
 tabs.add(1, std::move(myTab));
-for (const Ui::id_t id : tabs.keys()) {
-    tabs.visit(id, [](const Ui::tab_t & tab) {
-        // render tab...
-    });
-}
+tabs.forEach([](Ui::id_t id, const Ui::tab_t & tab) {
+    // render tab...
+});
 ```
 
 ## Ui::Index<Key, T>

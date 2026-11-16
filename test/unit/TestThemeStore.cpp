@@ -21,6 +21,10 @@
  *        (TEST_RES_DIR), verifies name/mode state + the derived theme icon, the
  *        mode toggle and name switch, the missing-file no-op, and scanThemeNames
  *        (discovery, "default"-first ordering, per-theme preview color cache).
+ *        The "host" block, against a fixture (the shipped themes carry none): each
+ *        registered key handed its own value, var() resolved, on every load, in the
+ *        order registered, a key registered twice keeping its first; a host edit
+ *        alone, or a key first handed over, counting into the reload diff.
  */
 
 #include "ui/color.h"
@@ -33,6 +37,7 @@
 #include <algorithm>
 #include <gtest/gtest.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 using Ui::Color;
@@ -43,6 +48,12 @@ using Ui::Res::Type::Changed;
 
 namespace {
 ResPath resPath() { return ResPath(std::string(TEST_RES_DIR)); }
+
+// A theme whose "host" block writes edge, tint (a var()) and blank (empty)
+std::string hostTheme() { return std::string(TEST_DATA_DIR) + "/themehost.json"; }
+
+// The same theme with edge edited, and nothing else
+std::string hostThemeEdited() { return std::string(TEST_DATA_DIR) + "/themehostedited.json"; }
 } // namespace
 
 TEST(ThemeStore, DefaultsBeforeLoad)
@@ -155,4 +166,110 @@ TEST(ThemeStore, PreviewColorsCachedForKnownMissingForUnknown)
     // Unknown theme: zero-initialized pair (fg falls back to the Color default).
     const auto missing = store.themePreviewColors("no-such-theme");
     EXPECT_EQ(missing.first.fg, magenta);
+}
+
+// ============================================================================
+// The "host" block - each value handed to what the host registered for its key
+// ============================================================================
+
+// Each key is handed its own value, a var() resolved, in the order registered rather
+// than the order the file writes them in
+TEST(ThemeStore, HostKeysAreHandedTheirValuesInTheOrderRegistered)
+{
+    ThemeStore                                       store;
+    std::vector<std::pair<std::string, std::string>> handed;
+    for (const std::string key : { "tint", "edge" }) {
+        store.registerThemeParam(key, [&handed, key](const std::string & value) { handed.emplace_back(key, value); });
+    }
+
+    (void)store.loadTheme(hostTheme());
+    EXPECT_EQ(handed, (std::vector<std::pair<std::string, std::string>> { { "tint", "#123456" }, { "edge", "20" } }));
+}
+
+// Every load hands every value over again, changed or not: the host's settings are set from
+// the file loaded, never left to an earlier one
+TEST(ThemeStore, EveryLoadHandsEveryHostValueOver)
+{
+    ThemeStore store;
+    int        calls = 0;
+    store.registerThemeParam("edge", [&calls](const std::string &) { ++calls; });
+
+    (void)store.loadTheme(hostTheme());
+    (void)store.loadTheme(hostTheme());
+    EXPECT_EQ(calls, 2);
+}
+
+// An edit to the host block alone is a change, though theme_t holds none of it - else the
+// host's settings would change and nothing downstream be told to read them again
+TEST(ThemeStore, AHostEditAloneIsAChange)
+{
+    ThemeStore  store;
+    std::string edge;
+    store.registerThemeParam("edge", [&edge](const std::string & value) { edge = value; });
+
+    EXPECT_NE(store.loadTheme(hostTheme()), Changed::None);
+    EXPECT_EQ(store.loadTheme(hostTheme()), Changed::None);
+    EXPECT_NE(store.loadTheme(hostThemeEdited()), Changed::None);
+    EXPECT_EQ(edge, "80");
+}
+
+// A key registered after a load is a change at the next, though the theme is the same - the
+// host has a value to take up - and a reload after that is none
+TEST(ThemeStore, AHostKeyFirstHandedOverIsAChange)
+{
+    ThemeStore store;
+    (void)store.loadTheme(hostTheme());
+    std::string edge;
+    store.registerThemeParam("edge", [&edge](const std::string & value) { edge = value; });
+
+    EXPECT_NE(store.loadTheme(hostTheme()), Changed::None);
+    EXPECT_EQ(edge, "20");
+    EXPECT_EQ(store.loadTheme(hostTheme()), Changed::None);
+}
+
+// Negative: a key registered twice keeps its first - the second is never handed a value
+TEST(ThemeStore, AHostKeyRegisteredTwiceKeepsItsFirst)
+{
+    ThemeStore store;
+    int        first  = 0;
+    int        second = 0;
+    store.registerThemeParam("edge", [&first](const std::string &) { ++first; });
+    store.registerThemeParam("edge", [&second](const std::string &) { ++second; });
+
+    (void)store.loadTheme(hostTheme());
+    EXPECT_EQ(first, 1);
+    EXPECT_EQ(second, 0);
+}
+
+// Negative: a key the block does not write, or writes empty, is handed nothing and changes
+// nothing
+TEST(ThemeStore, AHostKeyMissingOrEmptyIsHandedNothing)
+{
+    ThemeStore store;
+    int        calls = 0;
+    store.registerThemeParam("missing", [&calls](const std::string &) { ++calls; });
+    store.registerThemeParam("blank", [&calls](const std::string &) { ++calls; });
+
+    (void)store.loadTheme(hostTheme());
+    EXPECT_EQ(store.loadTheme(hostTheme()), Changed::None);
+    EXPECT_EQ(calls, 0);
+}
+
+// Negative: a theme with no "host" block hands nothing to any key
+TEST(ThemeStore, AThemeWithNoHostBlockHandsNothing)
+{
+    ThemeStore store;
+    int        calls = 0;
+    store.registerThemeParam("edge", [&calls](const std::string &) { ++calls; });
+
+    (void)store.loadCurrent(resPath());
+    EXPECT_EQ(calls, 0);
+}
+
+// Negative: with no key registered, a reload of a theme with a host block changes nothing
+TEST(ThemeStore, NoHostKeyRegisteredReloadsAsNothingChanged)
+{
+    ThemeStore store;
+    (void)store.loadTheme(hostTheme());
+    EXPECT_EQ(store.loadTheme(hostTheme()), Changed::None);
 }

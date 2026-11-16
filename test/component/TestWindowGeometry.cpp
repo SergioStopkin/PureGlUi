@@ -18,8 +18,9 @@
 /**
  * @file TestWindowGeometry.cpp
  * @brief WindowManager geometry that needs no window: where a dialog may sit
- *        (inside the chrome, less its margin), and that projecting dock rows
- *        marks the layout for rebuild.
+ *        (inside the chrome, less its margin), that projecting dock rows marks
+ *        the layout for rebuild, and that each dock's rows reach it by its name,
+ *        outlive a layout rebuild, and are asked of every dock.
  *
  * The second one is the bug that made a dock's rows clickable at the positions
  * they held BEFORE the projection: rows are drawn live, but hit rects come from
@@ -31,10 +32,12 @@
 #include "ui/idkind.h"
 #include "ui/render/uielement.h"
 #include "ui/res/dock/row.h"
+#include "ui/res/dock/rowkind.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/changed.h"
 #include "ui/window/windowmanager.h"
 
+#include <cstddef>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
@@ -62,6 +65,16 @@ protected:
     }
 
     [[nodiscard]] Ui::fpx_t phys(Ui::fpx_t css) const { return Ui::toPhys(css); }
+
+    // One Menu row, `serial` its id's, opening `menu`
+    [[nodiscard]] static std::vector<Ui::Res::Dock::row_t> menuRowOf(Ui::id_t serial, const std::string & menu)
+    {
+        Ui::Res::Dock::row_t row;
+        row.id   = Ui::idOf(TestIdKind::Row, serial);
+        row.kind = Ui::Res::Dock::RowKind::Menu;
+        row.menu = menu;
+        return { row };
+    }
 };
 
 // ============================================================================
@@ -148,6 +161,88 @@ TEST_F(WindowGeometryTest, RowsForAnUnknownDockChangeNothing)
     ASSERT_FALSE(windowManager.isContentDirty());
 
     windowManager.setDockRows("no-such-dock", {});
+    EXPECT_FALSE(windowManager.isContentDirty());
+}
+
+// ============================================================================
+// Each dock reached by its name, every dock asked
+// ============================================================================
+
+// Rows projected by a dock's name reach that dock, and a row's menu is found whichever
+// dock holds it
+TEST_F(WindowGeometryTest, RowsReachTheDockTheyAreProjectedInto)
+{
+    const auto & docks = resManager.layout().docks;
+    ASSERT_GE(docks.size(), 2U) << "the shipped layout declares fewer than two docks to tell apart";
+    for (std::size_t index = 0; index < docks.size(); ++index) {
+        windowManager.setDockRows(docks.at(index).name, menuRowOf(index + 1, "menu-of-" + docks.at(index).name));
+    }
+    for (std::size_t index = 0; index < docks.size(); ++index) {
+        EXPECT_EQ(windowManager.rowMenuKey(Ui::idOf(TestIdKind::Row, index + 1)), "menu-of-" + docks.at(index).name)
+        << docks.at(index).name;
+    }
+}
+
+// Rows a host projected outlive a layout rebuild: each dock is made again and takes
+// back its own by name
+TEST_F(WindowGeometryTest, RowsOutliveALayoutRebuild)
+{
+    const auto & docks = resManager.layout().docks;
+    ASSERT_FALSE(docks.empty());
+    windowManager.setDockRows(docks.back().name, menuRowOf(7, "kept"));
+    windowManager.apply(Ui::Res::Type::changes_t(Ui::Res::Type::Changed::Layout));
+    windowManager.apply(Ui::Res::Type::changes_t(Ui::Res::Type::Changed::Layout));
+    EXPECT_EQ(windowManager.rowMenuKey(Ui::idOf(TestIdKind::Row, 7)), "kept");
+}
+
+// Rows projected again replace the dock's own, the other docks' kept
+TEST_F(WindowGeometryTest, RowsProjectedAgainReplaceTheDocksOwn)
+{
+    const auto & docks = resManager.layout().docks;
+    ASSERT_GE(docks.size(), 2U);
+    windowManager.setDockRows(docks.front().name, menuRowOf(1, "first"));
+    windowManager.setDockRows(docks.back().name, menuRowOf(2, "second"));
+    windowManager.setDockRows(docks.front().name, menuRowOf(3, "again"));
+    EXPECT_TRUE(windowManager.rowMenuKey(Ui::idOf(TestIdKind::Row, 1)).empty());
+    EXPECT_EQ(windowManager.rowMenuKey(Ui::idOf(TestIdKind::Row, 2)), "second");
+    EXPECT_EQ(windowManager.rowMenuKey(Ui::idOf(TestIdKind::Row, 3)), "again");
+}
+
+// A dock's scroll reset by its name marks the layout for rebuild, as its rows do
+TEST_F(WindowGeometryTest, ResettingADocksScrollMarksTheContentDirty)
+{
+    const auto & docks = resManager.layout().docks;
+    ASSERT_FALSE(docks.empty());
+    ASSERT_FALSE(windowManager.isContentDirty());
+    windowManager.resetDockScroll(docks.front().name);
+    EXPECT_TRUE(windowManager.isContentDirty());
+}
+
+// Negative: rows for a dock no layout declares reach no dock
+TEST_F(WindowGeometryTest, RowsForAnUnknownDockReachNoDock)
+{
+    windowManager.setDockRows("no-such-dock", menuRowOf(1, "lost"));
+    EXPECT_TRUE(windowManager.rowMenuKey(Ui::idOf(TestIdKind::Row, 1)).empty());
+}
+
+// Negative: a row no dock holds, or one that is no Menu row, opens no menu
+TEST_F(WindowGeometryTest, OnlyAHeldMenuRowOpensAMenu)
+{
+    const auto & docks = resManager.layout().docks;
+    ASSERT_FALSE(docks.empty());
+    std::vector<Ui::Res::Dock::row_t> rows = menuRowOf(1, "a-menu");
+    rows.front().kind                      = Ui::Res::Dock::RowKind::Text;
+    windowManager.setDockRows(docks.front().name, std::move(rows));
+    EXPECT_TRUE(windowManager.rowMenuKey(Ui::idOf(TestIdKind::Row, 1)).empty());
+    EXPECT_TRUE(windowManager.rowMenuKey(Ui::idOf(TestIdKind::Row, 99)).empty());
+    EXPECT_TRUE(windowManager.rowMenuKey(Ui::INVALID_ID).empty());
+}
+
+// Negative: resetting the scroll of a dock no layout declares changes nothing
+TEST_F(WindowGeometryTest, ResettingAnUnknownDocksScrollChangesNothing)
+{
+    ASSERT_FALSE(windowManager.isContentDirty());
+    windowManager.resetDockScroll("no-such-dock");
     EXPECT_FALSE(windowManager.isContentDirty());
 }
 

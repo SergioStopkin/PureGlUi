@@ -108,7 +108,7 @@ public:
     // to the new count
     void setTabs(std::vector<tab_t> tabs, std::vector<id_t> recentIds = {})
     {
-        m_tabs     = {};
+        m_tabs.clear();
         m_activeId = INVALID_ID;
         for (auto & tab : tabs) {
             const id_t id = tab.id;

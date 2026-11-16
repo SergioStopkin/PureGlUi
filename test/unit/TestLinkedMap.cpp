@@ -18,9 +18,9 @@
 /**
  * @file TestLinkedMap.cpp
  * @brief Unit tests for Ui::LinkedMap - the keyed collection in an order of its
- *        own that holds the tab orders. Verifies visit, insertion order, moves,
- *        removal, neighbours and ends, and that a value's address and a copy's
- *        lookups hold, independent of any rendering.
+ *        own that holds the tab orders. Verifies visit, forEach, insertion order,
+ *        moves, removal, neighbours and ends, and that a value's address and a
+ *        copy's lookups hold, independent of any rendering.
  */
 
 #include "thrower.h"
@@ -29,10 +29,13 @@
 #include "ui/tab.h"
 
 #include <atomic>
+#include <bitset>
 #include <cstddef>
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -56,6 +59,14 @@ std::optional<int> valueOf(const LinkedMap<Ui::id_t, int> & map, Ui::id_t key)
     std::optional<int> found;
     map.visit(key, [&found](int value) { found = value; });
     return found;
+}
+
+// Every key with its value as forEach hands them, in order, to compare
+std::vector<std::pair<Ui::id_t, int>> walkOf(const LinkedMap<Ui::id_t, int> & map)
+{
+    std::vector<std::pair<Ui::id_t, int>> walked;
+    map.forEach([&walked](Ui::id_t key, int value) { walked.emplace_back(key, value); });
+    return walked;
 }
 
 // The values an Index visits under key, in order, to compare
@@ -169,6 +180,59 @@ TEST(LinkedMap, RemoveDropsFromMapAndOrder)
     EXPECT_EQ(map.keyAfter(1), 3U); // the neighbours closed up
 }
 
+// Cleared, nothing is left to find, walk or neighbour
+TEST(LinkedMap, ClearLeavesNothing)
+{
+    LinkedMap<Ui::id_t, int> map = oneTwoThree();
+    map.clear();
+    EXPECT_TRUE(map.empty());
+    EXPECT_EQ(map.size(), 0U);
+    EXPECT_FALSE(map.contains(2));
+    EXPECT_FALSE(valueOf(map, 2));
+    EXPECT_TRUE(map.keys().empty());
+    EXPECT_TRUE(walkOf(map).empty());
+    EXPECT_FALSE(map.firstKey());
+    EXPECT_FALSE(map.lastKey());
+    EXPECT_FALSE(map.keyAfter(1));
+}
+
+// A key held before a clear goes in again fresh, at the end of what is added after it
+TEST(LinkedMap, AKeyAddedAfterAClearIsNew)
+{
+    LinkedMap<Ui::id_t, int> map = oneTwoThree();
+    map.clear();
+    map.add(3, 30);
+    map.add(1, 10);
+    EXPECT_EQ(walkOf(map), (std::vector<std::pair<Ui::id_t, int>> { { 3, 30 }, { 1, 10 } }));
+}
+
+// Values that can be neither copied nor moved are cleared as any are
+TEST(LinkedMap, ClearTakesValuesThatCannotMove)
+{
+    LinkedMap<Ui::id_t, std::atomic<int>> map;
+    map.emplace(1, 7);
+    map.emplace(2, 8);
+    map.clear();
+    EXPECT_TRUE(map.empty());
+    map.emplace(2, 9);
+    int two = 0;
+    ASSERT_TRUE(map.visit(2, [&two](const std::atomic<int> & value) { two = value.load(); }));
+    EXPECT_EQ(two, 9);
+}
+
+// Negative: clearing an empty map, or one already cleared, changes nothing
+TEST(LinkedMap, ClearOfAnEmptyMapIsNoop)
+{
+    LinkedMap<Ui::id_t, int> map;
+    map.clear();
+    EXPECT_TRUE(map.empty());
+    map.add(1, 100);
+    map.clear();
+    map.clear();
+    EXPECT_TRUE(map.empty());
+    EXPECT_TRUE(map.keys().empty());
+}
+
 TEST(LinkedMap, RemoveMissingIsNoop)
 {
     LinkedMap<Ui::id_t, int> map = oneTwoThree();
@@ -234,6 +298,91 @@ TEST(LinkedMap, ValueAddressHoldsAcrossChanges)
 }
 
 // ============================================================================
+// forEach - every key with its value, in order, one pass
+// ============================================================================
+
+TEST(LinkedMap, ForEachWalksEveryKeyWithItsValueInOrder)
+{
+    const LinkedMap<Ui::id_t, int> map = oneTwoThree();
+    EXPECT_EQ(walkOf(map), (std::vector<std::pair<Ui::id_t, int>> { { 1, 100 }, { 2, 200 }, { 3, 300 } }));
+}
+
+// The order walked is the order kept, whatever moved or went
+TEST(LinkedMap, ForEachFollowsMovesAndRemoves)
+{
+    LinkedMap<Ui::id_t, int> map = oneTwoThree();
+    map.moveBefore(3, 1);
+    map.moveToBack(1);
+    map.remove(2);
+    map.add(4, 400);
+    EXPECT_EQ(walkOf(map), (std::vector<std::pair<Ui::id_t, int>> { { 3, 300 }, { 1, 100 }, { 4, 400 } }));
+}
+
+// Once per key, however often a key was added
+TEST(LinkedMap, ForEachCallsOncePerKey)
+{
+    LinkedMap<Ui::id_t, int> map;
+    map.add(5, 100);
+    map.add(5, 999);
+    map.add(6, 600);
+    int calls = 0;
+    map.forEach([&calls](Ui::id_t /*key*/, int /*value*/) { ++calls; });
+    EXPECT_EQ(calls, 2);
+}
+
+// The mutate side changes each value where it stands, the order as it was
+TEST(LinkedMap, ForEachChangesValuesInPlace)
+{
+    LinkedMap<Ui::id_t, int> map = oneTwoThree();
+    const void *             two = addressOf(map, 2);
+    map.forEach([](Ui::id_t /*key*/, int & value) { ++value; });
+    EXPECT_EQ(walkOf(map), (std::vector<std::pair<Ui::id_t, int>> { { 1, 101 }, { 2, 201 }, { 3, 301 } }));
+    EXPECT_EQ(addressOf(map, 2), two);
+}
+
+// What forEach hands is the value held, not a copy of it: the one visit reaches
+TEST(LinkedMap, ForEachHandsTheValueVisitReaches)
+{
+    const LinkedMap<Ui::id_t, int> map = oneTwoThree();
+    std::vector<const void *>      walked;
+    map.forEach([&walked](Ui::id_t /*key*/, const int & value) { walked.emplace_back(&value); });
+    EXPECT_EQ(walked, (std::vector<const void *> { addressOf(map, 1), addressOf(map, 2), addressOf(map, 3) }));
+}
+
+// Negative: an empty map calls nothing, on either side
+TEST(LinkedMap, ForEachOnAnEmptyMapCallsNothing)
+{
+    LinkedMap<Ui::id_t, int>         map;
+    const LinkedMap<Ui::id_t, int> & readOnly = map;
+    int                              calls    = 0;
+    map.forEach([&calls](Ui::id_t /*key*/, int & /*value*/) { ++calls; });
+    readOnly.forEach([&calls](Ui::id_t /*key*/, const int & /*value*/) { ++calls; });
+    EXPECT_EQ(calls, 0);
+}
+
+// Negative: a removed key is walked no more, nor one removed down to none
+TEST(LinkedMap, ForEachSkipsWhatWasRemoved)
+{
+    LinkedMap<Ui::id_t, int> map = oneTwoThree();
+    map.remove(1);
+    map.remove(3);
+    EXPECT_EQ(walkOf(map), (std::vector<std::pair<Ui::id_t, int>> { { 2, 200 } }));
+    map.remove(2);
+    EXPECT_TRUE(walkOf(map).empty());
+}
+
+// A string key comes with its value as an id does
+TEST(LinkedMap, ForEachHandsStringKeys)
+{
+    LinkedMap<Ui::key_t, int> map;
+    map.add("b", 2);
+    map.add("a", 1);
+    std::vector<std::pair<Ui::key_t, int>> walked;
+    map.forEach([&walked](const Ui::key_t & key, int value) { walked.emplace_back(key, value); });
+    EXPECT_EQ(walked, (std::vector<std::pair<Ui::key_t, int>> { { "b", 2 }, { "a", 1 } }));
+}
+
+// ============================================================================
 // Copy and move - the lookups must point at the holder's own nodes
 // ============================================================================
 
@@ -251,6 +400,16 @@ TEST(LinkedMap, CopyIsIndependent)
     EXPECT_EQ(valueOf(copy, 2), 222);
     EXPECT_EQ(keysOf(original), (std::vector<Ui::id_t> { 1, 2, 3 }));
     EXPECT_EQ(valueOf(original, 2), 200);
+}
+
+// A copy walks nodes of its own: a change through it leaves the source's walk as it was
+TEST(LinkedMap, ACopyWalksItsOwnValues)
+{
+    const LinkedMap<Ui::id_t, int> original = oneTwoThree();
+    LinkedMap<Ui::id_t, int>       copy     = original;
+    copy.forEach([](Ui::id_t /*key*/, int & value) { value = 0; });
+    EXPECT_EQ(walkOf(copy), (std::vector<std::pair<Ui::id_t, int>> { { 1, 0 }, { 2, 0 }, { 3, 0 } }));
+    EXPECT_EQ(walkOf(original), (std::vector<std::pair<Ui::id_t, int>> { { 1, 100 }, { 2, 200 }, { 3, 300 } }));
 }
 
 TEST(LinkedMap, CopyAssignReplaces)
@@ -360,6 +519,76 @@ TEST(LinkedMap, AFailedAddLeavesNoKey)
     EXPECT_TRUE(map.empty());
     map.add(1, thrower_t {});
     EXPECT_TRUE(map.contains(1));
+    EXPECT_EQ(keysOf(map), (std::vector<Ui::id_t> { 1 }));
+}
+
+// ============================================================================
+// emplace - built in its node from constructor arguments
+// ============================================================================
+
+// Built from its arguments, at the end
+TEST(LinkedMap, EmplaceBuildsFromItsArgumentsAtTheEnd)
+{
+    LinkedMap<Ui::id_t, std::string> map;
+    map.add(1, std::string("a"));
+    map.emplace(2, 3U, 'x');
+    std::string two;
+    ASSERT_TRUE(map.visit(2, [&two](const std::string & value) { two = value; }));
+    EXPECT_EQ(two, "xxx");
+    EXPECT_EQ(keysOf(map), (std::vector<Ui::id_t> { 1, 2 }));
+}
+
+// Built where it is held and never moved there: a value whose move throws comes in whole
+TEST(LinkedMap, EmplaceNeverMovesTheValue)
+{
+    LinkedMap<Ui::id_t, thrower_t> map;
+    EXPECT_NO_THROW(map.emplace(1, true));
+    bool isThrowing = false;
+    ASSERT_TRUE(map.visit(1, [&isThrowing](const thrower_t & value) { isThrowing = value.isThrowing; }));
+    EXPECT_TRUE(isThrowing);
+}
+
+// A value that can be neither copied nor moved is held, removed, and emptied away whole
+TEST(LinkedMap, EmplaceHoldsAValueThatCannotMove)
+{
+    LinkedMap<Ui::id_t, std::atomic<int>> map;
+    map.emplace(1, 7);
+    map.emplace(2, 8);
+    int two = 0;
+    ASSERT_TRUE(map.visit(2, [&two](const std::atomic<int> & value) { two = value.load(); }));
+    EXPECT_EQ(two, 8);
+    EXPECT_EQ(keysOf(map), (std::vector<Ui::id_t> { 1, 2 }));
+    map.remove(1);
+    EXPECT_EQ(keysOf(map), (std::vector<Ui::id_t> { 2 }));
+    map.clear();
+    EXPECT_TRUE(map.empty());
+}
+
+// Negative: a key already held keeps its value and its place, the arguments unused
+TEST(LinkedMap, EmplaceOfAHeldKeyChangesNothing)
+{
+    LinkedMap<Ui::id_t, std::string> map;
+    map.emplace(1, 1U, 'a');
+    map.emplace(2, 1U, 'b');
+    map.emplace(1, 5U, 'z');
+    std::string one;
+    ASSERT_TRUE(map.visit(1, [&one](const std::string & value) { one = value; }));
+    EXPECT_EQ(one, "a");
+    EXPECT_EQ(keysOf(map), (std::vector<Ui::id_t> { 1, 2 }));
+}
+
+// Negative: a value that throws as it is built leaves no key behind, and the key free to
+// build again
+TEST(LinkedMap, AFailedEmplaceLeavesNoKey)
+{
+    LinkedMap<Ui::id_t, std::bitset<8>> map;
+    EXPECT_THROW(map.emplace(1, std::string("2")), std::invalid_argument);
+    EXPECT_FALSE(map.contains(1));
+    EXPECT_TRUE(map.empty());
+    map.emplace(1, std::string("101"));
+    std::uint64_t one = 0;
+    ASSERT_TRUE(map.visit(1, [&one](const std::bitset<8> & value) { one = value.to_ullong(); }));
+    EXPECT_EQ(one, std::uint64_t { 5 });
     EXPECT_EQ(keysOf(map), (std::vector<Ui::id_t> { 1 }));
 }
 
