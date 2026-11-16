@@ -2,9 +2,19 @@ set(TARGET unit-tests)
 
 add_executable(
     ${TARGET}
-    TestRegistry.cpp
+    TestLinkedMap.cpp
     TestConfig.cpp
     TestTabBar.cpp
+    TestRevealedOffsetOf.cpp
+    TestTabSwitch.cpp
+    TestTabMoveOf.cpp
+    TestEasedOf.cpp
+    TestTransitionsOf.cpp
+    TestAnimator.cpp
+    TestTabCloseBoundOf.cpp
+    TestRowCloseBoundOf.cpp
+    TestAnimationStore.cpp
+    TestDurationOf.cpp
     TestRenderInterfaces.cpp
     TestIntent.cpp
     TestMenuDisable.cpp
@@ -44,6 +54,8 @@ add_executable(
     TestSlider.cpp
     TestTruncateText.cpp
     TestTooltipBoundOf.cpp
+    TestTabSwitcherBoundOf.cpp
+    TestUnderlayOf.cpp
     TestRefreshRateOf.cpp
     TestScaleFactorOf.cpp
     TestCursorPlacementOf.cpp
@@ -51,7 +63,10 @@ add_executable(
     TestDisplaysTextOf.cpp
     TestTooltipWantedOf.cpp
     TestTabsShownOf.cpp
+    TestRowsShownOf.cpp
+    TestRowsScrolledOf.cpp
     TestCycleTab.cpp
+    TestOpenTabSwitcher.cpp
     TestOpenPickedFiles.cpp
     TestIdKind.cpp
     TestChildProcess.cpp
@@ -87,4 +102,11 @@ endif()
 # TestPortalFileChooser stands a portal up on a private session bus (GTestDBus, which runs dbus-daemon)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(${TARGET} PkgConfig::GIO)
+endif()
+
+# A native Wayland build names its keys through xkbcommon, which it alone links
+if(HAVE_WAYLAND)
+    target_sources(${TARGET} PRIVATE TestXkbKeyNameOf.cpp)
+    target_include_directories(${TARGET} PRIVATE ${XKB_INCLUDE_DIRS})
+    target_link_libraries(${TARGET} ${XKB_LIBRARIES})
 endif()

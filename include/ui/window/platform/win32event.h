@@ -17,15 +17,18 @@
 
 #pragma once
 
+#include "common/bit.h"
 #include "common/unicode.h"
 #include "ui/interface/ieventos.h"
 #include "ui/interface/iwindow.h"
 #include "ui/window/clickcounter.h"
 #include "ui/window/event.h"
 #include "ui/window/eventtype.h"
+#include "ui/window/iscontrolkey.h"
 #include "ui/window/platform/win32window.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -207,8 +210,8 @@ private:
                                      || msg.message == WM_CAPTURECHANGED);
             if (isMouseMsg) {
                 std::cout << "[Win32Event] msg=0x" << std::hex << msg.message << std::dec << " hwnd=" << msg.hwnd
-                          << " x=" << static_cast<short>(LOWORD(msg.lParam))
-                          << " y=" << static_cast<short>(HIWORD(msg.lParam)) << " captured=" << GetCapture()
+                          << " x=" << static_cast<std::int16_t>(LOWORD(msg.lParam))
+                          << " y=" << static_cast<std::int16_t>(HIWORD(msg.lParam)) << " captured=" << GetCapture()
                           << " buttons=0x" << std::hex << m_pressedButtons << std::dec << std::endl;
             }
         }
@@ -218,9 +221,8 @@ private:
         case Win32Window::WM_APP_CLOSE: event.type = EventType::CloseRequested; break;
 
         case WM_LBUTTONDOWN:
-            event.type             = EventType::MouseButtonPress;
-            event.mouse.x          = LOWORD(msg.lParam);
-            event.mouse.y          = HIWORD(msg.lParam);
+            event.type = EventType::MouseButtonPress;
+            setMouseXY(event, msg.lParam);
             event.mouse.button     = MouseButton::Left;
             event.mouse.clickCount = m_clickCounter.next(msg.time, event.mouse.x, event.mouse.y, WM_LBUTTONDOWN);
             event.mouse.modifiers  = convertWin32Modifiers();
@@ -228,17 +230,15 @@ private:
             break;
 
         case WM_LBUTTONUP:
-            event.type         = EventType::MouseButtonRelease;
-            event.mouse.x      = LOWORD(msg.lParam);
-            event.mouse.y      = HIWORD(msg.lParam);
+            event.type = EventType::MouseButtonRelease;
+            setMouseXY(event, msg.lParam);
             event.mouse.button = MouseButton::Left;
             releaseCapture(0x1U);
             break;
 
         case WM_RBUTTONDOWN:
-            event.type             = EventType::MouseButtonPress;
-            event.mouse.x          = LOWORD(msg.lParam);
-            event.mouse.y          = HIWORD(msg.lParam);
+            event.type = EventType::MouseButtonPress;
+            setMouseXY(event, msg.lParam);
             event.mouse.button     = MouseButton::Right;
             event.mouse.clickCount = m_clickCounter.next(msg.time, event.mouse.x, event.mouse.y, WM_RBUTTONDOWN);
             event.mouse.modifiers  = convertWin32Modifiers();
@@ -246,17 +246,15 @@ private:
             break;
 
         case WM_RBUTTONUP:
-            event.type         = EventType::MouseButtonRelease;
-            event.mouse.x      = LOWORD(msg.lParam);
-            event.mouse.y      = HIWORD(msg.lParam);
+            event.type = EventType::MouseButtonRelease;
+            setMouseXY(event, msg.lParam);
             event.mouse.button = MouseButton::Right;
             releaseCapture(0x2U);
             break;
 
         case WM_MBUTTONDOWN:
-            event.type             = EventType::MouseButtonPress;
-            event.mouse.x          = LOWORD(msg.lParam);
-            event.mouse.y          = HIWORD(msg.lParam);
+            event.type = EventType::MouseButtonPress;
+            setMouseXY(event, msg.lParam);
             event.mouse.button     = MouseButton::Middle;
             event.mouse.clickCount = m_clickCounter.next(msg.time, event.mouse.x, event.mouse.y, WM_MBUTTONDOWN);
             event.mouse.modifiers  = convertWin32Modifiers();
@@ -264,9 +262,8 @@ private:
             break;
 
         case WM_MBUTTONUP:
-            event.type         = EventType::MouseButtonRelease;
-            event.mouse.x      = LOWORD(msg.lParam);
-            event.mouse.y      = HIWORD(msg.lParam);
+            event.type = EventType::MouseButtonRelease;
+            setMouseXY(event, msg.lParam);
             event.mouse.button = MouseButton::Middle;
             releaseCapture(0x4U);
             break;
@@ -278,9 +275,10 @@ private:
             // hitTestChild() routes the scroll to the content surface - otherwise
             // scrolls near the client edge land outside the content surface's client rect,
             // get routed to UiRenderer::onScroll (a no-op), and zoom ticks
-            // are silently dropped. Coords are signed short (multi-monitor
+            // are silently dropped. Coords are signed 16-bit (multi-monitor
             // setups can produce negative values).
-            POINT pt = { .x = static_cast<short>(LOWORD(msg.lParam)), .y = static_cast<short>(HIWORD(msg.lParam)) };
+            POINT pt = { .x = static_cast<std::int16_t>(LOWORD(msg.lParam)),
+                         .y = static_cast<std::int16_t>(HIWORD(msg.lParam)) };
             ScreenToClient(msg.hwnd, &pt);
             event.mouse.x = pt.x;
             event.mouse.y = pt.y;
@@ -294,9 +292,8 @@ private:
         } break;
 
         case WM_MOUSEMOVE:
-            event.type    = EventType::MouseMove;
-            event.mouse.x = LOWORD(msg.lParam);
-            event.mouse.y = HIWORD(msg.lParam);
+            event.type = EventType::MouseMove;
+            setMouseXY(event, msg.lParam);
             break;
 
         case WM_KEYDOWN:
@@ -304,16 +301,19 @@ private:
             event.type                = EventType::KeyPress;
             event.key.keysym          = static_cast<uint32_t>(msg.wParam);
             event.key.modifiers       = convertWin32Modifiers();
-            const std::string keyname = vkToKeyName(msg.wParam);
+            const std::string keyname = vkToKeyName(msg.wParam, msg.lParam);
             std::strncpy(event.key.name.data(), keyname.c_str(), event.key.name.size() - 1);
         } break;
 
+        // Named as its press is, so a Ctrl going up reads as one (the Ctrl+Tab list)
         case WM_KEYUP:
-        case WM_SYSKEYUP:
-            event.type          = EventType::KeyRelease;
-            event.key.keysym    = static_cast<uint32_t>(msg.wParam);
-            event.key.modifiers = convertWin32Modifiers();
-            break;
+        case WM_SYSKEYUP: {
+            event.type                = EventType::KeyRelease;
+            event.key.keysym          = static_cast<uint32_t>(msg.wParam);
+            event.key.modifiers       = convertWin32Modifiers();
+            const std::string keyname = vkToKeyName(msg.wParam, msg.lParam);
+            std::strncpy(event.key.name.data(), keyname.c_str(), event.key.name.size() - 1);
+        } break;
 
         default: break;
         }
@@ -321,13 +321,26 @@ private:
         return event;
     }
 
+    // A mouse message's point, client px, signed: a pointer the capture holds left of or above
+    // the window comes below zero, read unsigned far right of it or below
+    static void setMouseXY(Event & event, LPARAM point)
+    {
+        event.mouse.x = static_cast<std::int16_t>(LOWORD(point));
+        event.mouse.y = static_cast<std::int16_t>(HIWORD(point));
+    }
+
     /**
      * @brief Convert Win32 virtual-key code to logical key name matching X11
      * XKeysymToString output. Letters return lowercase ("q"), F-keys "F1"..
      * "F24", and special keys use X11 names ("Return", "Escape", "Left", ...).
+     * `flags` is the message's lParam, which tells the right Ctrl (an extended key) from the left
      */
-    static std::string vkToKeyName(WPARAM vk)
+    static std::string vkToKeyName(WPARAM vk, LPARAM flags)
     {
+        if (vk == VK_CONTROL) {
+            return std::string { (Common::Bit::And(HIWORD(flags), KF_EXTENDED) != 0) ? Ui::Window::CONTROL_RIGHT
+                                                                                     : Ui::Window::CONTROL_LEFT };
+        }
         if (vk >= 'A' && vk <= 'Z') {
             return std::string(1, static_cast<char>(vk + ('a' - 'A')));
         }

@@ -317,7 +317,13 @@ private:
             event.mouse.y = xev.xmotion.y;
             break;
 
-        case X11EventTypes::LEAVE_NOTIFY: event.type = EventType::MouseLeave; break;
+        // The pointer gone from the window, not into a child of its own (Inferior) - over a
+        // content surface it is still over the app, and a drag held there goes on
+        case X11EventTypes::LEAVE_NOTIFY:
+            if (xev.xcrossing.detail != NotifyInferior) {
+                event.type = EventType::MouseLeave;
+            }
+            break;
 
         case X11EventTypes::KEY_PRESS: {
             event.type       = EventType::KeyPress;
@@ -348,6 +354,11 @@ private:
             const_cast<XKeyEvent *>(&xev.xkey), // NOLINT(cppcoreguidelines-pro-type-const-cast)
             0);
             event.key.modifiers = convertX11Modifiers(xev.xkey.state);
+
+            // Named as its press is, so a Ctrl going up reads as one (the Ctrl+Tab list)
+            if (const char * keyname = XKeysymToString(event.key.keysym); keyname != nullptr) {
+                std::strncpy(event.key.name.data(), keyname, event.key.name.size() - 1);
+            }
         } break;
 
         case X11EventTypes::SELECTION_REQUEST: {

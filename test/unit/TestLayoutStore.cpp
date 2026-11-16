@@ -82,6 +82,28 @@ TEST(LayoutStore, ToolbarButtonAndTooltipSized)
     EXPECT_GT(store.layout().tooltip.height, 0.0F);
 }
 
+// layout.json alone sizes the Ctrl+Tab list: a block it leaves out makes its rows 0 px
+// tall, so the list shows none
+TEST(LayoutStore, TabSwitcherSized)
+{
+    LayoutStore store;
+    store.load(resPath().layoutFile());
+    EXPECT_GT(store.layout().tabSwitcher.width, 0.0F);
+    EXPECT_GT(store.layout().tabSwitcherItem.height, 0.0F);
+    EXPECT_GT(store.layout().tabSwitcherItem.padding, 0.0F);
+}
+
+// A row's close button: an icon of some size, `var(--close-icon)` resolved to a file - left out,
+// the button is 0 px and its icon none, so no row could be closed
+TEST(LayoutStore, TabSwitcherCloseSized)
+{
+    LayoutStore store;
+    store.load(resPath().layoutFile());
+    EXPECT_GT(store.layout().tabSwitcherClose.height, 0.0F);
+    EXPECT_FALSE(store.layout().tabSwitcherCloseIcon.empty());
+    EXPECT_EQ(store.layout().tabSwitcherCloseIcon.find("var("), std::string::npos);
+}
+
 TEST(LayoutStore, ReloadIdenticalIsNoOp)
 {
     LayoutStore store;

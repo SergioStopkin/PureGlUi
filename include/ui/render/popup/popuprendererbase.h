@@ -19,6 +19,8 @@
 
 #include "common/bit.h"
 #include "common/noncopyable.h"
+#include "common/time.h"
+#include "ui/animation/animator.h"
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/fontrec.h"
@@ -29,9 +31,13 @@
 #include "ui/gl/svgrenderer.h"
 #include "ui/interface/irenderer.h"
 #include "ui/render/elementevent.h"
+#include "ui/render/scrollbar.h"
+#include "ui/res/key/element.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/border.h"
+#include "ui/res/type/bound.h"
 #include "ui/res/type/changed.h"
+#include "ui/res/type/colorpair.h"
 #include "ui/type.h"
 
 #include <algorithm>
@@ -84,6 +90,13 @@ public:
         m_rounded.setCornerPixels(std::move(pixels), radii);
     }
 
+    // What stands under the whole window, for one whose background lets it show through, in
+    // place of the corner pixels; RGBA, top-left origin, `width` x `height` physical pixels
+    void setUnderlay(const std::vector<uint8_t> & pixels, int width, int height)
+    {
+        m_rounded.setUnderlay(pixels, width, height);
+    }
+
     [[nodiscard]] bool hasCornerPixels() const { return m_rounded.hasCornerPixels(); }
 
     // -- Ui::IRenderer boilerplate --
@@ -96,7 +109,13 @@ public:
         }
     }
 
-    void apply(Ui::Res::Type::changes_t /*changed*/) override { }
+    // A theme switch is no change of state: every colour lands on the new theme's at once
+    void apply(Ui::Res::Type::changes_t changed) override
+    {
+        if (changed.has(Ui::Res::Type::Changed::Theme)) {
+            m_animator = Ui::Animation::Animator<id_t> {};
+        }
+    }
 
     void cleanup() override
     {
@@ -108,12 +127,16 @@ public:
 
     Ui::Render::element_event_t onScroll(int /*x*/, int /*y*/, fpx_t /*deltaY*/) override { return {}; }
 
+    // Whether the last frame drew a colour midway along its fade, so another frame is due
+    [[nodiscard]] bool isGliding() const { return m_animator.isRunning(); }
+
 protected:
     // Begin a render frame: clear, viewport, blend, corner underlay. An opaque
     // window clears to its own background.
     // Returns true if premultiplied alpha is active.
     bool beginRender(const Ui::Color & background)
     {
+        m_animator.beginFrame(Common::Time::now());
         if (m_width <= 0 || m_height <= 0) {
             return false;
         }
@@ -195,6 +218,49 @@ protected:
 
     static void endSvgDraw() { Ui::Gl::SvgRenderer::end(); }
 
+    // A scrollbar's track and its thumb at `value`, over `background`: a thumb meeting an end of
+    // the track rounds its corners there over the background, else over the track
+    void drawScrollBar(const Ui::Render::ScrollBar & scrollBar, fpx_t value, const Ui::Color & background)
+    {
+        const Ui::Color &             trackColor = m_resManager.theme().scrollbarTrack;
+        const Ui::Res::Type::border_t border     = scrollBar.radius();
+        const Ui::Res::Type::bound_t  drawTrack  = scrollBar.track();
+        const Ui::Res::Type::bound_t  drawThumb  = scrollBar.thumb(value);
+        const Ui::Color &             thumbColor = scrollBar.thumbColor();
+        const bool                    atTop      = (drawThumb.y <= drawTrack.y);
+        const bool                    atBottom   = (drawThumb.y + drawThumb.h >= drawTrack.y + drawTrack.h);
+        const Ui::Color               bgTop      = atTop ? background : trackColor;
+        const Ui::Color               bgBottom   = atBottom ? background : trackColor;
+
+        m_rounded.begin(m_width, m_height, g_config.scale);
+        m_rounded.draw(drawTrack, border, { .fg = trackColor, .bg = background });
+        if (atTop == atBottom) {
+            m_rounded.draw(drawThumb, border, { .fg = thumbColor, .bg = bgTop });
+        } else {
+            const Ui::Res::Type::border_t topBorder    = { .topLeft = border.topLeft, .topRight = border.topRight };
+            const Ui::Res::Type::border_t bottomBorder = { .bottomRight = border.bottomRight,
+                                                           .bottomLeft  = border.bottomLeft };
+            const fpx_t                   halfH        = drawThumb.h / 2;
+            m_rounded.draw({ .x = drawThumb.x, .y = drawThumb.y, .w = drawThumb.w, .h = halfH },
+                           topBorder,
+                           { .fg = thumbColor, .bg = bgTop });
+            m_rounded.draw({ .x = drawThumb.x, .y = drawThumb.y + halfH, .w = drawThumb.w, .h = drawThumb.h - halfH },
+                           bottomBorder,
+                           { .fg = thumbColor, .bg = bgBottom });
+        }
+        Ui::Gl::Rounded::end();
+    }
+
+    // The colours `key` is drawn in this frame: `target`, the theme's for its state, faded along
+    // `block`'s transition in animation.json. Popup colours blend premultiplied, so a target of
+    // none is the caller's ground (inheritBg), never a fade through clear
+    [[nodiscard]] Ui::Res::Type::color_pair_t colorsOf(id_t                                key,
+                                                       const Ui::Res::Type::color_pair_t & target,
+                                                       Ui::Res::Key::ElementKey            block)
+    {
+        return m_animator.colorsOf(key, target, m_resManager.transitionsFor(block));
+    }
+
     // -- Shared members --
 
     const Ui::Res::ResManager & m_resManager;
@@ -204,6 +270,9 @@ protected:
     Ui::Gl::FontRenderer        m_fontRenderer;
     Ui::Gl::SvgRenderer         m_svgRenderer;
     Ui::Gl::Rounded             m_rounded;
+
+    // A popup lives as long as what it shows, so nothing in it is swept
+    Ui::Animation::Animator<id_t> m_animator;
 };
 
 } // namespace Ui::Render::Popup

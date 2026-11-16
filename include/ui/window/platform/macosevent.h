@@ -22,10 +22,14 @@
 #include "ui/interface/iwindow.h"
 #include "ui/window/event.h"
 #include "ui/window/eventtype.h"
+#include "ui/window/iscontrolkey.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -359,6 +363,19 @@ private:
             fillKeyName(event, nsEvent);
             break;
 
+        // Ctrl or Cmd alone going down or up comes as a change of the modifier flags, never
+        // a key event: one Control here, as convertNSModifiers folds them, held while either
+        // is, and named as X11 names Ctrl - so a Ctrl going up reads as one (the Ctrl+Tab list)
+        case NSEventTypeFlagsChanged:
+            if (const std::string_view name = controlKeyName([nsEvent keyCode]); !name.empty()) {
+                const bool isHeld   = convertNSModifiers([nsEvent modifierFlags]).has(KeyModifier::Control);
+                event.type          = isHeld ? EventType::KeyPress : EventType::KeyRelease;
+                event.key.keysym    = [nsEvent keyCode];
+                event.key.modifiers = convertNSModifiers([nsEvent modifierFlags]);
+                setKeyName(event, name);
+            }
+            break;
+
         default: break;
         }
 
@@ -389,11 +406,31 @@ private:
         return mods;
     }
 
+    // Ctrl and Cmd, either side, named as X11 names Ctrl; empty for any other key
+    static std::string_view controlKeyName(std::uint16_t keyCode)
+    {
+        switch (keyCode) {
+        case 0x3B: return Ui::Window::CONTROL_LEFT;  // kVK_Control
+        case 0x3E: return Ui::Window::CONTROL_RIGHT; // kVK_RightControl
+        case 0x37: return Ui::Window::CONTROL_LEFT;  // kVK_Command
+        case 0x36: return Ui::Window::CONTROL_RIGHT; // kVK_RightCommand
+        default: return {};
+        }
+    }
+
+    // `name` as the event's key name: cut to its field and ended there
+    static void setKeyName(Event & event, std::string_view name)
+    {
+        const std::size_t length = std::min(name.size(), event.key.name.size() - 1);
+        std::ranges::copy(name.substr(0, length), event.key.name.begin());
+        event.key.name.at(length) = '\0';
+    }
+
     /**
      * @brief Map macOS virtual keycodes to the logical key names used by shortcuts.
-     * Returns nullptr for keys that should fall back to charactersIgnoringModifiers.
+     * Empty for keys that should fall back to charactersIgnoringModifiers.
      */
-    static const char * specialKeyName(unsigned short keyCode)
+    static std::string_view specialKeyName(std::uint16_t keyCode)
     {
         switch (keyCode) {
         case 0x24: return "Return";    // kVK_Return
@@ -405,8 +442,8 @@ private:
         case 0x75: return "Delete";    // kVK_ForwardDelete
         case 0x73: return "Home";      // kVK_Home
         case 0x77: return "End";       // kVK_End
-        case 0x74: return "Page_Up";   // kVK_PageUp
-        case 0x79: return "Page_Down"; // kVK_PageDown
+        case 0x74: return "Prior";     // kVK_PageUp, named as X11, Wayland and Win32 name it
+        case 0x79: return "Next";      // kVK_PageDown
         case 0x7B: return "Left";      // kVK_LeftArrow
         case 0x7C: return "Right";     // kVK_RightArrow
         case 0x7D: return "Down";      // kVK_DownArrow
@@ -423,7 +460,7 @@ private:
         case 0x6D: return "F10";
         case 0x67: return "F11";
         case 0x6F: return "F12";
-        default: return nullptr;
+        default: return {};
         }
     }
 
@@ -434,17 +471,15 @@ private:
      */
     static void fillKeyName(Event & event, NSEvent * nsEvent)
     {
-        if (const char * special = specialKeyName([nsEvent keyCode])) {
-            strncpy(event.key.name.data(), special, event.key.name.size() - 1);
-            event.key.name[event.key.name.size() - 1] = '\0';
+        if (const std::string_view special = specialKeyName([nsEvent keyCode]); !special.empty()) {
+            setKeyName(event, special);
             return;
         }
         NSString * chars = [nsEvent charactersIgnoringModifiers];
         if (chars && [chars length] > 0) {
             const char * utf8 = [chars UTF8String];
             if (utf8) {
-                strncpy(event.key.name.data(), utf8, event.key.name.size() - 1);
-                event.key.name[event.key.name.size() - 1] = '\0';
+                setKeyName(event, utf8);
             }
         }
     }

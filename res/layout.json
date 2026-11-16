@@ -92,6 +92,26 @@
     "padding": "8px",
     "border-radius": "16px"
   },
+  "tab-switcher": {
+    "width": "160px",
+    "margin": "16px",
+    "border-radius": "16px"
+  },
+  "tab-switcher-item": {
+    "height": "32px",
+    "padding": "16px"
+  },
+  "tab-switcher-item:active": {
+    "margin": "3px",
+    "border-radius": "13px"
+  },
+  "tab-switcher-close": {
+    "height": "14px",
+    "margin": "4px",
+    "right": "6px",
+    "border-radius": "11px",
+    "icon": "var(--close-icon)"
+  },
   "workspace-tab": {
     "height": "var(--workspace-tab-height)",
     "width": "144px",

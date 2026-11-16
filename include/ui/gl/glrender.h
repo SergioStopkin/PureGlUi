@@ -125,7 +125,15 @@ public:
         if (shadow.isVisible()) {
             drawShadow(bound, radii, shadow);
         }
+        // Over a transparent ground Rounded writes its colour premultiplied, corners clear
+        const bool isOverDrawn = colors.bg.a() == 0;
+        if (isOverDrawn) {
+            Ui::Gl::Util::blendPremultipliedAlpha();
+        }
         m_rounded.draw(bound, radii, colors);
+        if (isOverDrawn) {
+            Ui::Gl::Util::blendStraightAlpha();
+        }
     }
 
     void drawText(Ui::font_handle_t              font,
@@ -244,7 +252,9 @@ public:
         m_mode = Ui::Gl::BatchMode::None; // next rect/image re-begins its batch
     }
 
-    void endFrame() override
+    void endFrame() override { flushLayer(); }
+
+    void flushLayer() override
     {
         endCurrentMode();
         flushText();

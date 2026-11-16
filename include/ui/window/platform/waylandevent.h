@@ -28,6 +28,7 @@
 #include "ui/window/event.h"
 #include "ui/window/eventtype.h"
 #include "ui/window/platform/waylandwindow.h"
+#include "ui/window/platform/xkbkeynameof.h"
 
 #include <algorithm>
 #include <iostream>
@@ -35,6 +36,7 @@
 #include <poll.h>
 #include <queue>
 #include <string>
+#include <string_view>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <utility>
@@ -774,11 +776,12 @@ private:
         // Get modifiers
         event.key.modifiers = self->modifiers();
 
-        // Get text representation and logical key name for key press
+        // Text for a press; the name for both, as X11 names it (xkbKeyNameOf)
         if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
             xkb_state_key_get_utf8(self->m_xkbState, keycode, event.key.text.data(), event.key.text.size());
-            xkb_keysym_get_name(keysym, event.key.name.data(), event.key.name.size());
         }
+        const std::string name = Ui::Window::Platform::xkbKeyNameOf(self->m_xkbState, self->m_xkbKeymap, keycode);
+        std::ranges::copy(std::string_view(name).substr(0, event.key.name.size() - 1), event.key.name.begin());
 
         self->queueEvent(event);
     }

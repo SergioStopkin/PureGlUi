@@ -14,5 +14,15 @@
   {
     "action": "CloseTab",
     "keys": "Ctrl + W"
+  },
+  {
+    "action": "CycleTab",
+    "arg": "prior",
+    "keys": "Ctrl + Prior"
+  },
+  {
+    "action": "CycleTab",
+    "arg": "next",
+    "keys": "Ctrl + Next"
   }
 ]

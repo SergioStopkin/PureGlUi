@@ -45,6 +45,7 @@ public:
 
     void beginFrame(Ui::fpx_t, Ui::fpx_t) override { ++frames; }
     void endFrame() override { }
+    void flushLayer() override { }
     void fillRect(const Ui::Res::Type::bound_t &,
                   const Ui::Res::Type::border_t &,
                   const Ui::Res::Type::color_pair_t &,

@@ -113,8 +113,8 @@ TEST_F(UiDriverTest, ActivateMenuButtonById_TogglesPopup)
 }
 
 // -- Mode 2: address by keyboard shortcut ----------------------------------
-// Every data-driven shortcut resolves to an EmitAction carrying its actionKey;
-// an unknown combo resolves to nothing.
+// Every data-driven shortcut resolves to an EmitAction carrying its actionKey and
+// arg; an unknown combo resolves to nothing.
 TEST_F(UiDriverTest, ShortcutResolvesToAction)
 {
     // Normalization is what turns a res "Ctrl + O" into the map key.
@@ -124,11 +124,11 @@ TEST_F(UiDriverTest, ShortcutResolvesToAction)
     ASSERT_FALSE(shortcuts.empty());
 
     Ui::Render::Context context(resManager);
-    for (const auto & [normalizedKey, action] : shortcuts) {
+    for (const auto & [normalizedKey, intent] : shortcuts) {
         const Ui::result_t result = context.mapKey(normalizedKey);
         ASSERT_EQ(result.intents.size(), 1U) << "shortcut: " << normalizedKey;
         EXPECT_EQ(result.intents.front().kind, Ui::IntentKind::EmitAction);
-        EXPECT_EQ(result.intents.front().actionKey, action);
+        EXPECT_EQ(result.intents.front(), intent);
     }
 
     EXPECT_TRUE(context.mapKey("ctrl+shift+f19").intents.empty());

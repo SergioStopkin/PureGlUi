@@ -21,7 +21,10 @@
 #include "ui/idkind.h"
 #include "ui/interface/irender.h"
 #include "ui/render/eventkind.h"
+#include "ui/render/tabcloseboundof.h"
+#include "ui/render/tabsshownof.h"
 #include "ui/render/tabstripwidthof.h"
+#include "ui/render/truncate.h"
 #include "ui/render/uielement.h"
 #include "ui/render/uielementstate.h"
 #include "ui/res/dock/anchor.h"
@@ -41,6 +44,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -97,29 +101,31 @@ public:
                const std::string &                          statusText = "")
     {
         m_elements.clear();
-        m_menuFont      = 0;
-        m_itemFont      = 0;
-        m_itemFontBold  = 0;
-        m_popupFont     = 0;
-        m_popupFontBold = 0;
-        m_shortcutFont  = 0;
-        m_statusBarFont = 0;
-        m_tooltipFont   = 0;
+        m_menuFont        = 0;
+        m_itemFont        = 0;
+        m_itemFontBold    = 0;
+        m_popupFont       = 0;
+        m_popupFontBold   = 0;
+        m_shortcutFont    = 0;
+        m_statusBarFont   = 0;
+        m_tooltipFont     = 0;
+        m_tabSwitcherFont = 0;
 
         // Resolve font handles (create once, reuse)
         if (render != nullptr) {
-            m_menuFont      = render->createFont(theme.topMenuFont);
-            m_itemFont      = render->createFont(theme.workspaceTabFont);
-            m_itemFontBold  = render->createFont({ .family = theme.workspaceTabFont.family,
-                                                   .size   = theme.workspaceTabFont.size,
-                                                   .weight = theme.workspaceTabActiveWeight });
-            m_statusBarFont = render->createFont(theme.statusBarFont);
-            m_tooltipFont   = render->createFont(theme.tooltipFont);
-            m_popupFont     = render->createFont(theme.menuItemFont);
-            m_popupFontBold = render->createFont({ .family = theme.menuItemFont.family,
-                                                   .size   = theme.menuItemFont.size,
-                                                   .weight = Ui::Res::Type::FontWeight::Bold });
-            m_shortcutFont  = render->createFont(theme.shortcutFont);
+            m_menuFont        = render->createFont(theme.topMenuFont);
+            m_itemFont        = render->createFont(theme.workspaceTabFont);
+            m_itemFontBold    = render->createFont({ .family = theme.workspaceTabFont.family,
+                                                     .size   = theme.workspaceTabFont.size,
+                                                     .weight = theme.workspaceTabActiveWeight });
+            m_statusBarFont   = render->createFont(theme.statusBarFont);
+            m_tooltipFont     = render->createFont(theme.tooltipFont);
+            m_tabSwitcherFont = render->createFont(theme.tabSwitcherFont);
+            m_popupFont       = render->createFont(theme.menuItemFont);
+            m_popupFontBold   = render->createFont({ .family = theme.menuItemFont.family,
+                                                     .size   = theme.menuItemFont.size,
+                                                     .weight = Ui::Res::Type::FontWeight::Bold });
+            m_shortcutFont    = render->createFont(theme.shortcutFont);
         }
 
         // ---- Top menu buttons ----
@@ -276,6 +282,34 @@ public:
         return width;
     }
 
+    // The Ctrl+Tab list's rows fitted to `maxWidth` CSS px, and the width they take: a
+    // row its label, then a gap and its description, between its paddings (layout.json
+    // tab-switcher-item), the list's narrowest width at least (tab-switcher). A
+    // description is cut first, then a label - the file's name is what tells rows apart
+    [[nodiscard]] fpx_t fitTabSwitcherRows(fpx_t                       maxWidth,
+                                           const Ui::Res::ResManager & resManager,
+                                           Ui::IRender &               render,
+                                           std::vector<Ui::tab_t> &    rows) const
+    {
+        const fpx_t padH  = resManager.layout().tabSwitcherItem.padding;
+        fpx_t       width = resManager.layout().tabSwitcher.width;
+        for (Ui::tab_t & row : rows) {
+            row.label = Ui::Render::truncateFileName(row.label, maxWidth - (padH * 2), &render, m_tabSwitcherFont);
+            const fpx_t labelW       = render.textWidth(m_tabSwitcherFont, Common::Unicode::fromUtf8(row.label));
+            row.description          = Ui::Render::truncateText(row.description,
+                                                                maxWidth - (padH * 3) - labelW,
+                                                                &render,
+                                                                m_tabSwitcherFont);
+            const fpx_t descriptionW = row.description.empty()
+                                     ? 0.0F
+                                     : padH
+                                       + render.textWidth(m_tabSwitcherFont,
+                                                          Common::Unicode::fromUtf8(row.description));
+            width                    = std::max(width, padH + labelW + descriptionW + padH);
+        }
+        return std::min(width, maxWidth);
+    }
+
     /**
      * @brief Build popup layout from menu data
      *
@@ -364,16 +398,6 @@ public:
         return nullptr;
     }
 
-    [[nodiscard]] const UiElement * parentOf(const UiElement & child) const
-    {
-        for (const auto & el : m_elements) {
-            if (el.id == child.id && el.type != child.type) {
-                return &el;
-            }
-        }
-        return nullptr;
-    }
-
     /**
      * @brief Get all elements for rendering (flat list, draw in order)
      */
@@ -426,33 +450,22 @@ public:
 
 private:
     std::vector<UiElement> m_elements;
-    Ui::font_handle_t      m_menuFont      = 0;
-    Ui::font_handle_t      m_itemFont      = 0;
-    Ui::font_handle_t      m_itemFontBold  = 0;
-    Ui::font_handle_t      m_popupFont     = 0;
-    Ui::font_handle_t      m_popupFontBold = 0;
-    Ui::font_handle_t      m_shortcutFont  = 0;
-    Ui::font_handle_t      m_statusBarFont = 0;
-    Ui::font_handle_t      m_tooltipFont   = 0;
+    Ui::font_handle_t      m_menuFont        = 0;
+    Ui::font_handle_t      m_itemFont        = 0;
+    Ui::font_handle_t      m_itemFontBold    = 0;
+    Ui::font_handle_t      m_popupFont       = 0;
+    Ui::font_handle_t      m_popupFontBold   = 0;
+    Ui::font_handle_t      m_shortcutFont    = 0;
+    Ui::font_handle_t      m_statusBarFont   = 0;
+    Ui::font_handle_t      m_tooltipFont     = 0;
+    Ui::font_handle_t      m_tabSwitcherFont = 0;
 
-    void addTabClose(fpx_t              tabX,
-                     fpx_t              tabY,
-                     fpx_t              tabW,
-                     fpx_t              tabH,
-                     fpx_t              closeMargin,
-                     fpx_t              closeRight,
-                     id_t               tabId,
-                     const Ui::TabBar & tabBar)
+    // A tab and, right after it, its close glyph - every tab's, an untitled one's too - the order
+    // drawing relies on to place the glyph in the tab where it is drawn
+    void addTab(const Ui::Res::Type::layout_t & layout, const Ui::Res::Type::bound_t & bound, id_t tabId)
     {
-        const Ui::tab_t * tab = tabBar.find(tabId);
-        if (tab == nullptr || !tab->hasContent) {
-            return;
-        }
-        const fpx_t w = tabH - (closeMargin * 2);
-        const fpx_t h = w;
-        const fpx_t x = tabX + tabW - w - closeRight;
-        const fpx_t y = tabY + closeMargin;
-        addElement(UiElementType::TabClose, { .x = x, .y = y, .w = w, .h = h }, tabId);
+        addElement(UiElementType::Tab, bound, tabId);
+        addElement(UiElementType::TabClose, Ui::Render::tabCloseBoundOf(layout, bound), tabId);
     }
 
     // Build workspace tab elements with browser-like adaptive sizing:
@@ -469,11 +482,9 @@ private:
         const fpx_t maxTabW = layout.workspaceTab.width;
         const fpx_t minTabW = layout.tabMinWidth;
         const fpx_t arrowW  = layout.tabArrowWidth;
-        const fpx_t closeM  = layout.tabCloseMargin;
-        const fpx_t closeR  = layout.tabCloseRight;
 
-        const std::vector<id_t> & tabIds = tabBar.order();
-        const size_t              count  = tabIds.size();
+        const auto   tabIds = tabBar.order();
+        const size_t count  = tabIds.size();
 
         if (count == 0) {
             return;
@@ -483,8 +494,7 @@ private:
         if (maxTabW * count <= availW) {
             fpx_t cursorX = offsetX;
             for (const id_t wsId : tabIds) {
-                addElement(UiElementType::Tab, { .x = cursorX, .y = offsetY, .w = maxTabW, .h = tabH }, wsId);
-                addTabClose(cursorX, offsetY, maxTabW, tabH, closeM, closeR, wsId, tabBar);
+                addTab(layout, { .x = cursorX, .y = offsetY, .w = maxTabW, .h = tabH }, wsId);
                 cursorX += maxTabW;
             }
             return;
@@ -495,15 +505,15 @@ private:
             const fpx_t tabW    = availW / count;
             fpx_t       cursorX = offsetX;
             for (const id_t wsId : tabIds) {
-                addElement(UiElementType::Tab, { .x = cursorX, .y = offsetY, .w = tabW, .h = tabH }, wsId);
-                addTabClose(cursorX, offsetY, tabW, tabH, closeM, closeR, wsId, tabBar);
+                addTab(layout, { .x = cursorX, .y = offsetY, .w = tabW, .h = tabH }, wsId);
                 cursorX += tabW;
             }
             return;
         }
 
-        // Case 3: need arrows -- show visible subset, shrink to fill remaining space
-        const size_t scrollOff    = tabBar.scrollOffset();
+        // Case 3: need arrows -- show visible subset, shrink to fill remaining space. From the
+        // first that leaves the strip full, never fewer tabs stretched across it past the offset
+        const size_t scrollOff    = tabBar.firstShown(Ui::Render::tabsShownOf(availW, minTabW, arrowW, count));
         const bool   showLeft     = (scrollOff > 0);
         fpx_t        tabAreaW     = availW - (showLeft ? arrowW : 0) - arrowW;
         size_t       visibleCount = std::max(static_cast<size_t>(tabAreaW / minTabW), static_cast<size_t>(1));
@@ -529,11 +539,8 @@ private:
             cursorX += arrowW;
         }
 
-        const size_t visibleEnd = std::min(scrollOff + visibleCount, count);
-        for (size_t i = scrollOff; i < visibleEnd; ++i) {
-            const id_t wsId = tabIds.at(i);
-            addElement(UiElementType::Tab, { .x = cursorX, .y = offsetY, .w = tabW, .h = tabH }, wsId);
-            addTabClose(cursorX, offsetY, tabW, tabH, closeM, closeR, wsId, tabBar);
+        for (const id_t wsId : tabIds | std::views::drop(scrollOff) | std::views::take(visibleCount)) {
+            addTab(layout, { .x = cursorX, .y = offsetY, .w = tabW, .h = tabH }, wsId);
             cursorX += tabW;
         }
 

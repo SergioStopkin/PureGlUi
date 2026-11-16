@@ -49,9 +49,13 @@ public:
     virtual void beginFrame(fpx_t width, fpx_t height) = 0;
     virtual void endFrame()                            = 0;
 
+    // Ends a layer mid-frame: everything called so far, deferred text included, is drawn
+    // before anything called after, so a later layer covers it whole (a dragged tab)
+    virtual void flushLayer() = 0;
+
     // Rounded rectangle fill with per-corner radii. colors.fg is the fill;
-    // colors.bg is the antialiasing/compositing background. An invisible
-    // shadow ({}), is skipped.
+    // colors.bg is the antialiasing/compositing background, a transparent one
+    // leaving what is drawn under the corners. An invisible shadow ({}), is skipped.
     virtual void fillRect(const Res::Type::bound_t &      bound,
                           const Res::Type::border_t &     radii,
                           const Res::Type::color_pair_t & colors,

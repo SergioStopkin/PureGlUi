@@ -106,6 +106,9 @@ inline void blendStraightAlpha()
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 }
 
+// Colour already multiplied by its alpha, as Rounded writes it over a transparent ground
+inline void blendPremultipliedAlpha() { glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); }
+
 // Compile a single shader stage; returns 0 on failure
 inline GLuint compileShader(GLenum type, const char * source, const char * label)
 {

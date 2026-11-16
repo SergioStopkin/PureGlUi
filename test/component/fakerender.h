@@ -32,6 +32,7 @@ class FakeRender final : public Ui::IRender {
 public:
     void beginFrame(Ui::fpx_t /*width*/, Ui::fpx_t /*height*/) override { }
     void endFrame() override { }
+    void flushLayer() override { }
     void fillRect(const Ui::Res::Type::bound_t & /*bound*/,
                   const Ui::Res::Type::border_t & /*radii*/,
                   const Ui::Res::Type::color_pair_t & /*colors*/,

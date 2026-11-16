@@ -22,6 +22,8 @@
 #include "ui/gl/svgrenderer.h"
 #include "ui/idkind.h"
 #include "ui/render/dragtrack.h"
+#include "ui/render/elementkey.h"
+#include "ui/render/rowsscrolledof.h"
 #include "ui/render/scrollbar.h"
 #include "ui/render/slider.h"
 #include "ui/render/thumbmetrics.h"
@@ -34,12 +36,14 @@
 #include "ui/res/dock/row.h"
 #include "ui/res/dock/rowkind.h"
 #include "ui/res/dock/state.h"
+#include "ui/res/key/element.h"
 #include "ui/res/key/iconrole.h"
 #include "ui/res/resmanager.h"
 #include "ui/res/type/alignh.h"
 #include "ui/res/type/alignv.h"
 #include "ui/res/type/border.h"
 #include "ui/res/type/bound.h"
+#include "ui/res/type/colorpair.h"
 #include "ui/type.h"
 
 #include <algorithm>
@@ -243,19 +247,8 @@ public:
     // dialog answer the wheel alike
     bool onScroll(fpx_t deltaY)
     {
-        const fpx_t rowH = rowHeight();
-        if (deltaY == 0.0F || rowH <= 0.0F) {
-            return false;
-        }
-        const auto & input  = m_resManager.input();
-        const fpx_t  pixels = deltaY * (input.scrollNatural ? 1.0F : -1.0F) * input.scrollSpeed;
-
-        // A notch always moves at least one row, however coarse the row is
-        int rows = static_cast<int>(pixels / rowH);
-        if (rows == 0) {
-            rows = (pixels > 0.0F) ? 1 : -1;
-        }
-        return setFirstRow(static_cast<int>(m_firstRow) + rows);
+        const int rows = Ui::Render::rowsScrolledOf(deltaY, rowHeight(), m_resManager.input());
+        return rows != 0 && setFirstRow(static_cast<int>(m_firstRow) + rows);
     }
 
     // Only beside rows that are shown: in a dock too narrow for them the bar is a
@@ -823,9 +816,15 @@ private:
             const Ui::Res::Type::bound_t bound = rowBound(contentRect, i);
 
             // Selected rows take the menu's active block; a dock row and a menu
-            // row are the same thing visually, so they share the theming
-            if (row.isSelected) {
-                out.appendBg(bound, theme.menuItemActive, theme.dock.background.bg);
+            // row are the same thing visually, so they share the theming - and its
+            // fade in and out, top-menu-item's in animation.json
+            const Ui::Res::Type::color_pair_t selection = out.colorsOf(
+            Ui::Render::element_key_t { .id = row.id, .type = UiElementType::DockRow },
+            row.isSelected ? theme.menuItemActive
+                           : Ui::Res::Type::color_pair_t { .fg = theme.menuItemActive.fg, .bg = Ui::Color::Inherit() },
+            Ui::Res::Key::ElementKey::TopMenuItem);
+            if (!selection.bg.isInherit()) {
+                out.appendBg(bound, selection, theme.dock.background.bg);
             }
 
             const fpx_t indent = padH + (indentStep() * static_cast<fpx_t>(row.depth));

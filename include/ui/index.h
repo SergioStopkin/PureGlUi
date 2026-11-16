@@ -17,9 +17,11 @@
 
 #pragma once
 
-#include "ui/registry.h"
+#include "ui/linkedmap.h"
 
+#include <concepts>
 #include <cstddef>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -30,27 +32,36 @@ namespace Ui {
 // read O(1) per key - a parent-to-children index over a tree being the case
 // this exists for.
 //
-// Composed over Registry rather than reimplementing map + order, so the two
-// stay one storage strategy. Registry means "one value per key, in order";
-// this means "many values per key". Keeping them separate keeps Registry's
+// Composed over LinkedMap rather than reimplementing map + order, so the two
+// stay one storage strategy. LinkedMap means "one value per key, in order";
+// this means "many values per key". Keeping them separate keeps LinkedMap's
 // meaning intact.
 //
 // Insertion order is preserved within a group, which is what a tree walk
 // needs: children come out in the order the source listed them.
 template <typename Key, typename T>
 class Index final {
-    Registry<Key, std::vector<T>> m_groups;
+    LinkedMap<Key, std::vector<T>> m_groups;
 
 public:
-    void add(const Key & key, T value) { m_groups.findOrAdd(key).emplace_back(std::move(value)); }
-
-    // An absent key yields an empty group, not null, so callers walk the
-    // result without first asking whether the key exists.
-    [[nodiscard]] const std::vector<T> & group(const Key & key) const
+    // Moved in, as LinkedMap::add
+    void add(const Key & key, T && value)
     {
-        static const std::vector<T> EMPTY;
-        const std::vector<T> *      found = m_groups.find(key);
-        return (found != nullptr) ? *found : EMPTY;
+        m_groups.visitOrAdd(key, [&value](std::vector<T> & group) { group.emplace_back(std::move(value)); });
+    }
+
+    // Calls fn with each value under key, in the order added - none for a key not held, so a
+    // caller walks a group without asking first; whether it was held. As LinkedMap::visit, no
+    // reference outlives the call
+    template <typename Fn>
+        requires std::invocable<const Fn &, const T &>
+    bool visit(const Key & key, const Fn & fn) const
+    {
+        return m_groups.visit(key, [&fn](const std::vector<T> & group) {
+            for (const T & value : group) {
+                std::invoke(fn, value);
+            }
+        });
     }
 
     [[nodiscard]] bool contains(const Key & key) const { return m_groups.contains(key); }
@@ -61,7 +72,7 @@ public:
     [[nodiscard]] bool empty() const { return m_groups.empty(); }
 
     // Keys in first-seen order
-    [[nodiscard]] const std::vector<Key> & keys() const { return m_groups.order(); }
+    [[nodiscard]] auto keys() const { return m_groups.keys(); }
 };
 
 } // namespace Ui

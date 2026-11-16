@@ -26,6 +26,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 
 namespace PureGlUi {
 
@@ -38,6 +39,10 @@ constexpr std::chrono::milliseconds MOST_WAIT { 5000 };
 // them (runWithin). And how often the wait looks
 constexpr std::chrono::milliseconds FRAMES_MOST { 1000 };
 constexpr std::chrono::milliseconds POLL_INTERVAL { 10 };
+
+// Slept past a glide's end before it is expected landed: on Windows the sleep's timer and the
+// animator's clock are two, and the timer can wake a hair early by the clock
+constexpr std::chrono::milliseconds GLIDE_MARGIN { 5 };
 
 // The window a session that ended fullscreen kept, in physical px: off the layout's default and
 // over the window's least, so a window back at it is the session's
@@ -62,7 +67,10 @@ constexpr const char * NO_FOCUS_LOSS = "the OS kept the app active here";
 constexpr const char * NO_MINIMIZE   = "AppKit does not minimize the window here";
 
 // The Q key on macOS, kVK_ANSI_Q
-constexpr unsigned short MAC_KEY_Q = 12;
+constexpr std::uint16_t MAC_KEY_Q = 12;
+
+// The left Ctrl key on macOS, kVK_Control
+constexpr std::uint16_t MAC_KEY_CONTROL = 59;
 
 // Nothing done to the window round a press
 constexpr auto NOTHING = [] { };

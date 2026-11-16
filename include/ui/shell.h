@@ -24,6 +24,7 @@
 #include "sig.h"
 #include "ui/action/actionmap.h"
 #include "ui/action/openpickedfiles.h"
+#include "ui/action/opentabswitcher.h"
 #include "ui/action/registry.h"
 #include "ui/config.h"
 #include "ui/gl/glutil.h"
@@ -36,6 +37,7 @@
 #include "ui/io/filedialog.h"
 #include "ui/render/context.h"
 #include "ui/render/elementevent.h"
+#include "ui/render/popup/tabswitcherrenderer.h"
 #include "ui/render/renderscope.h"
 #include "ui/render/tabsshownof.h"
 #include "ui/render/tabstripwidthof.h"
@@ -50,11 +52,15 @@
 #include "ui/res/type/menu.h"
 #include "ui/res/util.h"
 #include "ui/result.h"
+#include "ui/tab.h"
 #include "ui/tabbar.h"
+#include "ui/tabswitch.h"
 #include "ui/type.h"
 #include "ui/window/displaystextof.h"
 #include "ui/window/event.h"
 #include "ui/window/eventtype.h"
+#include "ui/window/iscontrolkey.h"
+#include "ui/window/keymodifier.h"
 #include "ui/window/mousebutton.h"
 #include "ui/window/nativewindow.h"
 #include "ui/window/popup/popupwindow.h"
@@ -68,6 +74,7 @@
 #include <exception>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -143,28 +150,36 @@ public:
 
     // Activate a tab as a click on it does. An action that picks the tab itself
     // (CycleTab) calls it too, so the strip scrolls it into view - a click's tab is
-    // already in it
+    // already in it. A click on a row of the Ctrl+Tab list is one on its tab, and the
+    // list goes down with any switch
     void setActiveTab(id_t tabId) override
     {
+        cancelTabSwitcher();
         if (m_onTabActivated) {
             m_onTabActivated(tabId);
         }
-        Ui::TabBar &              tabBar = m_resManager.tabBar();
-        const std::vector<id_t> & order  = tabBar.order();
-        const auto                it     = std::ranges::find(order, tabId);
+        Ui::TabBar & tabBar = m_resManager.tabBar();
+        const auto   order  = tabBar.order();
+        const auto   it     = std::ranges::find(order, tabId);
         if (it == order.end()) {
             return;
         }
-        const Ui::Res::Type::layout_t & layout = m_resManager.layout();
-        const std::size_t               before = tabBar.scrollOffset();
-        tabBar.reveal(static_cast<std::size_t>(it - order.begin()),
-                      Ui::Render::tabsShownOf(Ui::Render::tabStripWidthOf(layout, toCss(m_windowManager.windowWidth())),
-                                              layout.tabMinWidth,
-                                              layout.tabArrowWidth,
-                                              order.size()));
+        const std::size_t before = tabBar.scrollOffset();
+        tabBar.reveal(static_cast<std::size_t>(std::ranges::distance(order.begin(), it)), tabsShown());
         if (tabBar.scrollOffset() != before) {
             m_windowManager.requestContentRefresh();
         }
+    }
+
+    // The Ctrl+Tab list while Ctrl is held, up or not yet: what OpenTabSwitcher opens, and the
+    // shell's key, release and pointer handling drive
+    [[nodiscard]] Ui::TabSwitch & tabSwitch() { return m_tabSwitch; }
+
+    // The Ctrl+Tab list's highlight `delta` rows on, and its window showing it
+    void cycleTabSwitcher(int delta)
+    {
+        m_tabSwitch.cycle(delta);
+        m_windowManager.setTabSwitcherSelection(m_tabSwitch.selectedRow());
     }
 
     void emitAction(const std::string & actionKey, const std::string & arg) override
@@ -201,10 +216,15 @@ public:
         m_windowManager.subscribe().defer([this, dialog = item.dialog]() { m_windowManager.openDialog(dialog); });
     }
 
+    // A tab's close button - the strip's, or a row's in the Ctrl+Tab list, which then stays up,
+    // Ctrl still held, with the tabs the host has left
     void closeTab(id_t tabId) override
     {
         if (m_onTabClosed) {
             m_onTabClosed(tabId);
+        }
+        if (m_tabSwitch.isShown()) {
+            refreshTabSwitcher();
         }
     }
 
@@ -265,6 +285,9 @@ public:
     // WindowManager, which owns the drag, rather than kept here - there is no
     // shell-level decision to make on the way through.
     void setOnDockRowValue(std::function<void(id_t, fpx_t)> fn) { m_windowManager.setOnRowValue(std::move(fn)); }
+    // A tab dragged along the strip moved: the tab, and the one it now stands right before
+    // (INVALID_ID the end). The host moves it in its order and projects the tabs back
+    void setOnTabMoved(std::function<void(id_t, id_t)> fn) { m_windowManager.setOnTabMoved(std::move(fn)); }
     void setOnDockRowToggled(std::function<void(id_t)> fn) { m_onDockRowToggled = std::move(fn); }
     void setOnKeyPress(Ui::predicate_fn_t fn) { m_onKeyPress = std::move(fn); }
 
@@ -651,6 +674,8 @@ public:
             if (m_windowManager.hasPopup()) {
                 destroyPopup();
             }
+            // Ctrl going up elsewhere is never seen here, so the Ctrl+Tab list stops unswitched
+            cancelTabSwitcher();
         });
 
         // MouseButtonPress
@@ -664,6 +689,15 @@ public:
             if constexpr (MENU_HOVER_DEBUG) {
                 std::cout << "[MenuHover] press: list=" << event.isPopupEvent << " at " << event.mouse.x << ","
                           << event.mouse.y << " clickCount=" << event.mouse.clickCount << std::endl;
+            }
+
+            // The Ctrl+Tab list: a press on it is its row's, which the release switches to;
+            // one off it takes it down unswitched and goes on as a press
+            if (m_tabSwitch.isOpen()) {
+                if (event.isPopupEvent && m_windowManager.hasTabSwitcher()) {
+                    return;
+                }
+                cancelTabSwitcher();
             }
 
             // Popup press -- only handle outside-click policy (inside forwarding done by dispatchEvent)
@@ -778,6 +812,8 @@ public:
             if (m_windowManager.hasDialog()) {
                 return;
             }
+            // The Ctrl+Tab list's thumb let go over a row: the highlight goes there, as a move would take it
+            followTabSwitcherHover();
 
             const auto & event = m_windowManager.currentEvent();
             if constexpr (MENU_HOVER_DEBUG) {
@@ -832,6 +868,8 @@ public:
                 }
             }
 
+            followTabSwitcherHover();
+
             // Popup move -- handle menu bar hover detection
             if (event.isPopupEvent) {
                 if (m_windowManager.hasUiRenderer() && m_windowManager.hasPopup()) {
@@ -884,9 +922,22 @@ public:
             }
         });
 
+        // Scroll: the Ctrl+Tab list's rows moved under the pointer, so the highlight follows the
+        // row now under it, as on a move
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::Scroll), Ui::APP_ID, [this]() {
+            followTabSwitcherHover();
+        });
+
         // KeyPress
         sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::KeyPress), Ui::APP_ID, [this]() {
             handleKeyPress(m_windowManager.currentEvent());
+        });
+
+        // KeyRelease: Ctrl going up switches to what the Ctrl+Tab list has highlighted
+        sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::KeyRelease), Ui::APP_ID, [this]() {
+            if (m_tabSwitch.isOpen() && Ui::Window::isControlKey(m_windowManager.currentEvent().key.name.data())) {
+                commitTabSwitcher();
+            }
         });
 
         // Hover handler for menu switching.
@@ -1018,6 +1069,14 @@ public:
             // event to show it on
             m_windowManager.showDueTooltip();
 
+            // A glide's next frame: no event comes to draw it on either
+            m_windowManager.keepGliding();
+
+            // The Ctrl+Tab list, once Ctrl has been held past its delay: a held key sends none
+            if (m_tabSwitch.isDue(Common::Time::now())) {
+                showTabSwitcher();
+            }
+
             if (m_windowManager.renderQueue().hasPending()) {
                 m_windowManager.renderAll();
                 // A list made before this frame has had it, so a switch may take it down -
@@ -1066,6 +1125,8 @@ private:
     std::function<void(id_t)> m_onDockRowActivated;
     std::function<void(id_t)> m_onDockRowToggled;
     Ui::predicate_fn_t        m_onKeyPress;
+
+    Ui::TabSwitch m_tabSwitch; // the Ctrl+Tab list while Ctrl is held, up or not yet
 
     // Per-extension file loaders (host-registered; empty on a standalone shell,
     // so OpenFile warns for every file type).
@@ -1222,6 +1283,126 @@ private:
         m_windowManager.rehover();
     }
 
+    // A key while the Ctrl+Tab list is open, Ctrl held: the key res binds to OpenTabSwitcher
+    // steps it as that binding says, Down steps down and Up up, Return switches, Escape takes
+    // it down - and any other does nothing, so a shortcut behind it (Ctrl+Up, Ctrl+W) never
+    // runs. A key with Ctrl up switches first,
+    // its release having gone unseen, and goes on as a key; Escape then takes it down.
+    // Whether the key was the list's
+    bool handleTabSwitcherKey(const Ui::Window::Event & event, const std::string & keyStr)
+    {
+        if (!event.key.modifiers.has(Ui::Window::KeyModifier::Control)) {
+            if (keyStr == "Escape") {
+                cancelTabSwitcher();
+                return true;
+            }
+            commitTabSwitcher();
+            return false;
+        }
+        if (keyStr == "Ctrl+Down") {
+            cycleTabSwitcher(1);
+        } else if (keyStr == "Ctrl+Up") {
+            cycleTabSwitcher(-1);
+        } else if (keyStr == "Ctrl+Return") {
+            commitTabSwitcher();
+        } else if (keyStr == "Ctrl+Escape") {
+            cancelTabSwitcher();
+        } else {
+            for (const Ui::intent_t & intent : m_context.mapKey(normalizeKeyString(keyStr)).intents) {
+                if (intent.actionKey == Ui::Action::OPEN_TAB_SWITCHER) {
+                    execute(intent);
+                }
+            }
+        }
+        return true;
+    }
+
+    // How many tabs the strip shows however scrolled, at the window's width now - what the layout
+    // shows them by (UiLayout::buildWorkspaceTab), so the arrows and a reveal step as it draws
+    [[nodiscard]] std::size_t tabsShown() const
+    {
+        const Ui::Res::Type::layout_t & layout = m_resManager.layout();
+        return Ui::Render::tabsShownOf(Ui::Render::tabStripWidthOf(layout, toCss(m_windowManager.windowWidth())),
+                                       layout.tabMinWidth,
+                                       layout.tabArrowWidth,
+                                       m_resManager.tabBar().count());
+    }
+
+    // The Ctrl+Tab list's highlight on the row the pointer is over, when it is over one - the one
+    // Ctrl going up takes: on each move, on letting go of its thumb, and on a wheel turn that moved
+    // the rows under the pointer. Never on the keys' steps, which pick the row themselves
+    void followTabSwitcherHover()
+    {
+        if (!m_tabSwitch.isShown()) {
+            return;
+        }
+        const std::optional<std::size_t> row = m_windowManager.tabSwitcherHoveredRow();
+        if (row.has_value() && row.value() != m_tabSwitch.selectedRow()) {
+            m_tabSwitch.select(row.value());
+            m_windowManager.setTabSwitcherSelection(row.value());
+        }
+    }
+
+    // The Ctrl+Tab list goes up: a row per tab, as TabBar holds them
+    void showTabSwitcher()
+    {
+        m_tabSwitch.show();
+        std::vector<Ui::tab_t> rows;
+        rows.reserve(m_tabSwitch.ids().size());
+        for (const id_t id : m_tabSwitch.ids()) {
+            m_resManager.tabBar().visit(id, [&rows](const Ui::tab_t & tab) { rows.emplace_back(tab); });
+        }
+        m_windowManager.openTabSwitcher(std::move(rows), m_tabSwitch.selectedRow());
+    }
+
+    // The Ctrl+Tab list after a tab closed from it: a row per tab the host has left, the
+    // highlight on the row it stood on, opened again over itself; taken down with none left
+    void refreshTabSwitcher()
+    {
+        m_tabSwitch.setIds(m_resManager.tabBar().recentIds());
+        if constexpr (Ui::Render::Popup::TAB_SWITCHER_DEBUG) {
+            std::cout << "[TabSwitch] a tab closed from it: " << m_tabSwitch.ids().size() << " left, row "
+                      << m_tabSwitch.selectedRow() << " highlighted" << std::endl;
+        }
+        if (m_tabSwitch.isShown()) {
+            showTabSwitcher();
+        } else {
+            m_windowManager.closeTabSwitcher();
+        }
+    }
+
+    // Switches to what the Ctrl+Tab list has highlighted, as a click on its tab does -
+    // nothing for the active one, or one closed since it opened
+    void commitTabSwitcher()
+    {
+        const id_t selectedId = m_tabSwitch.selectedId();
+        if constexpr (Ui::Render::Popup::TAB_SWITCHER_DEBUG) {
+            std::cout << "[TabSwitch] switching to row " << m_tabSwitch.selectedRow() << ", tab " << selectedId
+                      << std::endl;
+        }
+        cancelTabSwitcher();
+        const Ui::TabBar & tabBar = m_resManager.tabBar();
+        if (selectedId != tabBar.activeId() && tabBar.contains(selectedId)) {
+            setActiveTab(selectedId);
+        }
+    }
+
+    // Takes the Ctrl+Tab list down, unswitched
+    void cancelTabSwitcher()
+    {
+        if (!m_tabSwitch.isOpen()) {
+            return;
+        }
+        if constexpr (Ui::Render::Popup::TAB_SWITCHER_DEBUG) {
+            const Ui::Window::Event & event = m_windowManager.currentEvent();
+            std::cout << "[TabSwitch] closed on event type " << static_cast<int>(event.type)
+                      << " list=" << event.isPopupEvent << " child=" << event.childWindowId << " at " << event.mouse.x
+                      << "," << event.mouse.y << " key='" << event.toShortcutString() << "'" << std::endl;
+        }
+        m_tabSwitch.close();
+        m_windowManager.closeTabSwitcher();
+    }
+
     void handleKeyPress(const Ui::Window::Event & event)
     {
         // Convert key event to shortcut string
@@ -1233,6 +1414,11 @@ private:
 
         if constexpr (SHELL_DEBUG) {
             std::cout << "[Shell] Key pressed: " << keyStr << std::endl;
+        }
+
+        // The Ctrl+Tab list's keys come before every other while it is open
+        if (m_tabSwitch.isOpen() && handleTabSwitcherKey(event, keyStr)) {
+            return;
         }
 
         // Dialog keyboard navigation (Escape, Return, Left, Right)
@@ -1541,9 +1727,9 @@ private:
         switch (click.type) {
         case Ui::Render::UiElementType::TabArrow:
             if (click.id == Ui::TAB_ARROW_LEFT) {
-                m_resManager.tabBar().scrollLeft();
+                m_resManager.tabBar().scrollLeft(tabsShown());
             } else {
-                m_resManager.tabBar().scrollRight();
+                m_resManager.tabBar().scrollRight(tabsShown());
             }
             outScope = Ui::Render::RenderScope::Layout;
             return true;

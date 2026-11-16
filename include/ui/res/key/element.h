@@ -67,7 +67,16 @@ enum class ElementKey : unsigned char {
     ToolbarButtonActive,   // toolbar-button:active - armed, as a menu item's active is the current value
     ToolbarButtonDisabled, // toolbar-button:disabled - no action behind it
     Tooltip,               // tooltip - a popup beside a hovered toolbar or menu-bar button, or a content surface's mark
-    ThemePreview,          // theme-preview
+    TabSwitcher,           // tab-switcher - the Ctrl+Tab list: its box (layout), its background (theme)
+    TabSwitcherItem,       // tab-switcher-item - a row: its height and padding, its font and colour
+    TabSwitcherItemActive, // tab-switcher-item:active - the highlighted row
+    TabSwitcherDescription,       // tab-switcher-description - the dimmed text after a row's label
+    TabSwitcherDescriptionActive, // tab-switcher-description:active - on the highlighted row
+    TabSwitcherClose,             // tab-switcher-close - a row's close button (X): its size, place, icon, colours
+    TabSwitcherCloseSelected,     // tab-switcher-close:selected - on the highlighted row, its colours inverted
+    TabSwitcherCloseHover,        // tab-switcher-close:hover
+    TabSwitcherCloseActive,       // tab-switcher-close:active - pressed
+    ThemePreview,                 // theme-preview
 
     Dialog,              // dialog
     DialogTitle,         // dialog-title
@@ -144,6 +153,15 @@ enum class ElementKey : unsigned char {
     case ElementKey::ToolbarButtonActive: return "toolbar-button:active";
     case ElementKey::ToolbarButtonDisabled: return "toolbar-button:disabled";
     case ElementKey::Tooltip: return "tooltip";
+    case ElementKey::TabSwitcher: return "tab-switcher";
+    case ElementKey::TabSwitcherItem: return "tab-switcher-item";
+    case ElementKey::TabSwitcherItemActive: return "tab-switcher-item:active";
+    case ElementKey::TabSwitcherDescription: return "tab-switcher-description";
+    case ElementKey::TabSwitcherDescriptionActive: return "tab-switcher-description:active";
+    case ElementKey::TabSwitcherClose: return "tab-switcher-close";
+    case ElementKey::TabSwitcherCloseSelected: return "tab-switcher-close:selected";
+    case ElementKey::TabSwitcherCloseHover: return "tab-switcher-close:hover";
+    case ElementKey::TabSwitcherCloseActive: return "tab-switcher-close:active";
     case ElementKey::ThemePreview: return "theme-preview";
 
     case ElementKey::Dialog: return "dialog";
