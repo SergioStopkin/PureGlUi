@@ -17,15 +17,18 @@
 
 /**
  * @file TestColor.cpp
- * @brief Unit tests for Ui::Color::Lighter() and Ui::Color::Darker() HSL-based methods
+ * @brief Unit tests for Ui::Color::Lighter() and Ui::Color::Darker() HSL-based methods,
+ * and the toHSL() / fromHSL() conversions under them
  *
  * Verifies that adjusting lightness in HSL space preserves hue and saturation.
  * Each unordered_map maps lightness% -> expected hex color for a given base HSL.
  */
 
 #include "ui/color.h"
+#include "ui/hsl.h"
 #include "ui/type.h"
 
+#include <array>
 #include <gtest/gtest.h>
 #include <string>
 #include <unordered_map>
@@ -148,4 +151,45 @@ TEST(ColorHsl, GrayscaleDarker)
     EXPECT_NEAR(result.r(), 77, 1);
     EXPECT_NEAR(result.g(), 77, 1);
     EXPECT_NEAR(result.b(), 77, 1);
+}
+
+// -- toHSL / fromHSL --
+
+TEST(ColorHsl, ToHslOfPureRed)
+{
+    const Ui::hsl_t hsl = Ui::Color(255, 0, 0).toHSL();
+    EXPECT_NEAR(hsl.hue, 0.0F, 1e-3F);
+    EXPECT_NEAR(hsl.saturation, 100.0F, 1e-3F);
+    EXPECT_NEAR(hsl.lightness, 50.0F, 1e-3F);
+}
+
+// A grey has no hue and no saturation, whatever its lightness
+TEST(ColorHsl, ToHslOfGreyHasNoSaturation)
+{
+    const Ui::hsl_t hsl = Ui::Color(102, 102, 102).toHSL();
+    EXPECT_EQ(hsl.hue, 0.0F);
+    EXPECT_EQ(hsl.saturation, 0.0F);
+    EXPECT_NEAR(hsl.lightness, 40.0F, 1e-3F);
+}
+
+// A hue past 300 comes back under 360, never negative: #bf4080 is hsl(330, 50%, 50%) to
+// within 8-bit rounding
+TEST(ColorHsl, ToHslWrapsANegativeHue)
+{
+    const Ui::hsl_t hsl = Ui::Color(0xbf, 0x40, 0x80).toHSL();
+    EXPECT_NEAR(hsl.hue, 330.0F, 0.5F);
+    EXPECT_NEAR(hsl.saturation, 50.0F, 0.5F);
+    EXPECT_NEAR(hsl.lightness, 50.0F, 0.5F);
+}
+
+// fromHSL gives back the colour toHSL was given, with the alpha it is handed
+TEST(ColorHsl, FromHslRoundTrips)
+{
+    const std::array<Ui::Color, 8> colors { Ui::Color(0x66, 0x66, 0x99, 128), Ui::Color(0x40, 0x80, 0xbf),
+                                            Ui::Color(0xbf, 0x40, 0x80),      Ui::Color(0x66, 0x99, 0x99),
+                                            Ui::Color(0xff, 0x99, 0x00),      Ui::Color(102, 102, 102),
+                                            Ui::Color(255, 255, 255),         Ui::Color(0, 0, 0) };
+    for (const Ui::Color & color : colors) {
+        EXPECT_EQ(Ui::Color::fromHSL(color.toHSL(), color.a()), color) << color.toHex(true);
+    }
 }

@@ -60,7 +60,7 @@ TEST(ChildProcess, AProgramStartedIsNotWaitedFor)
 {
     Ui::Io::Platform::ChildProcess process;
     ASSERT_TRUE(process.start(std::array {
-    Ui::Io::Platform::command_t { .args = { "sh", "-c", "sleep 0.2; echo /picked/file" }, .environment = {} } }));
+        Ui::Io::Platform::command_t { .args = { "sh", "-c", "sleep 0.2; echo /picked/file" }, .environment = {} } }));
     EXPECT_TRUE(process.isRunning());
     EXPECT_FALSE(process.takeResult().has_value()) << "start waited for the program to end";
     EXPECT_EQ(resultOf(process), std::optional<std::string> { "/picked/file\n" });
@@ -73,8 +73,8 @@ TEST(ChildProcess, ACancelledDialogGivesNothingAndNoOther)
 {
     Ui::Io::Platform::ChildProcess process;
     ASSERT_TRUE(process.start(
-    std::array { Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo partial; exit 1" }, .environment = {} },
-                 Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo /picked/file" }, .environment = {} } }));
+        std::array { Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo partial; exit 1" }, .environment = {} },
+                     Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo /picked/file" }, .environment = {} } }));
     EXPECT_EQ(resultOf(process), std::optional<std::string> { "" });
     EXPECT_FALSE(process.isRunning());
 }
@@ -85,9 +85,9 @@ TEST(ChildProcess, ADialogThatFailsToRunGivesWayToTheNext)
 {
     Ui::Io::Platform::ChildProcess process;
     ASSERT_TRUE(process.start(
-    std::array { Ui::Io::Platform::command_t { .args = { "sh", "-c", "exit 2" }, .environment = {} },
-                 Ui::Io::Platform::command_t { .args = { "sh", "-c", "kill -KILL $$" }, .environment = {} },
-                 Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo /picked/file" }, .environment = {} } }));
+        std::array { Ui::Io::Platform::command_t { .args = { "sh", "-c", "exit 2" }, .environment = {} },
+                     Ui::Io::Platform::command_t { .args = { "sh", "-c", "kill -KILL $$" }, .environment = {} },
+                     Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo /picked/file" }, .environment = {} } }));
     EXPECT_EQ(resultOf(process), std::optional<std::string> { "/picked/file\n" });
 }
 
@@ -98,7 +98,7 @@ TEST(ChildProcess, AProgramStillRunningEndsWithItsOwner)
     {
         Ui::Io::Platform::ChildProcess process;
         ASSERT_TRUE(process.start(
-        std::array { Ui::Io::Platform::command_t { .args = { "sh", "-c", "exec sleep 60" }, .environment = {} } }));
+            std::array { Ui::Io::Platform::command_t { .args = { "sh", "-c", "exec sleep 60" }, .environment = {} } }));
         ASSERT_TRUE(process.isRunning());
     }
     EXPECT_LT(Common::Time::msSince(started), MOST_WAIT_MS) << "the owner waited for the program to end on its own";
@@ -108,8 +108,8 @@ TEST(ChildProcess, AProgramStillRunningEndsWithItsOwner)
 TEST(ChildProcess, AProgramGetsTheEnvironmentItIsGiven)
 {
     Ui::Io::Platform::ChildProcess process;
-    ASSERT_TRUE(process.start(std::array {
-    Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo $GREETING" }, .environment = { "GREETING=hello" } } }));
+    ASSERT_TRUE(process.start(std::array { Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo $GREETING" },
+                                                                         .environment = { "GREETING=hello" } } }));
     EXPECT_EQ(resultOf(process), std::optional<std::string> { "hello\n" });
 }
 
@@ -119,7 +119,7 @@ TEST(ChildProcess, AProgramGivenAVariableWeHoldGetsItsOwn)
     ASSERT_FALSE(Common::System::environmentVariable("HOME").empty());
     Ui::Io::Platform::ChildProcess process;
     ASSERT_TRUE(process.start(std::array {
-    Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo \"$HOME\"" }, .environment = { "HOME=/given" } } }));
+        Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo \"$HOME\"" }, .environment = { "HOME=/given" } } }));
     EXPECT_EQ(resultOf(process), std::optional<std::string> { "/given\n" });
 }
 
@@ -129,8 +129,8 @@ TEST(ChildProcess, AProgramKeepsTheVariablesItIsNotGiven)
     const std::string home = Common::System::environmentVariable("HOME");
     ASSERT_FALSE(home.empty());
     Ui::Io::Platform::ChildProcess process;
-    ASSERT_TRUE(process.start(std::array {
-    Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo \"$HOME\"" }, .environment = { "GREETING=hello" } } }));
+    ASSERT_TRUE(process.start(std::array { Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo \"$HOME\"" },
+                                                                         .environment = { "GREETING=hello" } } }));
     EXPECT_EQ(resultOf(process), std::optional<std::string> { home + "\n" });
 }
 
@@ -141,8 +141,8 @@ TEST(ChildProcess, AVariableIsNotTakenForALongerOneItStarts)
     ASSERT_FALSE(home.empty());
     Ui::Io::Platform::ChildProcess process;
     ASSERT_TRUE(
-    process.start(std::array { Ui::Io::Platform::command_t { .args        = { "sh", "-c", "echo \"$HOME|$HOMEX\"" },
-                                                             .environment = { "HOMEX=given" } } }));
+        process.start(std::array { Ui::Io::Platform::command_t { .args        = { "sh", "-c", "echo \"$HOME|$HOMEX\"" },
+                                                                 .environment = { "HOMEX=given" } } }));
     EXPECT_EQ(resultOf(process), std::optional<std::string> { home + "|given\n" });
 }
 
@@ -155,8 +155,8 @@ TEST(ChildProcess, AProgramMissingGivesWayToTheNext)
     EXPECT_FALSE(process.isRunning());
 
     ASSERT_TRUE(process.start(
-    std::array { missing,
-                 Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo /picked/file" }, .environment = {} } }));
+        std::array { missing,
+                     Ui::Io::Platform::command_t { .args = { "sh", "-c", "echo /picked/file" }, .environment = {} } }));
     EXPECT_EQ(resultOf(process), std::optional<std::string> { "/picked/file\n" });
 }
 

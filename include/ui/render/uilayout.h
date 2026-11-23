@@ -260,8 +260,8 @@ public:
             // Bold for the active radio choice, which the renderer draws wider
             const Ui::font_handle_t font   = resManager.isActiveItem(item) ? m_popupFontBold : m_popupFont;
             const fpx_t             labelW = render.textWidth(
-            font,
-            Common::Unicode::fromUtf8(resManager.localeManager().get(item.label)));
+                font,
+                Common::Unicode::fromUtf8(resManager.localeManager().get(item.label)));
             if (!item.shortcut.empty()) {
                 shortcutW      = std::max(shortcutW,
                                           render.textWidth(m_shortcutFont, Common::Unicode::fromUtf8(item.shortcut)));
@@ -301,10 +301,10 @@ public:
                                                                 &render,
                                                                 m_tabSwitcherFont);
             const fpx_t descriptionW = row.description.empty()
-                                     ? 0.0F
-                                     : padH
-                                       + render.textWidth(m_tabSwitcherFont,
-                                                          Common::Unicode::fromUtf8(row.description));
+                                         ? 0.0F
+                                         : padH
+                                               + render.textWidth(m_tabSwitcherFont,
+                                                                  Common::Unicode::fromUtf8(row.description));
             width                    = std::max(width, padH + labelW + descriptionW + padH);
         }
         return std::min(width, maxWidth);

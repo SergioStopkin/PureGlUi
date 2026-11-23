@@ -84,7 +84,7 @@ protected:
 TEST_F(WindowGeometryTest, DialogAreaStartsInsideTheChrome)
 {
     const auto & layout = resManager.layout();
-    const auto   area   = windowManager.dialogArea();
+    const auto   area   = windowManager.dialog().area();
 
     EXPECT_GE(area.x, layout.leftToolbar.width);
     EXPECT_GE(area.y, layout.topMenu.height + layout.workspaceTab.height);
@@ -93,7 +93,7 @@ TEST_F(WindowGeometryTest, DialogAreaStartsInsideTheChrome)
 TEST_F(WindowGeometryTest, DialogAreaLeavesTheStatusBarAndRightToolbarFree)
 {
     const auto & layout = resManager.layout();
-    const auto   area   = windowManager.dialogArea();
+    const auto   area   = windowManager.dialog().area();
 
     EXPECT_LE(area.x + area.w, Ui::toCss(WINDOW_W) - layout.rightToolbar.width);
     EXPECT_LE(area.y + area.h, Ui::toCss(WINDOW_H) - layout.statusBar.height);
@@ -102,7 +102,7 @@ TEST_F(WindowGeometryTest, DialogAreaLeavesTheStatusBarAndRightToolbarFree)
 TEST_F(WindowGeometryTest, DialogAreaIsInsetByTheDialogMarginOnEverySide)
 {
     const auto & layout = resManager.layout();
-    const auto   area   = windowManager.dialogArea();
+    const auto   area   = windowManager.dialog().area();
     const auto   margin = layout.dialog.margin;
 
     EXPECT_FLOAT_EQ(area.x, layout.leftToolbar.width + margin);
@@ -118,7 +118,7 @@ TEST_F(WindowGeometryTest, TheWindowFloorLeavesRoomForTheLargestDialog)
     const auto min = resManager.minWindowSize();
     windowManager.onMainWindowResize(phys(min.w), phys(min.h));
 
-    const auto area = windowManager.dialogArea();
+    const auto area = windowManager.dialog().area();
     EXPECT_GT(area.w, 0.0F);
     EXPECT_GT(area.h, 0.0F);
 }
@@ -128,7 +128,7 @@ TEST_F(WindowGeometryTest, TheWindowFloorLeavesRoomForTheLargestDialog)
 TEST_F(WindowGeometryTest, AnImpossiblySmallWindowStillYieldsAPositiveArea)
 {
     windowManager.onMainWindowResize(1.0F, 1.0F);
-    const auto area = windowManager.dialogArea();
+    const auto area = windowManager.dialog().area();
     EXPECT_GT(area.w, 0.0F);
     EXPECT_GT(area.h, 0.0F);
 }
@@ -179,7 +179,7 @@ TEST_F(WindowGeometryTest, RowsReachTheDockTheyAreProjectedInto)
     }
     for (std::size_t index = 0; index < docks.size(); ++index) {
         EXPECT_EQ(windowManager.rowMenuKey(Ui::idOf(TestIdKind::Row, index + 1)), "menu-of-" + docks.at(index).name)
-        << docks.at(index).name;
+            << docks.at(index).name;
     }
 }
 

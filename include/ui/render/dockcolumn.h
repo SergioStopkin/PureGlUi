@@ -19,7 +19,7 @@
 
 #include "common/noncopyable.h"
 #include "ui/color.h"
-#include "ui/gl/svgrenderer.h"
+#include "ui/gl/svgdocuments.h"
 #include "ui/idkind.h"
 #include "ui/render/dragtrack.h"
 #include "ui/render/elementkey.h"
@@ -431,13 +431,13 @@ public:
         // corners; mirror for right anchor
         const fpx_t                   r          = m_resManager.layout().dockDefaults.gripRadius;
         const Ui::Res::Type::border_t gripRadius = (m_config.anchor == Ui::Res::Dock::DockAnchor::Left)
-                                                 ? Ui::Res::Type::border_t { .topRight = r, .bottomRight = r }
-                                                 : Ui::Res::Type::border_t { .topLeft = r, .bottomLeft = r };
+                                                     ? Ui::Res::Type::border_t { .topRight = r, .bottomRight = r }
+                                                     : Ui::Res::Type::border_t { .topLeft = r, .bottomLeft = r };
         out.appendBg(gripRect, gripColors, parentBg, gripRadius);
 
         // Glyph width matches the grip strip (the configurable dock-edge
         // width from layout.json). Height comes from the SVG's intrinsic
-        // aspect ratio looked up at Ui::Gl::SvgRenderer's cache - the file may be
+        // aspect ratio looked up in Ui::Gl::SvgDocuments - the file may be
         // swapped via --dock-grip-icon without code edits. WindowManager
         // preloads the glyph at startup, so the lookup is hot by the first
         // render; if it ever misses (e.g. icon stripped from layout.json),
@@ -446,7 +446,7 @@ public:
         const std::string   svgPath  = m_resManager.resPath().icon(iconName);
         float               svgW     = 1.0F;
         float               svgH     = 1.0F;
-        Ui::Gl::SvgRenderer::contentSizeIfCached(Ui::Gl::SvgRenderer::loadFilledFromFile(svgPath), svgW, svgH);
+        Ui::Gl::SvgDocuments::contentSizeIfCached(Ui::Gl::SvgDocuments::loadFilledFromFile(svgPath), svgW, svgH);
 
         const fpx_t                  glyphW = gripRect.w;
         const fpx_t                  glyphH = (svgW > 0.0F) ? glyphW * (svgH / svgW) : glyphW;
@@ -505,6 +505,26 @@ public:
     }
 
 private:
+    id_t m_id;
+    Ui::Res::Dock::dock_config_t
+        m_config; // owned copy: layout reload can re-emplace m_layout.docks, would dangle a reference
+    const Ui::Res::ResManager & m_resManager;
+    Ui::Res::Dock::dock_state_t m_state;
+    Ui::Res::Type::bound_t      m_outer {}; // CSS-pixel outer rect, refreshed by setLayout()
+    bool                        m_isHoveredGrip = false;
+    id_t                        m_hotSliderRow  = INVALID_ID; // which thumb the pointer is on
+    bool                        m_isDragging    = false;
+    drag_track_t                m_grip;               // grab state while m_isDragging
+    fpx_t                       m_transientWidth = 0; // live width during drag
+    thumb_track_t               m_sliderDrag;         // grab state of the slider being dragged
+    thumb_metrics_t             m_sliderMetrics;      // that slider's track at the grab
+
+    std::vector<Ui::Res::Dock::row_t> m_rows;         // host-projected content
+    std::size_t                       m_firstRow = 0; // top row of the scroll window
+    // mutable: refreshScrollBar() restates geometry from row data during const
+    // paint and element passes, the way text measurement does elsewhere
+    mutable Ui::Render::ScrollBar m_scrollBar { m_resManager };
+
     void appendRowElements(UiLayout & layout) const
     {
         const Ui::Res::Type::bound_t contentRect = rowsRect();
@@ -819,10 +839,11 @@ private:
             // row are the same thing visually, so they share the theming - and its
             // fade in and out, top-menu-item's in animation.json
             const Ui::Res::Type::color_pair_t selection = out.colorsOf(
-            Ui::Render::element_key_t { .id = row.id, .type = UiElementType::DockRow },
-            row.isSelected ? theme.menuItemActive
-                           : Ui::Res::Type::color_pair_t { .fg = theme.menuItemActive.fg, .bg = Ui::Color::Inherit() },
-            Ui::Res::Key::ElementKey::TopMenuItem);
+                Ui::Render::element_key_t { .id = row.id, .type = UiElementType::DockRow },
+                row.isSelected
+                    ? theme.menuItemActive
+                    : Ui::Res::Type::color_pair_t { .fg = theme.menuItemActive.fg, .bg = Ui::Color::Inherit() },
+                Ui::Res::Key::ElementKey::TopMenuItem);
             if (!selection.bg.isInherit()) {
                 out.appendBg(bound, selection, theme.dock.background.bg);
             }
@@ -830,10 +851,9 @@ private:
             const fpx_t indent = padH + (indentStep() * static_cast<fpx_t>(row.depth));
 
             if (hasExpander(contentRect, i)) {
-                const std::string expander = m_resManager
-                                             .iconDefault(row.isExpanded ? Ui::Res::Key::IconRoleKey::RowExpanded
-                                                                         : Ui::Res::Key::IconRoleKey::RowCollapsed)
-                                             .icon;
+                const Ui::Res::Key::IconRoleKey role     = row.isExpanded ? Ui::Res::Key::IconRoleKey::RowExpanded
+                                                                          : Ui::Res::Key::IconRoleKey::RowCollapsed;
+                const std::string               expander = m_resManager.iconDefault(role).icon;
                 if (!expander.empty()) {
                     out.appendImage(expanderBound(contentRect, i),
                                     m_resManager.resPath().icon(expander),
@@ -871,10 +891,10 @@ private:
             // keeps the whole width - a tree name cut at the halfway mark for an
             // empty right half is just a name nobody can read
             const fpx_t labelX     = bound.x + indent + expanderSize() + gap;
-            const fpx_t labelRight = row.value.empty()
-                                   ? bound.x + bound.w - padH
-                                   : bound.x + padH
-                                     + ((bound.w - (padH * 2.0F)) * m_resManager.layout().dockDefaults.rowKeyRatio);
+            const fpx_t labelRight = row.value.empty() ? bound.x + bound.w - padH
+                                                       : bound.x + padH
+                                                             + ((bound.w - (padH * 2.0F))
+                                                                * m_resManager.layout().dockDefaults.rowKeyRatio);
             const Ui::Res::Type::bound_t labelBound { .x = labelX,
                                                       .y = bound.y,
                                                       .w = labelRight - labelX,
@@ -981,26 +1001,6 @@ private:
         }
         m_resManager.setDockState(m_config.name, m_state);
     }
-
-    id_t m_id;
-    Ui::Res::Dock::dock_config_t
-    m_config; // owned copy: layout reload can re-emplace m_layout.docks, would dangle a reference
-    const Ui::Res::ResManager & m_resManager;
-    Ui::Res::Dock::dock_state_t m_state;
-    Ui::Res::Type::bound_t      m_outer {}; // CSS-pixel outer rect, refreshed by setLayout()
-    bool                        m_isHoveredGrip = false;
-    id_t                        m_hotSliderRow  = INVALID_ID; // which thumb the pointer is on
-    bool                        m_isDragging    = false;
-    drag_track_t                m_grip;               // grab state while m_isDragging
-    fpx_t                       m_transientWidth = 0; // live width during drag
-    thumb_track_t               m_sliderDrag;         // grab state of the slider being dragged
-    thumb_metrics_t             m_sliderMetrics;      // that slider's track at the grab
-
-    std::vector<Ui::Res::Dock::row_t> m_rows;         // host-projected content
-    std::size_t                       m_firstRow = 0; // top row of the scroll window
-    // mutable: refreshScrollBar() restates geometry from row data during const
-    // paint and element passes, the way text measurement does elsewhere
-    mutable Ui::Render::ScrollBar m_scrollBar { m_resManager };
 };
 
 } // namespace Ui::Render

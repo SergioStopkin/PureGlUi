@@ -55,9 +55,10 @@ struct alignas(64) fake_host_t final {
     [[nodiscard]] fake_host_t &       resManager() { return *this; }
     [[nodiscard]] const fake_host_t & localeManager() const { return *this; }
     [[nodiscard]] fake_host_t &       windowManager() { return *this; }
+    [[nodiscard]] fake_host_t &       dialog() { return *this; }
 
     void setLastOpenDir(const std::string & dir) { lastOpenDirs.emplace_back(dir); }
-    void openDialog(const Ui::Res::Type::dialog_t & dialog) { dialogs.emplace_back(dialog); }
+    void open(const Ui::Res::Type::dialog_t & dialog) { dialogs.emplace_back(dialog); }
 
     // The warning's icon for the Warning role alone, so a dialog with it asked for that role
     [[nodiscard]] Ui::Res::Type::icon_default_t iconDefault(Ui::Res::Key::IconRoleKey role) const

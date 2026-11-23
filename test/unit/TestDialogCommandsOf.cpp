@@ -81,11 +81,11 @@ TEST(DialogCommandsOf, AWaylandParentOrNoneAttachesNeither)
 TEST(DialogCommandsOf, BothTakeTheTitleTheFolderAndTheFilters)
 {
     const auto commands = Ui::Io::Platform::dialogCommandsOf(
-    "",
-    "/start",
-    "Open CAD File",
-    { Ui::Io::file_filter_t { .name = "CAD files", .spec = "*.step;*.iges" },
-      Ui::Io::file_filter_t { .name = "All files", .spec = "*" } });
+        "",
+        "/start",
+        "Open CAD File",
+        { Ui::Io::file_filter_t { .name = "CAD files", .spec = "*.step;*.iges" },
+          Ui::Io::file_filter_t { .name = "All files", .spec = "*" } });
     EXPECT_EQ(commands.at(0).args,
               (std::vector<std::string> { "zenity",
                                           "--file-selection",
@@ -113,8 +113,8 @@ TEST(DialogCommandsOf, AnEmptyFolderAndTitleFallBackToTheirDefaults)
     EXPECT_TRUE(hasArg(commands.at(0), "--title=Open File"));
     EXPECT_TRUE(hasArg(commands.at(0), "--filename=./"));
     EXPECT_EQ(
-    commands.at(1).args,
-    (std::vector<std::string> { "kdialog", "--title", "Open File", "--getopenfilename", "--multiple", ".", "" }));
+        commands.at(1).args,
+        (std::vector<std::string> { "kdialog", "--title", "Open File", "--getopenfilename", "--multiple", ".", "" }));
 }
 
 #endif

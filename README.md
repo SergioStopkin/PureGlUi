@@ -52,12 +52,12 @@ Input is capability-driven: an element declares which events it accepts and a ta
 C++ 20
 
 ## Platforms
-
-<img height=42 src="./doc/img/logo-tux.svg"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<img height=42 src="./doc/img/logo-tux.svg"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <img height=42 src="./doc/img/logo-apple.svg"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <img height=34 src="./doc/img/logo-windows.svg">
 
-GNU/Linux &nbsp;
+GNU/Linux &nbsp;&nbsp;
 macOS* &nbsp;&nbsp;&nbsp;
 Windows*
 

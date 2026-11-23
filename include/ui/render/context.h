@@ -79,10 +79,10 @@ public:
             result.intents.push_back({ .kind = Ui::IntentKind::ClosePopup, .actionKey = {}, .arg = {} });
             if (!item.dialog.title.empty()) {
                 result.intents.push_back(
-                { .kind = Ui::IntentKind::OpenDialog, .id = click.id, .actionKey = {}, .arg = {} });
+                    { .kind = Ui::IntentKind::OpenDialog, .id = click.id, .actionKey = {}, .arg = {} });
             } else {
                 result.intents.push_back(
-                { .kind = Ui::IntentKind::EmitAction, .actionKey = item.actionKey, .arg = item.label });
+                    { .kind = Ui::IntentKind::EmitAction, .actionKey = item.actionKey, .arg = item.label });
             }
             return result;
         }

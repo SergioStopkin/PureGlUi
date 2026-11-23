@@ -25,7 +25,7 @@
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/const.h"
-#include "ui/gl/svgrenderer.h"
+#include "ui/gl/svgdocuments.h"
 #include "ui/idkind.h"
 #include "ui/interface/irender.h"
 #include "ui/interface/irenderer.h"
@@ -510,6 +510,46 @@ public:
     void setOnElementHover(std::function<void(UiElementType, id_t)> cb) { m_onElementHover = std::move(cb); }
 
 private:
+    // Core members
+    UiLayout                    m_layout;
+    const Ui::Res::ResManager & m_resManager;
+
+    // GL implementation of the draw sink (owns the font/svg/rounded backends).
+    // mutable: text measurement (a logically-const query) populates the glyph
+    // atlas cache, so const resolve* methods can measure through it.
+    std::unique_ptr<Ui::IRender> m_render;
+
+    // Cached physical surface size (host pushes via ctor / resize() / Render()).
+    fpx_t m_width  = 0;
+    fpx_t m_height = 0;
+
+    // Batched draw ops: the frame's, and over them the held tab's
+    draw_layer_t m_layer;
+    draw_layer_t m_heldLayer;
+
+    // Where each element is drawn, and in which colours, while it glides; layout and the theme
+    // stay the truth hit-testing and every other reader take
+    Ui::Animation::Animator<element_key_t> m_animator;
+    std::size_t                            m_scrollOffset = 0; // the strip's when last drawn, a change of it jumping
+    id_t                                   m_heldTabId    = INVALID_ID; // the dragged tab (holdTab)
+    fpx_t                                  m_heldTabLeft  = 0.0F;       // its left edge as the drag puts it, CSS px
+
+    // Extra-ops hook fires after generateDrawOps() and before the ops are
+    // flushed, so callers can append BG/Image ops into the same frame (docks).
+    std::function<void(UiRenderer &)> m_extraOpsHook;
+    std::function<void(UiLayout &)>   m_extraElementsHook;
+
+    // Mouse state
+    fpx_t m_mouseX        = Ui::NO_POINTER;
+    fpx_t m_mouseY        = Ui::NO_POINTER;
+    bool  m_mouseDown     = false;
+    fpx_t m_lastMouseCssX = -1;
+    fpx_t m_lastMouseCssY = -1;
+
+    // Callbacks
+    std::function<void(UiElementType, id_t)> m_onElementHover;
+    id_t                                     m_lastHoverId = INVALID_ID;
+
     bool updateHover(fpx_t cssX, fpx_t cssY)
     {
         bool anyChanged = false;
@@ -687,7 +727,7 @@ private:
                 if (op.isSvg) {
                     float svgW = 0;
                     float svgH = 0;
-                    if (Ui::Gl::SvgRenderer::contentSizeIfCached(imageSrc, svgW, svgH) && svgW > 0 && svgH > 0) {
+                    if (Ui::Gl::SvgDocuments::contentSizeIfCached(imageSrc, svgW, svgH) && svgW > 0 && svgH > 0) {
                         if (svgW >= svgH) {
                             imgW = imgSz;
                             imgH = std::max(1.0F, std::round(imgSz * svgH / svgW));
@@ -1035,46 +1075,6 @@ private:
         const fpx_t tipY = std::round(p.tabRect.y + (p.tabRect.h / 2.0F));
         m_render->drawTriangle(curX, p.tabRect.y, tipX, tipY, curX, p.tabRect.y + p.tabRect.h, loadColors.fg);
     }
-
-    // Core members
-    UiLayout                    m_layout;
-    const Ui::Res::ResManager & m_resManager;
-
-    // GL implementation of the draw sink (owns the font/svg/rounded backends).
-    // mutable: text measurement (a logically-const query) populates the glyph
-    // atlas cache, so const resolve* methods can measure through it.
-    std::unique_ptr<Ui::IRender> m_render;
-
-    // Cached physical surface size (host pushes via ctor / resize() / Render()).
-    fpx_t m_width  = 0;
-    fpx_t m_height = 0;
-
-    // Batched draw ops: the frame's, and over them the held tab's
-    draw_layer_t m_layer;
-    draw_layer_t m_heldLayer;
-
-    // Where each element is drawn, and in which colours, while it glides; layout and the theme
-    // stay the truth hit-testing and every other reader take
-    Ui::Animation::Animator<element_key_t> m_animator;
-    std::size_t                            m_scrollOffset = 0; // the strip's when last drawn, a change of it jumping
-    id_t                                   m_heldTabId    = INVALID_ID; // the dragged tab (holdTab)
-    fpx_t                                  m_heldTabLeft  = 0.0F;       // its left edge as the drag puts it, CSS px
-
-    // Extra-ops hook fires after generateDrawOps() and before the ops are
-    // flushed, so callers can append BG/Image ops into the same frame (docks).
-    std::function<void(UiRenderer &)> m_extraOpsHook;
-    std::function<void(UiLayout &)>   m_extraElementsHook;
-
-    // Mouse state
-    fpx_t m_mouseX        = Ui::NO_POINTER;
-    fpx_t m_mouseY        = Ui::NO_POINTER;
-    bool  m_mouseDown     = false;
-    fpx_t m_lastMouseCssX = -1;
-    fpx_t m_lastMouseCssY = -1;
-
-    // Callbacks
-    std::function<void(UiElementType, id_t)> m_onElementHover;
-    id_t                                     m_lastHoverId = INVALID_ID;
 };
 
 } // namespace Ui::Render

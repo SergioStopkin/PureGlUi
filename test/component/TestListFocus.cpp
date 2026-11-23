@@ -58,8 +58,8 @@ TEST_F(ListFocusTest, AListStaysOpenAsTheOsGivesItTheFocus)
         GTEST_SKIP() << PureGlUi::NO_FOCUS;
     }
     m_shell.openPopup(m_menuIds.at(0));
-    ASSERT_NE(windowManager.popupWindow(), nullptr) << m_read;
-    const Ui::Window::Popup::PopupWindow & list = *windowManager.popupWindow();
+    ASSERT_NE(windowManager.menus().window(), nullptr) << m_read;
+    const Ui::Window::Popup::PopupWindow & list = *windowManager.menus().window();
     if (list.followsParent()) {
         GTEST_SKIP() << "no ARGB visual here: a list is the main window's child, and shares its focus";
     }
@@ -83,8 +83,8 @@ TEST_F(ListFocusTest, AListStaysOpenAsTheFocusMovesIntoItsChildWindow)
         GTEST_SKIP() << PureGlUi::NO_FOCUS;
     }
     m_shell.openPopup(m_menuIds.at(0));
-    ASSERT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
-    const Ui::Window::Popup::PopupWindow & list = *m_shell.windowManager().popupWindow();
+    ASSERT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
+    const Ui::Window::Popup::PopupWindow & list = *m_shell.windowManager().menus().window();
     if (!list.followsParent()) {
         GTEST_SKIP() << "a list here is a window of root, not the main window's child";
     }
@@ -102,8 +102,8 @@ TEST_F(ListFocusTest, AListRefusesTheFocus)
         GTEST_SKIP() << "no title opens a list here";
     }
     m_shell.openPopup(m_menuIds.at(0));
-    ASSERT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
-    EXPECT_TRUE(PureGlUi::refusesFocus(*m_shell.windowManager().popupWindow()));
+    ASSERT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
+    EXPECT_TRUE(PureGlUi::refusesFocus(*m_shell.windowManager().menus().window()));
 }
 
 // A dialog stays while the app is away, and a click on it coming back has to give it the keys
@@ -113,9 +113,9 @@ TEST_F(ListFocusTest, ADialogDoesNotRefuseTheFocus)
     dialog.title  = "focus";
     dialog.width  = 300.0F;
     dialog.height = 200.0F;
-    m_shell.windowManager().openDialog(dialog);
-    ASSERT_NE(m_shell.windowManager().dialogWindow(), nullptr) << m_read;
-    EXPECT_FALSE(PureGlUi::refusesFocus(*m_shell.windowManager().dialogWindow()));
+    m_shell.windowManager().dialog().open(dialog);
+    ASSERT_NE(m_shell.windowManager().dialog().window(), nullptr) << m_read;
+    EXPECT_FALSE(PureGlUi::refusesFocus(*m_shell.windowManager().dialog().window()));
 }
 
 #endif

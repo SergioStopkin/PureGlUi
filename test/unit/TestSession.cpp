@@ -178,10 +178,10 @@ TEST(Session, FilesSectionKeepsAHostKeyRegisteredBesideIt)
     Ui::Res::ResManager manager { TEST_RES_DIR };
     manager.loadAll();
     manager.registerPersisted(
-    Ui::Res::Key::SectionKey::Files,
-    "lastExported",
-    [] { return std::string { "/tmp/out.step" }; },
-    [](const std::string &) { });
+        Ui::Res::Key::SectionKey::Files,
+        "lastExported",
+        [] { return std::string { "/tmp/out.step" }; },
+        [](const std::string &) { });
     manager.setSessionOpenFiles({ "/a.step" }, "/a.step");
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
@@ -431,13 +431,13 @@ TEST(Session, IsRestoringSessionVisibleToRegistrySetters)
     std::string value;
     bool        seenRestoringInSetter = false;
     manager.registerPersisted(
-    Ui::Res::Key::SectionKey::View,
-    "hostSetting",
-    [&value] { return value; },
-    [&value, &seenRestoringInSetter, &manager](const std::string & restoredValue) {
-        value                 = restoredValue;
-        seenRestoringInSetter = manager.isRestoringSession();
-    });
+        Ui::Res::Key::SectionKey::View,
+        "hostSetting",
+        [&value] { return value; },
+        [&value, &seenRestoringInSetter, &manager](const std::string & restoredValue) {
+            value                 = restoredValue;
+            seenRestoringInSetter = manager.isRestoringSession();
+        });
 
     EXPECT_FALSE(manager.isRestoringSession());
 
@@ -480,10 +480,10 @@ enum class HostSection : unsigned char {
 // error instead of a false.
 template <typename Section>
 concept RegistersAsJsonSection = requires(
-Ui::Res::ResManager & manager,
-Section               section,
-Ui::provider_fn_t     getter,
-Ui::action_fn_t       setter) { manager.registerPersistedJson(section, getter, setter); };
+    Ui::Res::ResManager & manager,
+    Section               section,
+    Ui::provider_fn_t     getter,
+    Ui::action_fn_t       setter) { manager.registerPersistedJson(section, getter, setter); };
 
 // A host cannot claim a framework section by TYPE, and cannot pass a bare
 // string either - both are compile errors, not runtime checks.
@@ -498,9 +498,9 @@ TEST(Session, HostSectionLandsAsRealJson)
     Ui::Res::ResManager manager { TEST_RES_DIR };
     manager.loadAll();
     manager.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string { R"([{"kept":1}])" }; },
-    [](const std::string &) { });
+        HostSection::Extras,
+        [] { return std::string { R"([{"kept":1}])" }; },
+        [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     ASSERT_TRUE(json.is_object());
@@ -513,9 +513,9 @@ TEST(Session, HostSectionRoundTripsBackToItsSetter)
     Ui::Res::ResManager manager { TEST_RES_DIR };
     manager.loadAll();
     manager.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string { R"(["a","b"])" }; },
-    [](const std::string &) { });
+        HostSection::Extras,
+        [] { return std::string { R"(["a","b"])" }; },
+        [](const std::string &) { });
 
     const std::string blob = manager.serializeSession();
 
@@ -523,9 +523,9 @@ TEST(Session, HostSectionRoundTripsBackToItsSetter)
     Ui::Res::ResManager restored { TEST_RES_DIR };
     restored.loadAll();
     restored.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string {}; },
-    [&seen](const std::string & value) { seen = value; });
+        HostSection::Extras,
+        [] { return std::string {}; },
+        [&seen](const std::string & value) { seen = value; });
     restored.deserializeSession(blob);
 
     EXPECT_EQ(nlohmann::json::parse(seen, nullptr, false), nlohmann::json::parse(R"(["a","b"])", nullptr, false));
@@ -537,9 +537,9 @@ TEST(Session, HostSectionCoexistsWithFrameworkSections)
     manager.loadAll();
     manager.setLastOpenDir("/x");
     manager.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string { R"(["own"])" }; },
-    [](const std::string &) { });
+        HostSection::Extras,
+        [] { return std::string { R"(["own"])" }; },
+        [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     EXPECT_TRUE(json["extras"].is_array());
@@ -555,9 +555,9 @@ TEST(Session, HostSectionNamedLikeAKeyedFrameworkSectionIsRefused)
     manager.loadAll();
     manager.setLastOpenDir("/x");
     manager.registerPersistedJson(
-    HostSection::Colliding,
-    [] { return std::string { R"(["stolen"])" }; },
-    [](const std::string &) { });
+        HostSection::Colliding,
+        [] { return std::string { R"(["stolen"])" }; },
+        [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     ASSERT_TRUE(json["paths"].is_object()); // still the framework's
@@ -572,9 +572,9 @@ TEST(Session, HostSectionNamedLikeAFrameworkTypedBlockIsRefused)
     Ui::Res::ResManager manager { TEST_RES_DIR };
     manager.loadAll();
     manager.registerPersistedJson(
-    HostSection::Typed,
-    [] { return std::string { R"(["stolen"])" }; },
-    [](const std::string &) { });
+        HostSection::Typed,
+        [] { return std::string { R"(["stolen"])" }; },
+        [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     EXPECT_FALSE(json.contains("files"));
@@ -585,9 +585,9 @@ TEST(Session, HostSectionWithAnEmptyNameIsRefused)
     Ui::Res::ResManager manager { TEST_RES_DIR };
     manager.loadAll();
     manager.registerPersistedJson(
-    HostSection::Unmappable,
-    [] { return std::string { R"(["nowhere"])" }; },
-    [](const std::string &) { });
+        HostSection::Unmappable,
+        [] { return std::string { R"(["nowhere"])" }; },
+        [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     EXPECT_FALSE(json.contains("")); // no section written under an empty key
@@ -598,13 +598,13 @@ TEST(Session, SecondProviderForTheSameSectionIsRefused)
     Ui::Res::ResManager manager { TEST_RES_DIR };
     manager.loadAll();
     manager.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string { R"(["first"])" }; },
-    [](const std::string &) { });
+        HostSection::Extras,
+        [] { return std::string { R"(["first"])" }; },
+        [](const std::string &) { });
     manager.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string { R"(["second"])" }; },
-    [](const std::string &) { });
+        HostSection::Extras,
+        [] { return std::string { R"(["second"])" }; },
+        [](const std::string &) { });
 
     const nlohmann::json json = nlohmann::json::parse(manager.serializeSession(), nullptr, false);
     ASSERT_TRUE(json["extras"].is_array());
@@ -617,9 +617,9 @@ TEST(Session, UnparseableProviderTextCostsOnlyItsOwnSection)
     manager.loadAll();
     manager.setLastOpenDir("/x");
     manager.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string { "{{{ not json" }; },
-    [](const std::string &) { });
+        HostSection::Extras,
+        [] { return std::string { "{{{ not json" }; },
+        [](const std::string &) { });
 
     std::string blob;
     ASSERT_NO_THROW(blob = manager.serializeSession());
@@ -648,9 +648,9 @@ TEST(Session, AbsentSectionLeavesTheHostSetterUntouched)
 
     bool wasCalled = false;
     manager.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string {}; },
-    [&wasCalled](const std::string &) { wasCalled = true; });
+        HostSection::Extras,
+        [] { return std::string {}; },
+        [&wasCalled](const std::string &) { wasCalled = true; });
     manager.deserializeSession(R"({"version":"1.0"})");
 
     EXPECT_FALSE(wasCalled);
@@ -665,9 +665,9 @@ TEST(Session, HostSectionOfTheWrongJsonTypeStillReachesTheSetter)
 
     std::string seen;
     manager.registerPersistedJson(
-    HostSection::Extras,
-    [] { return std::string {}; },
-    [&seen](const std::string & value) { seen = value; });
+        HostSection::Extras,
+        [] { return std::string {}; },
+        [&seen](const std::string & value) { seen = value; });
     manager.deserializeSession(R"({"extras":{"unexpected":true}})");
 
     EXPECT_EQ(seen, R"({"unexpected":true})");

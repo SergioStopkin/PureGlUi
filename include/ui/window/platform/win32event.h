@@ -194,6 +194,24 @@ public:
     }
 
 private:
+    // Last known window bound for detecting WndProc-driven resize/move
+    fpx_t m_lastWidth  = 0;
+    fpx_t m_lastHeight = 0;
+    fpx_t m_lastX      = 0;
+    fpx_t m_lastY      = 0;
+    int   m_lastDpi    = 0;    // the window's DPI last reported
+    bool  m_isInFront  = true; // whether the app was in front, as last reported
+
+    // Multi-click burst counter. We don't enable CS_DBLCLKS on the window
+    // class, so WM_*BUTTONDOWN arrives even for the second press; the
+    // counter classifies it the same way X11/Wayland do.
+    ClickCounter m_clickCounter;
+
+    unsigned m_pressedButtons = 0U; // L=0x1, R=0x2, M=0x4
+
+    // WindowManager-provided native-handle -> child id lookup (see setChildWindowLookup).
+    Ui::Window::child_id_fn_t m_childWindowLookup;
+
     /**
      * @brief Convert Win32 message to platform-agnostic event
      */
@@ -423,14 +441,6 @@ private:
         }
     }
 
-    // Last known window bound for detecting WndProc-driven resize/move
-    fpx_t m_lastWidth  = 0;
-    fpx_t m_lastHeight = 0;
-    fpx_t m_lastX      = 0;
-    fpx_t m_lastY      = 0;
-    int   m_lastDpi    = 0;    // the window's DPI last reported
-    bool  m_isInFront  = true; // whether the app was in front, as last reported
-
     // A window of this process is the one in front: a dialog of its own counts, another
     // app's - or none, mid-switch - does not
     [[nodiscard]] static bool isAppInFront()
@@ -439,16 +449,6 @@ private:
         GetWindowThreadProcessId(GetForegroundWindow(), &processId);
         return processId == GetCurrentProcessId();
     }
-
-    // Multi-click burst counter. We don't enable CS_DBLCLKS on the window
-    // class, so WM_*BUTTONDOWN arrives even for the second press; the
-    // counter classifies it the same way X11/Wayland do.
-    ClickCounter m_clickCounter;
-
-    unsigned m_pressedButtons = 0U; // L=0x1, R=0x2, M=0x4
-
-    // WindowManager-provided native-handle -> child id lookup (see setChildWindowLookup).
-    Ui::Window::child_id_fn_t m_childWindowLookup;
 };
 
 } // namespace Ui::Window::Platform

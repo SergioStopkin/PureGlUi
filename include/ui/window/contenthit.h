@@ -17,18 +17,20 @@
 
 #pragma once
 
-#include "ui/interface/irenderer.h"
+#include "ui/window/connector/pairing.h"
+
+#include <functional>
 
 namespace Ui::Window {
 
 // Hit-test result with coords pre-translated to the content surface's own
 // frame. In xwaylandComposite mode the offscreen child receives main-local
 // coords, so the renderer would otherwise see out-of-bounds x/y.
-// Events route to the surface's pairing (the host's Connector).
+// Events route to the surface's pairing (the host Connector's).
 struct alignas(16) content_hit_t final {
-    Ui::IRenderer * pairing = nullptr;
-    int             lx      = 0;
-    int             ly      = 0;
+    std::reference_wrapper<Pairing> pairing;
+    int                             lx = 0;
+    int                             ly = 0;
 };
 
 } // namespace Ui::Window

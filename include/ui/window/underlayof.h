@@ -61,11 +61,12 @@ underlayOf(const Ui::Res::Type::bound_t &                                       
     }
     // `source`'s rows, `sourceW` wide, bottom-up when `isBottomUp`, into the area's at main-window
     // pixel (left, top); one of the wrong size left out
-    const auto blit =
-    [&pixels,
-     areaX,
-     areaY,
-     areaW](const std::vector<std::uint8_t> & source, int left, int top, int sourceW, int sourceH, bool isBottomUp) {
+    const auto blit = [&pixels, areaX, areaY, areaW](const std::vector<std::uint8_t> & source,
+                                                     int                               left,
+                                                     int                               top,
+                                                     int                               sourceW,
+                                                     int                               sourceH,
+                                                     bool                              isBottomUp) {
         if (source.size() != static_cast<std::size_t>(sourceW) * sourceH * 4) {
             return;
         }

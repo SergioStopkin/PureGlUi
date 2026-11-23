@@ -23,6 +23,7 @@
 #include "ui/color.h"
 #include "ui/config.h"
 #include "ui/gl/localglew.h"
+#include "ui/gl/svgdocuments.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/gl/textalign.h"
 #include "ui/render/elementevent.h"
@@ -78,10 +79,10 @@ public:
         // Cache SVG icon keys
         if (!m_dialog.icon.empty()) {
             const std::string iconPath = m_resManager.resPath().icon(m_dialog.icon);
-            m_iconKey                  = Ui::Gl::SvgRenderer::ensureLoaded(iconPath);
+            m_iconKey                  = Ui::Gl::SvgDocuments::ensureLoaded(iconPath);
         }
         const std::string closeIconPath = m_resManager.resPath().icon(m_resManager.layout().dialogCloseIcon);
-        m_closeIconKey                  = Ui::Gl::SvgRenderer::ensureLoaded(closeIconPath);
+        m_closeIconKey                  = Ui::Gl::SvgDocuments::ensureLoaded(closeIconPath);
 
         buildButtons();
     }
@@ -90,16 +91,6 @@ public:
 
     void setCloseCallback(DialogCloseFn fn) { m_onClose = std::move(fn); }
     void setRenderRequest(Ui::task_fn_t fn) { m_renderRequest = std::move(fn); }
-
-    void confirmPrimary()
-    {
-        for (const auto & btn : m_buttons) {
-            if (btn.primary && m_onClose) {
-                m_onClose(btn.action);
-                return;
-            }
-        }
-    }
 
     void dismiss()
     {
@@ -314,6 +305,33 @@ public:
 private:
     enum class KeyAnimationTarget : uint8_t { None, Close, Button };
 
+    Ui::Res::Type::dialog_t      m_dialog;
+    Ui::font_handle_t            m_font      = 0;
+    Ui::font_handle_t            m_titleFont = 0;
+    std::string                  m_iconKey;
+    std::string                  m_closeIconKey;
+    std::vector<dialog_button_t> m_buttons;
+    DialogCloseFn                m_onClose;
+    Ui::Res::Type::bound_t       m_closeBound {};
+    Ui::Render::UiElementState   m_closeState = Ui::Render::UiElementState::None;
+    fpx_t                        m_scrollOffset {};
+    fpx_t                        m_scrollTarget {};
+    fpx_t                        m_contentHeight {};
+    fpx_t                        m_viewportHeight {};
+    fpx_t                        m_lineHeight {};
+    // Geometry is only known at render (it depends on the dialog width), so the
+    // bar keeps it for the event handlers - a popup has no UiLayout to derive from
+    Ui::Render::ScrollBar m_scrollBar { m_resManager };
+    Common::Time::point_t m_lastFrameTime;
+    Ui::task_fn_t         m_renderRequest;
+
+    // Keyboard animation state
+    size_t                m_keyboardFocus = Ui::INVALID_ID;
+    int                   m_keyAnimationPhase {};
+    size_t                m_keyAnimationIndex {};
+    KeyAnimationTarget    m_keyAnimationTarget = KeyAnimationTarget::None;
+    Common::Time::point_t m_keyAnimationStart;
+
     void startKeyAnimation()
     {
         m_keyAnimationStart = Common::Time::now();
@@ -368,8 +386,8 @@ private:
     [[nodiscard]] Common::Time::span_t keyStepOf() const
     {
         return Ui::Animation::durationOf(m_resManager.transitionsFor(m_keyAnimationTarget == KeyAnimationTarget::Close
-                                                                     ? Ui::Res::Key::ElementKey::DialogClose
-                                                                     : Ui::Res::Key::ElementKey::DialogButton));
+                                                                         ? Ui::Res::Key::ElementKey::DialogClose
+                                                                         : Ui::Res::Key::ElementKey::DialogButton));
     }
 
     void clearKeyboardFocus()
@@ -524,8 +542,8 @@ private:
             const dialog_button_t &      btn      = m_buttons.at(idx);
             const bool                   active   = (btn.state == Ui::Render::UiElementState::Active);
             const Ui::Res::Type::bound_t btnBound = active
-                                                  ? shiftedBound(btn.bound, m_resManager.layout().dialogButtonShift)
-                                                  : btn.bound;
+                                                      ? shiftedBound(btn.bound, m_resManager.layout().dialogButtonShift)
+                                                      : btn.bound;
             m_rounded.draw(btnBound,
                            m_resManager.layout().dialogButtonBorder,
                            { .fg = drawnButtonColorsOf(idx, theme).bg, .bg = bgColor });
@@ -548,7 +566,7 @@ private:
         // SVG icons (fixed-function pipeline)
         beginSvgDraw();
 
-        if (!m_iconKey.empty() && Ui::Gl::SvgRenderer::isLoaded(m_iconKey)) {
+        if (!m_iconKey.empty() && Ui::Gl::SvgDocuments::isLoaded(m_iconKey)) {
             const auto &      iconBound = m_resManager.layout().dialogIcon;
             const Ui::Color & iconColor = (m_dialog.type == Ui::Res::Type::DialogType::Warning) ? theme.colorWarn
                                                                                                 : theme.colorInfo;
@@ -560,7 +578,7 @@ private:
                                      iconColor);
         }
 
-        if (!m_closeIconKey.empty() && Ui::Gl::SvgRenderer::isLoaded(m_closeIconKey)) {
+        if (!m_closeIconKey.empty() && Ui::Gl::SvgDocuments::isLoaded(m_closeIconKey)) {
             const fpx_t margin = m_resManager.layout().dialogCloseMargin;
             const fpx_t closeX = (m_closeBound.x + margin) * g_config.scale;
             const fpx_t closeY = (m_closeBound.y + margin) * g_config.scale;
@@ -714,9 +732,9 @@ private:
 
                     const bool                   active   = (btn.state == Ui::Render::UiElementState::Active);
                     const Ui::Res::Type::bound_t btnBound = active
-                                                          ? shiftedBound(btn.bound,
-                                                                         m_resManager.layout().dialogButtonShift)
-                                                          : btn.bound;
+                                                              ? shiftedBound(btn.bound,
+                                                                             m_resManager.layout().dialogButtonShift)
+                                                              : btn.bound;
                     const auto                   tw       = fontRenderer.textWidth(m_font, text);
                     const auto                   startX = Ui::Gl::TextAlign::startXCenter(btnBound, tw, g_config.scale);
                     const auto baseline = fr->metrics.baselineCap(btnBound.y, btnBound.h, g_config.scale);
@@ -769,33 +787,6 @@ private:
                         { .fg = state.fg, .bg = Ui::Res::Type::inheritBg(state.bg, theme.dialog.bg) },
                         Ui::Res::Key::ElementKey::DialogClose);
     }
-
-    Ui::Res::Type::dialog_t      m_dialog;
-    Ui::font_handle_t            m_font      = 0;
-    Ui::font_handle_t            m_titleFont = 0;
-    std::string                  m_iconKey;
-    std::string                  m_closeIconKey;
-    std::vector<dialog_button_t> m_buttons;
-    DialogCloseFn                m_onClose;
-    Ui::Res::Type::bound_t       m_closeBound {};
-    Ui::Render::UiElementState   m_closeState = Ui::Render::UiElementState::None;
-    fpx_t                        m_scrollOffset {};
-    fpx_t                        m_scrollTarget {};
-    fpx_t                        m_contentHeight {};
-    fpx_t                        m_viewportHeight {};
-    fpx_t                        m_lineHeight {};
-    // Geometry is only known at render (it depends on the dialog width), so the
-    // bar keeps it for the event handlers - a popup has no UiLayout to derive from
-    Ui::Render::ScrollBar m_scrollBar { m_resManager };
-    Common::Time::point_t m_lastFrameTime;
-    Ui::task_fn_t         m_renderRequest;
-
-    // Keyboard animation state
-    size_t                m_keyboardFocus = Ui::INVALID_ID;
-    int                   m_keyAnimationPhase {};
-    size_t                m_keyAnimationIndex {};
-    KeyAnimationTarget    m_keyAnimationTarget = KeyAnimationTarget::None;
-    Common::Time::point_t m_keyAnimationStart;
 };
 
 } // namespace Ui::Render::Popup

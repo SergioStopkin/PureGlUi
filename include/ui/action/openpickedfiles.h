@@ -43,7 +43,7 @@ void openNoHandlerDialog(Host & host, const std::string & extension)
     const std::string & prefix = host.resManager().localeManager().get("DialogNoHandlerContent");
     dialog.contentOverride     = Common::Unicode::fromUtf8(prefix + " *." + extension);
 
-    host.windowManager().openDialog(dialog);
+    host.windowManager().dialog().open(dialog);
 }
 
 // Each file a dialog picked to the host's per-extension handler (setFileHandler); a file type

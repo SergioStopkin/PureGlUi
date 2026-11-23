@@ -258,7 +258,7 @@ inline void postCloseRequest(const Ui::IWindow & window)
     event.xclient.format       = 32;
     // NOLINTNEXTLINE(google-runtime-int)
     event.xclient.data.l[0] = static_cast<long>(
-    XInternAtom(display, "WM_DELETE_WINDOW", Ui::Window::Platform::X11::False));
+        XInternAtom(display, "WM_DELETE_WINDOW", Ui::Window::Platform::X11::False));
     XSendEvent(display, window.nativeHandle(), Ui::Window::Platform::X11::False, NoEventMask, &event);
     XSync(display, Ui::Window::Platform::X11::False);
 }

@@ -100,8 +100,8 @@ TEST(InitHooks, DomainResourcesLoadBeforeTheWindow)
         // capabilities but the renderer must not exist yet. The exact sequence
         // also pins that afterReload belongs to reloadChrome, never to init.
         EXPECT_EQ(
-        log,
-        (std::vector<std::string> { "loadDomainResources", "afterWindowCreated", "gateFeatures", "afterInit" }));
+            log,
+            (std::vector<std::string> { "loadDomainResources", "afterWindowCreated", "gateFeatures", "afterInit" }));
         shell.shutdown();
     } else {
         // No display: initWindow() failed right after the first hook, so nothing

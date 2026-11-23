@@ -52,7 +52,8 @@
 #include "ui/res/type/alignh.h"
 #include "ui/res/type/alignv.h"
 #include "ui/type.h"
-#include "ui/window/connector.h"
+#include "ui/window/connector/connector.h"
+#include "ui/window/connector/pairing.h"
 #include "ui/window/nativewindow.h"
 
 #include <array>
@@ -131,13 +132,13 @@ TEST(GlSmoke, WindowContextAndUiRender)
     // emplaceRenderer makes the window's context current, then constructs the
     // UiRenderer (makeCurrent callback + physical size + resources).
     auto & renderer = connector->emplaceRenderer(
-    std::make_unique<Ui::Gl::GlRender>([&window] { window.makeCurrent(); }, resManager.resPath().fontDir()),
-    320.0F,
-    240.0F,
-    resManager);
+        std::make_unique<Ui::Gl::GlRender>([&window] { window.makeCurrent(); }, resManager.resPath().fontDir()),
+        320.0F,
+        240.0F,
+        resManager);
     renderer.setContent();
 
-    EXPECT_TRUE(connector->render()); // connector makes current, then UiRenderer draws
+    EXPECT_TRUE(connector->pairing().render()); // makes current, then UiRenderer draws
 
     // Connector dtor tears the renderer down with the context current, then the
     // window - no manual destroy needed.

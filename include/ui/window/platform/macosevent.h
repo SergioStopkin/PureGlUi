@@ -211,6 +211,26 @@ public:
     }
 
 private:
+    // WindowManager-provided native-handle -> child id lookup, called in
+    // convertNSEvent() to stamp event.childWindowId so the main dispatcher can
+    // route content-surface events correctly.
+    Ui::Window::child_id_fn_t m_childWindowLookup;
+
+    // The windows whose events are ours: the main one, where content surfaces stand too,
+    // and each popup, dialog and tooltip while it is open - a handful
+    NativeWindowHandle              m_mainView {};
+    std::vector<NativeWindowHandle> m_popupViews;
+
+    // What the window's notifications left for the loop; AppKit posts them on this thread
+    bool m_isCloseRequested = false;
+    bool m_isFocusLost      = false;
+    bool m_isScaleChanged   = false;
+    bool m_isResizeDue      = false;
+
+#ifdef __APPLE__
+    std::vector<id<NSObject>> m_observers; // removed with this handler
+#endif
+
 #ifdef __APPLE__
     /**
      * @brief Convert NSEvent to platform-agnostic event
@@ -498,30 +518,12 @@ private:
     }
 #endif
 
-    // WindowManager-provided native-handle -> child id lookup, called in
-    // convertNSEvent() to stamp event.childWindowId so the main dispatcher can
-    // route content-surface events correctly.
-    Ui::Window::child_id_fn_t m_childWindowLookup;
-
-    // The windows whose events are ours: the main one, where content surfaces stand too,
-    // and each popup, dialog and tooltip while it is open - a handful
-    NativeWindowHandle              m_mainView {};
-    std::vector<NativeWindowHandle> m_popupViews;
-
-    // What the window's notifications left for the loop; AppKit posts them on this thread
-    bool m_isCloseRequested = false;
-    bool m_isFocusLost      = false;
-    bool m_isScaleChanged   = false;
-    bool m_isResizeDue      = false;
-
 #ifdef __APPLE__
-    std::vector<id<NSObject>> m_observers; // removed with this handler
-
     // onPosted run on each name's notification from object, until this handler ends
     void observe(NSNotificationName name, id object, void (^onPosted)(NSNotification *))
     {
         m_observers.emplace_back(
-        [[NSNotificationCenter defaultCenter] addObserverForName:name object:object queue:nil usingBlock:onPosted]);
+            [[NSNotificationCenter defaultCenter] addObserverForName:name object:object queue:nil usingBlock:onPosted]);
     }
 #endif
 };

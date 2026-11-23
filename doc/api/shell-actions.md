@@ -169,30 +169,31 @@ Returns false (no-op) when no handler is registered for `extension`, letting
 Public interactive-chrome orchestration (menus, popups, dialogs, temp status):
 
 ```cpp
-void      reloadChrome();                                      // save open chrome, replay the load cycle, reopen
-Ui::key_t activeMenuKey() const;                               // hierarchical key of deepest active node ("" = none)
-void      restoreActiveMenu(const Ui::key_t & activeKey);      // reopen dropdown/submenu named by key + re-highlight leaf
-void      reopenActivePopup();                                 // recreate open popup at its anchor (after move/resize)
-void      closePopupMenu();                                    // close any open popup (no-op if none)
-bool      hasTempStatus() const;                               // true while an auto-expiring status message shows
-void      showTempStatus(const std::string & text);            // show one - resolved text, the caller does the locale lookup
-void      setStatusText(const std::string & text);             // the real status line; during a temp message it waits underneath
-std::wstring resolveDialogPlaceholders(const std::string & tpl);
+void reloadChrome();                           // save open chrome, replay the load cycle, reopen
+void closePopupMenu();                         // close any open popup (no-op if none)
+bool hasTempStatus() const;                    // true while an auto-expiring status message shows
+void showTempStatus(const std::string & text); // show one - resolved text, the caller does the locale lookup
+void setStatusText(const std::string & text);  // the real status line; during a temp message it waits underneath
 ```
 
-- `reloadChrome()` remembers any open dialog/menu (as a hierarchical
-  key that survives id reassignment), closes it, runs the host-supplied
-  `reloadResources` step, re-queries display DPI, and reopens what was open. The
-  save/close/reopen is generic; the host supplies only the domain reload body.
-- `reopenActivePopup()` mirrors that menu-state preservation across a window
-  move/resize.
+The work behind them is in Shell's parts, each over the `ResManager` and `WindowManager`
+it is handed: `Ui::MenuBar` (`menubar.h`) the open popup menu and the bar's pointer
+handling, `Ui::StatusLine` (`statusline.h`) the status text, `Ui::TabSwitcher`
+(`tabswitcher.h`) the Ctrl+Tab list.
+
+- `reloadChrome()` remembers any open dialog/menu (the menu as a hierarchical key that
+  survives id reassignment, `MenuBar::activeKey`), closes it, runs the host-supplied
+  `reloadResources` step, re-queries display DPI, and reopens what was open
+  (`MenuBar::restore`). The save/close/reopen is generic; the host supplies only the
+  domain reload body. `MenuBar::reopen` keeps the same menu state across a window resize.
 - `closePopupMenu()` is called before opening a native modal (e.g. the file dialog).
-- `resolveDialogPlaceholders(tpl)` expands `%VERSION%` (from `APP_VERSION`),
-  `%CPU%` and `%RAM%` (from `Common::System`), and `%GPU%` / `%GL%` (from the main
-  window's live GL context, tagged `(hardware)`/`(software)`) and `%DISPLAYS%` (every
-  display, one line each: `displaysTextOf(NativeWindow::displaysOf(...))`, asked again
-  each time so one plugged in since is listed) in dialog content.
-  Installed as the dialog content resolver during `wireEvents()`.
+- `resolvedContentOf(content, mainWindow)` (`resolvedcontentof.h`) expands
+  `%VERSION%` (from `APP_VERSION`), `%CPU%` and `%RAM%` (from `Common::System`), and
+  `%GPU%` / `%GL%` (from the main window's live GL context, tagged
+  `(hardware)`/`(software)`) and `%DISPLAYS%` (every display, one line each:
+  `displaysTextOf(NativeWindow::displaysOf(...))`, asked again each time so one plugged
+  in since is listed) in dialog content. `Shell` installs it as the dialog content
+  resolver during `wireEvents()`.
 
 #### Menu bar behaviour
 
@@ -218,15 +219,15 @@ a defect, not a style:
 `TestMenuBar` (component suite) drives these through the shell's own loop, the pointer's
 presses, moves and releases put in the OS's event queue as the OS would.
 
-`createMenuPopup(id_t menuId)` is the internal popup builder (private; reached via
-the `IChromeCommands::openPopup` override and menu-hover switching), listed here
-because the task references it - it is not part of the public host API. Hover switching
-holds off while a list was just made, until a frame has drawn it, and while a switch
-waits for its frame; a hover that arrives then is held (`m_heldMenuId`) and replayed at
-the end of the loop's pass once nothing holds it, if the pointer is still on that button
+`MenuBar::open(id_t menuId)` is the popup builder (reached via the
+`IChromeCommands::openPopup` override and menu-hover switching) - it is not part of the
+public host API. Hover switching (`MenuBar::hover`) holds off while a list was just
+made, until a frame has drawn it, and while a switch waits for its frame; a hover that
+arrives then is held (`m_heldMenuId`) and replayed at the end of the loop's pass once
+nothing holds it (`replayHeldHover`), if the pointer is still on that button
 (`WindowManager::isPointerIn`) - a fast pointer that stops on a button sends nothing more.
-It anchors under the bar button (its layout bound) and hands off to `showMenuPopup(menu, anchorXCss, anchorYCss)`,
-which the `openRowMenu` override shares: a dock `Menu` row's menu opens right-aligned
+It anchors under the bar button (its layout bound) and hands off to `MenuBar::show(menu, anchorXCss, anchorYCss)`,
+which `openRowMenu` shares: a dock `Menu` row's menu opens right-aligned
 under its row (above it when it would run past the window bottom). A row menu is
 never restored by key - a reload, move or resize closes it - bar hover does not trade
 it for a dropdown, and a press on its own row closes it without reopening.
@@ -288,7 +289,7 @@ is type-checked when bound.
 | `SwitchThemeMode` | `action/switchthememode.h` | `switchThemeMode` | toggle dark/light (`resManager().switchThemeMode()`), re-apply diff, refresh | ignored |
 | `SwitchTheme` | `action/switchtheme.h` | `switchTheme` | select theme by name; no-op if `arg` empty or already active | theme name |
 | `OpenFile` | `action/openfile.h` | `openFile` | native open dialog, then route each picked file to its per-extension handler | ignored |
-| `OpenTabSwitcher` | `action/opentabswitcher.h` | `openTabSwitcher` | Composed from public seams, so another host reuses it or binds its own beside it: `Shell::tabSwitch()` (the `Ui::TabSwitch`), `cycleTabSwitcher(delta)`, `windowManager().hasDialog()`, `isPopupOpen()`/`closePopupMenu()`. The Ctrl+Tab list of the tabs most recent first (`TabBar::recentIds`, a `Ui::TabSwitch`), on the tab viewed before the active one or the least recent. Up once Ctrl has been held past `input.json` `tabSwitcher.delayMs`; while open its keys come before every other (a key `shortcut.json` binds to it steps it as its arg says - the action again on an open list steps it, `OPEN_TAB_SWITCHER` its key - Ctrl+Down steps down and Ctrl+Up up, wrapping; Ctrl+Return switches; Escape takes it down; any other does nothing, so no shortcut behind it runs). Ctrl going up (a key release named by `window/iscontrolkey.h`) or a click on a row - a click on its tab - switches through `setActiveTab`; a quick tap switches with no list. A click on a row's close button closes its tab through `closeTab`, the list staying up with the tabs left (`TabSwitch::setIds`). A press off it, the app losing the focus or Escape takes it down unswitched; a key with Ctrl up switches first, its release gone unseen. Not over a dialog; an open menu closes | `next` or `prior` (`res/key/tabstep.h`); any other does nothing |
+| `OpenTabSwitcher` | `action/opentabswitcher.h` | `openTabSwitcher` | Composed from public seams, so another host reuses it or binds its own beside it: `Shell::tabSwitch()` (the `Ui::TabSwitch`), `cycleTabSwitcher(delta)`, `windowManager().dialog().isOpen()`, `isPopupOpen()`/`closePopupMenu()`. The Ctrl+Tab list of the tabs most recent first (`TabBar::recentIds`, a `Ui::TabSwitch`), on the tab viewed before the active one or the least recent. Up once Ctrl has been held past `input.json` `tabSwitcher.delayMs`; while open its keys come before every other (a key `shortcut.json` binds to it steps it as its arg says - the action again on an open list steps it, `OPEN_TAB_SWITCHER` its key - Ctrl+Down steps down and Ctrl+Up up, wrapping; Ctrl+Return switches; Escape takes it down; any other does nothing, so no shortcut behind it runs). Ctrl going up (a key release named by `window/iscontrolkey.h`) or a click on a row - a click on its tab - switches through `setActiveTab`; a quick tap switches with no list. A click on a row's close button closes its tab through `closeTab`, the list staying up with the tabs left (`TabSwitch::setIds`). A press off it, the app losing the focus or Escape takes it down unswitched; a key with Ctrl up switches first, its release gone unseen. Not over a dialog; an open menu closes | `next` or `prior` (`res/key/tabstep.h`); any other does nothing |
 | `CycleTab` | `action/cycletab.h` | `cycleTab` | the tab right of the active one (`TabBar::idAfter`, the first after the last) or left of it (`idBefore`, the last before the first), through `host.setActiveTab` - as a click on it, the strip scrolled to bring it into view (`TabBar::reveal`); nothing with one tab or none active | `next` or `prior` (`res/key/tabstep.h`); any other does nothing |
 
 Notes:

@@ -63,7 +63,7 @@ namespace Ui::Window::Platform {
  * Main windows create their own EGL context; child windows (for content surfaces) let the content surface manage the
  * context.
  */
-class X11Window : public WindowBase<X11Window> {
+class X11Window : public WindowBase {
 public:
     explicit X11Window(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID)
         : WindowBase(subscribe, subscribeId)
@@ -139,13 +139,6 @@ public:
         std::ostringstream identifier;
         identifier << Ui::Io::Platform::Portal::X11_PREFIX << std::hex << m_xWindow;
         return identifier.str();
-    }
-
-    void updateNativeBackground()
-    {
-        if (m_display != nullptr && m_xWindow != 0U) {
-            XSetWindowBackground(m_display, m_xWindow, m_bgColor.toArgb32());
-        }
     }
 
     void destroy() override
@@ -239,7 +232,7 @@ public:
                                &nitems,
                                &bytesAfter,
                                &data)
-            == 0
+                == 0
             && data != nullptr) {
             // Xlib appends a NUL byte after property data, so the text is a C string.
             const std::string      text = Common::fromCString(data);
@@ -280,15 +273,15 @@ public:
         for (const RROutput outputId : std::span(resources->outputs, static_cast<std::size_t>(resources->noutput))) {
             XRROutputInfo * output = XRRGetOutputInfo(display, resources, outputId);
             XRRCrtcInfo *   crtc   = (output != nullptr && output->crtc != 0)
-                                   ? XRRGetCrtcInfo(display, resources, output->crtc)
-                                   : nullptr;
+                                       ? XRRGetCrtcInfo(display, resources, output->crtc)
+                                       : nullptr;
             if (crtc != nullptr) {
                 displays.emplace_back(
-                display_t { .name        = std::string(output->name, static_cast<std::size_t>(output->nameLen)),
-                            .width       = static_cast<int>(crtc->width),
-                            .height      = static_cast<int>(crtc->height),
-                            .refreshRate = modeRateOf(resources, crtc->mode),
-                            .isPrimary   = outputId == primary });
+                    display_t { .name        = std::string(output->name, static_cast<std::size_t>(output->nameLen)),
+                                .width       = static_cast<int>(crtc->width),
+                                .height      = static_cast<int>(crtc->height),
+                                .refreshRate = modeRateOf(resources, crtc->mode),
+                                .isPrimary   = outputId == primary });
                 XRRFreeCrtcInfo(crtc);
             }
             if (output != nullptr) {
@@ -420,7 +413,7 @@ public:
                                &nitems,
                                &bytesAfter,
                                &data)
-            == 0
+                == 0
             && data != nullptr && actualFormat == 32 && nitems >= 4) {
             // 32-format property data is an array of long-sized CARDINALs (Xlib
             // contract); memcpy is the defined-behavior way to read it without a
@@ -457,75 +450,6 @@ public:
     {
         makeCurrent();
         glClear(Common::Bit::Or(GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT));
-    }
-
-    // -------- X11-specific methods (called by WindowBase via CRTP) --------
-
-    void applyRoundedCorners()
-    {
-        if ((m_display == nullptr) || (m_xWindow == 0U)) {
-            return;
-        }
-
-        if (!m_rounded || m_cornerRadius <= 0) {
-            int evb {};
-            int errb {};
-            if (XShapeQueryExtension(m_display, &evb, &errb) != 0) {
-                // Remove custom mask (restore rectangular window)
-                XShapeCombineMask(m_display, m_xWindow, ShapeBounding, 0, 0, X11::None, ShapeSet);
-                XFlush(m_display);
-            }
-            return;
-        }
-
-        // X11 shape APIs require int; cast once from fpx_t members
-        auto radius = static_cast<int>(m_cornerRadius);
-        auto w      = static_cast<int>(m_bound.w);
-        auto h      = static_cast<int>(m_bound.h);
-
-        int evb {};
-        int errb {};
-        if (XShapeQueryExtension(m_display, &evb, &errb) == 0) {
-            std::cout << "[X11Window] Shape extension not available; cannot apply rounded corners" << std::endl;
-            return;
-        }
-
-        // Create 1-bit pixmap to act as mask
-        const Pixmap mask = XCreatePixmap(m_display, m_xWindow, std::max(1, w), std::max(1, h), 1);
-        GC           gc   = XCreateGC(m_display, mask, 0, nullptr);
-
-        // Clear mask to 0
-        XSetForeground(m_display, gc, 0);
-        XFillRectangle(m_display, mask, gc, 0, 0, w, h);
-
-        // Set foreground to 1 and draw rounded rectangle using rectangles + arcs
-        XSetForeground(m_display, gc, 1);
-
-        // If radius is too large, just fill a rectangle (fallback)
-        const int diameter = radius * 2;
-        if (diameter >= w || diameter >= h) {
-            XFillRectangle(m_display, mask, gc, 0, 0, w, h);
-        } else {
-            // Center areas
-            const int innerW = w - diameter;
-            const int innerH = h - diameter;
-            XFillRectangle(m_display, mask, gc, radius, 0, innerW, h);
-            XFillRectangle(m_display, mask, gc, 0, radius, w, innerH);
-
-            // Corner arcs (filled quarter-circles)
-            XFillArc(m_display, mask, gc, 0, 0, diameter, diameter, 90 * 64, 90 * 64);            // top-left
-            XFillArc(m_display, mask, gc, innerW, 0, diameter, diameter, 0 * 64, 90 * 64);        // top-right
-            XFillArc(m_display, mask, gc, 0, innerH, diameter, diameter, 180 * 64, 90 * 64);      // bottom-left
-            XFillArc(m_display, mask, gc, innerW, innerH, diameter, diameter, 270 * 64, 90 * 64); // bottom-right
-        }
-
-        // Apply the mask as the bounding shape of the window
-        XShapeCombineMask(m_display, m_xWindow, ShapeBounding, 0, 0, mask, ShapeSet);
-
-        // Cleanup
-        XFreeGC(m_display, gc);
-        XFreePixmap(m_display, mask);
-        XFlush(m_display);
     }
 
     void setWindowIcon(const std::string & mainIconPath, const std::string & symbolicIconPath) override
@@ -609,7 +533,86 @@ protected:
     std::unique_ptr<Ui::IContext> m_context;
     bool                          m_ownsDisplay = false;
 
+    // -------- WindowBase's hooks --------
+
+    void updateNativeBackground() override
+    {
+        if (m_display != nullptr && m_xWindow != 0U) {
+            XSetWindowBackground(m_display, m_xWindow, m_bgColor.toArgb32());
+        }
+    }
+
+    void applyRoundedCorners() override
+    {
+        if ((m_display == nullptr) || (m_xWindow == 0U)) {
+            return;
+        }
+
+        if (!m_rounded || m_cornerRadius <= 0) {
+            int evb {};
+            int errb {};
+            if (XShapeQueryExtension(m_display, &evb, &errb) != 0) {
+                // Remove custom mask (restore rectangular window)
+                XShapeCombineMask(m_display, m_xWindow, ShapeBounding, 0, 0, X11::None, ShapeSet);
+                XFlush(m_display);
+            }
+            return;
+        }
+
+        // X11 shape APIs require int; cast once from fpx_t members
+        auto radius = static_cast<int>(m_cornerRadius);
+        auto w      = static_cast<int>(m_bound.w);
+        auto h      = static_cast<int>(m_bound.h);
+
+        int evb {};
+        int errb {};
+        if (XShapeQueryExtension(m_display, &evb, &errb) == 0) {
+            std::cout << "[X11Window] Shape extension not available; cannot apply rounded corners" << std::endl;
+            return;
+        }
+
+        // Create 1-bit pixmap to act as mask
+        const Pixmap mask = XCreatePixmap(m_display, m_xWindow, std::max(1, w), std::max(1, h), 1);
+        GC           gc   = XCreateGC(m_display, mask, 0, nullptr);
+
+        // Clear mask to 0
+        XSetForeground(m_display, gc, 0);
+        XFillRectangle(m_display, mask, gc, 0, 0, w, h);
+
+        // Set foreground to 1 and draw rounded rectangle using rectangles + arcs
+        XSetForeground(m_display, gc, 1);
+
+        // If radius is too large, just fill a rectangle (fallback)
+        const int diameter = radius * 2;
+        if (diameter >= w || diameter >= h) {
+            XFillRectangle(m_display, mask, gc, 0, 0, w, h);
+        } else {
+            // Center areas
+            const int innerW = w - diameter;
+            const int innerH = h - diameter;
+            XFillRectangle(m_display, mask, gc, radius, 0, innerW, h);
+            XFillRectangle(m_display, mask, gc, 0, radius, w, innerH);
+
+            // Corner arcs (filled quarter-circles)
+            XFillArc(m_display, mask, gc, 0, 0, diameter, diameter, 90 * 64, 90 * 64);            // top-left
+            XFillArc(m_display, mask, gc, innerW, 0, diameter, diameter, 0 * 64, 90 * 64);        // top-right
+            XFillArc(m_display, mask, gc, 0, innerH, diameter, diameter, 180 * 64, 90 * 64);      // bottom-left
+            XFillArc(m_display, mask, gc, innerW, innerH, diameter, diameter, 270 * 64, 90 * 64); // bottom-right
+        }
+
+        // Apply the mask as the bounding shape of the window
+        XShapeCombineMask(m_display, m_xWindow, ShapeBounding, 0, 0, mask, ShapeSet);
+
+        // Cleanup
+        XFreeGC(m_display, gc);
+        XFreePixmap(m_display, mask);
+        XFlush(m_display);
+    }
+
 private:
+    // One per PointerShape, created lazily, freed in destroy()
+    std::array<::Cursor, 4> m_cursors {};
+
     // XC_* from <X11/cursorfont.h>. Separate from pointerShapeToThemeName: the
     // core X11 API indexes the cursor font, it does not take theme names
     [[nodiscard]] static unsigned int toFontCursor(Ui::Window::PointerShape shape)
@@ -622,9 +625,6 @@ private:
         }
         return XC_left_ptr;
     }
-
-    // One per PointerShape, created lazily, freed in destroy()
-    std::array<::Cursor, 4> m_cursors {};
 
     // -------- Helper methods --------
 
@@ -714,8 +714,8 @@ private:
         // Ctrl going up is what switches to the tab the Ctrl+Tab list has highlighted
         if (!isChildWindow) {
             winAttrs.event_mask = static_cast<int64_t>(
-            Common::Bit::Or(Common::Bit::Or(Common::Bit::Or(winAttrs.event_mask, LeaveWindowMask), FocusChangeMask),
-                            KeyReleaseMask));
+                Common::Bit::Or(Common::Bit::Or(Common::Bit::Or(winAttrs.event_mask, LeaveWindowMask), FocusChangeMask),
+                                KeyReleaseMask));
         }
 
         m_xWindow = XCreateWindow(m_display,

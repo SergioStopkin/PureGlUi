@@ -27,6 +27,7 @@
 #include "ui/gl/glutil.h"
 #include "ui/gl/localglew.h"
 #include "ui/gl/rounded.h"
+#include "ui/gl/svgdocuments.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/gl/textalign.h"
 #include "ui/interface/irender.h"
@@ -193,8 +194,13 @@ public:
         } else if (isScaled) {
             m_svgRenderer.drawScaled(key, bound, scale);
         } else if (hasShadow) {
-            m_svgRenderer
-            .drawWithShadow(key, bound, shadow.offsetX, shadow.offsetY, shadow.blur, shadow.color, shadow.opacity);
+            m_svgRenderer.drawWithShadow(key,
+                                         bound,
+                                         shadow.offsetX,
+                                         shadow.offsetY,
+                                         shadow.blur,
+                                         shadow.color,
+                                         shadow.opacity);
         } else {
             m_svgRenderer.draw(key, bound);
         }
@@ -271,9 +277,29 @@ public:
     }
 
 private:
+    Ui::task_fn_t                         m_makeCurrent; // makes the owning window's GL context current (GL teardown)
+    Ui::Gl::Rounded                       m_rounded;
+    Ui::Gl::SvgRenderer                   m_svgRenderer;
+    std::unique_ptr<Ui::Gl::FontRenderer> m_fontRenderer;
+
+    // Flat-color shader for the loading-bar arrow triangle.
+    GLuint m_flatProgram     = 0;
+    GLuint m_flatVao         = 0;
+    GLuint m_flatVbo         = 0;
+    GLint  m_flatUProjection = -1;
+    GLint  m_flatUColor      = -1;
+
+    std::vector<Ui::Render::text_op_t> m_textBatch;
+    std::vector<float>                 m_vertexBuffer;
+
+    Ui::Gl::BatchMode m_mode   = Ui::Gl::BatchMode::None;
+    Ui::fpx_t         m_width  = 0;
+    Ui::fpx_t         m_height = 0;
+    float             m_scale  = 1;
+
     static bool isSvgFile(std::string_view src) { return src.size() >= 4 && src.substr(src.size() - 4) == ".svg"; }
 
-    // Resolve the SvgRenderer document key for an image source (shared by
+    // Resolve the SvgDocuments key for an image source (shared by
     // drawImage/warmImage): tinted icons load a colour-filled variant keyed
     // separately from the plain load. Empty when the source is not drawable.
     static std::string resolveImageKey(std::string_view src, bool isTinted)
@@ -282,9 +308,9 @@ private:
             return {}; // only SVG sources are drawn today
         }
         const std::string path = std::string(src);
-        std::string       key  = isTinted ? Ui::Gl::SvgRenderer::loadFilledFromFile(path)
-                                          : Ui::Gl::SvgRenderer::ensureLoaded(path);
-        if (key.empty() || !Ui::Gl::SvgRenderer::isLoaded(key)) {
+        std::string       key  = isTinted ? Ui::Gl::SvgDocuments::loadFilledFromFile(path)
+                                          : Ui::Gl::SvgDocuments::ensureLoaded(path);
+        if (key.empty() || !Ui::Gl::SvgDocuments::isLoaded(key)) {
             return {};
         }
         return key;
@@ -487,26 +513,6 @@ private:
         glBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
-
-    Ui::task_fn_t                         m_makeCurrent; // makes the owning window's GL context current (GL teardown)
-    Ui::Gl::Rounded                       m_rounded;
-    Ui::Gl::SvgRenderer                   m_svgRenderer;
-    std::unique_ptr<Ui::Gl::FontRenderer> m_fontRenderer;
-
-    // Flat-color shader for the loading-bar arrow triangle.
-    GLuint m_flatProgram     = 0;
-    GLuint m_flatVao         = 0;
-    GLuint m_flatVbo         = 0;
-    GLint  m_flatUProjection = -1;
-    GLint  m_flatUColor      = -1;
-
-    std::vector<Ui::Render::text_op_t> m_textBatch;
-    std::vector<float>                 m_vertexBuffer;
-
-    Ui::Gl::BatchMode m_mode   = Ui::Gl::BatchMode::None;
-    Ui::fpx_t         m_width  = 0;
-    Ui::fpx_t         m_height = 0;
-    float             m_scale  = 1;
 };
 
 } // namespace Ui::Gl

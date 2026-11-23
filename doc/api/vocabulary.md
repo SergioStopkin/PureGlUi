@@ -106,6 +106,8 @@ Conversions:
 [[nodiscard]] std::array<float, 4> toGLRGBA() const;  // 0.0-1.0
 [[nodiscard]] uint32_t toArgb32() const;              // 0xAARRGGBB, non-premultiplied
 [[nodiscard]] std::string toHex(bool includeAlpha = false) const;
+[[nodiscard]] hsl_t toHSL() const;                    // ui/hsl.h: hue 0-360, saturation and lightness 0-100
+[[nodiscard]] static Color fromHSL(const hsl_t & hsl, uint8_t alpha);
 ```
 
 Lightness math (operates in HSL; percentage points in `[0,100]`):
@@ -116,7 +118,7 @@ Lightness math (operates in HSL; percentage points in `[0,100]`):
 [[nodiscard]] Color edgeColor(float contrast, bool isDarkTheme) const; // Lighter on dark, Darker on light
 ```
 
-`fromHex` accepts short `#RGB` (each digit doubled), `#RRGGBB` and `#RRGGBBAA`; anything else returns the default. HSL conversion is internal.
+`fromHex` accepts short `#RGB` (each digit doubled), `#RRGGBB` and `#RRGGBBAA`; anything else returns the default. `Lighter`/`Darker` go through `toHSL` and `fromHSL`.
 
 ```cpp
 const Ui::Color accent  = Ui::Color::fromHex("#3d7eff");
@@ -384,7 +386,7 @@ public:
 
 Header: `include/ui/tabswitch.h`
 
-The Ctrl+Tab list while Ctrl is held: the tabs most recent first (`TabBar::recentIds`), the one highlighted, and whether it is up. `Shell` owns one (`tabSwitch()`, which the `OpenTabSwitcher` action opens) and the list's window is `WindowManager`'s (`openTabSwitcher`); this is what it shows, kept apart from any window so it is the same whether shown or not, and unit-tested.
+The Ctrl+Tab list while Ctrl is held: the tabs most recent first (`TabBar::recentIds`), the one highlighted, and whether it is up. `Shell`'s `Ui::TabSwitcher` holds one (`Shell::tabSwitch()`, which the `OpenTabSwitcher` action opens) and keeps the list's window, `WindowManager`'s (`tabSwitcher()`, a `TabSwitcherPopup`), in step with it; this is what it shows, kept apart from any window so it is the same whether shown or not, and unit-tested.
 
 ```cpp
 class Ui::TabSwitch final {

@@ -66,7 +66,7 @@ TEST_F(AlphaToCoverageTest, AListBlendsWithoutAlphaToCoverage)
         GTEST_SKIP() << "no title opens a list here";
     }
     m_shell.openPopup(m_menuIds.at(0));
-    Ui::Window::Popup::PopupWindow * list = m_shell.windowManager().popupWindow();
+    Ui::Window::Popup::PopupWindow * list = m_shell.windowManager().menus().window();
     ASSERT_NE(list, nullptr) << m_read;
     if (!isCoverageWithin(*list)) {
         GTEST_SKIP() << "a list here gets no config it could be turned on in";
@@ -80,8 +80,8 @@ TEST_F(AlphaToCoverageTest, ADialogBlendsWithoutAlphaToCoverage)
     dialog.title  = "coverage";
     dialog.width  = 300.0F;
     dialog.height = 200.0F;
-    m_shell.windowManager().openDialog(dialog);
-    Ui::Window::Popup::DialogWindow * dialogWindow = m_shell.windowManager().dialogWindow();
+    m_shell.windowManager().dialog().open(dialog);
+    Ui::Window::Popup::DialogWindow * dialogWindow = m_shell.windowManager().dialog().window();
     ASSERT_NE(dialogWindow, nullptr) << m_read;
     if (!isCoverageWithin(*dialogWindow)) {
         GTEST_SKIP() << "a dialog here gets no config it could be turned on in";

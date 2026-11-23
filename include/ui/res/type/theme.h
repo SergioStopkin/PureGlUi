@@ -96,7 +96,7 @@ struct alignas(128) theme_t final {
     fpx_t shadowOpacity {};
 
     Ui::Res::Type::FontWeight workspaceTabActiveWeight =
-    Ui::Res::Type::FontWeight::Bold; // "workspace-tab:active" font-weight
+        Ui::Res::Type::FontWeight::Bold; // "workspace-tab:active" font-weight
 
     // Standalone colors (no pairing needed)
     Ui::Color dialogTitleColor;    // "dialog-title" color

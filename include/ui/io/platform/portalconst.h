@@ -24,7 +24,7 @@ namespace Ui::Io::Platform::Portal {
 inline constexpr const char * BUS_NAME    = "org.freedesktop.portal.Desktop";
 inline constexpr const char * OBJECT_PATH = "/org/freedesktop/portal/desktop";
 inline constexpr const char * REQUEST_PATH =
-"/org/freedesktop/portal/desktop/request/"; // then the caller's name and token
+    "/org/freedesktop/portal/desktop/request/"; // then the caller's name and token
 
 inline constexpr const char * X11_PREFIX     = "x11:";     // a parent window's identifier: then its XID in hex
 inline constexpr const char * WAYLAND_PREFIX = "wayland:"; // or then the handle xdg-foreign exported it as

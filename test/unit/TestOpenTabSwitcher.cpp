@@ -49,7 +49,8 @@ struct alignas(128) fake_host_t final {
     [[nodiscard]] Ui::TabSwitch &                tabSwitch() { return list; }
     void                                         cycleTabSwitcher(int delta) { steps.emplace_back(delta); }
     [[nodiscard]] const fake_host_t &            windowManager() const { return *this; }
-    [[nodiscard]] bool                           hasDialog() const { return isDialogUp; }
+    [[nodiscard]] const fake_host_t &            dialog() const { return *this; }
+    [[nodiscard]] bool                           isOpen() const { return isDialogUp; }
     [[nodiscard]] bool                           isPopupOpen() const { return isMenuUp; }
     [[nodiscard]] const fake_host_t &            resManager() const { return *this; }
     [[nodiscard]] const Ui::TabBar &             tabBar() const { return bar; }

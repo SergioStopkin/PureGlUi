@@ -144,7 +144,7 @@ TEST_F(ChromeLifecycleTest, SwitchingMenusOpensNextThenToggles)
 TEST_F(ChromeLifecycleTest, LeafActionClosesPopupAndDispatches)
 {
     const auto [parent, item] = findLeaf(
-    [](const Ui::Res::Type::menu_t & i) { return !i.actionKey.empty() && i.dialog.title.empty(); });
+        [](const Ui::Res::Type::menu_t & i) { return !i.actionKey.empty() && i.dialog.title.empty(); });
     if (item == nullptr) {
         GTEST_SKIP() << "no leaf action item in res menus";
     }
@@ -210,7 +210,7 @@ TEST_F(ChromeLifecycleTest, StatusTextCopies)
 TEST_F(ChromeLifecycleTest, FullFlowMenuBarClickToItemAction)
 {
     const auto [parent, item] = findLeaf(
-    [](const Ui::Res::Type::menu_t & i) { return !i.actionKey.empty() && i.dialog.title.empty(); });
+        [](const Ui::Res::Type::menu_t & i) { return !i.actionKey.empty() && i.dialog.title.empty(); });
     if (item == nullptr) {
         GTEST_SKIP() << "no leaf action item in res menus";
     }
@@ -246,9 +246,9 @@ TEST_F(ChromeLifecycleTest, FullFlowMenuBarClickToItemAction)
 
     // (c) build the popup, resolve the leaf item by coordinate.
     const std::vector<Ui::Render::UiElement> popup = Ui::Render::UiLayout::buildPopup(
-    *parent,
-    resManager,
-    resManager.layout().topMenuDropdown.width);
+        *parent,
+        resManager,
+        resManager.layout().topMenuDropdown.width);
     const Ui::Render::UiElement * popupItem = nullptr;
     for (const auto & element : popup) {
         if (element.type == Ui::Render::UiElementType::MenuItem && element.id == item->id) {

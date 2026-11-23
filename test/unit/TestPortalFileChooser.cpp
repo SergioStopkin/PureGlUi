@@ -77,12 +77,12 @@ class StandInPortal final : private Common::NonCopyable {
 public:
     explicit StandInPortal(const std::string & busAddress)
         : m_connection(g_dbus_connection_new_for_address_sync(
-          busAddress.c_str(),
-          static_cast<GDBusConnectionFlags>(G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT
-                                            | G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
-          nullptr,
-          nullptr,
-          nullptr))
+              busAddress.c_str(),
+              static_cast<GDBusConnectionFlags>(G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT
+                                                | G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
+              nullptr,
+              nullptr,
+              nullptr))
         , m_node(g_dbus_node_info_new_for_xml(INTERFACES.data(), nullptr))
     {
         // Owned before the chooser asks, so the call never finds the name free
@@ -100,13 +100,13 @@ public:
         m_vtable.method_call        = onMethodCall;
         m_requestVtable.method_call = onRequestCall;
         m_registration              = g_dbus_connection_register_object(
-        m_connection.get(),
-        Ui::Io::Platform::Portal::OBJECT_PATH,
-        g_dbus_node_info_lookup_interface(m_node.get(), Ui::Io::Platform::Portal::FILE_CHOOSER),
-        &m_vtable,
-        this,
-        nullptr,
-        nullptr);
+            m_connection.get(),
+            Ui::Io::Platform::Portal::OBJECT_PATH,
+            g_dbus_node_info_lookup_interface(m_node.get(), Ui::Io::Platform::Portal::FILE_CHOOSER),
+            &m_vtable,
+            this,
+            nullptr,
+            nullptr);
     }
 
     ~StandInPortal()
@@ -201,9 +201,10 @@ private:
 
         // Where the real one answers: the caller's unique name, ':' dropped and '.' made '_',
         // then the token it chose
-        const variant_t token(
-        g_variant_lookup_value(portal.m_options.get(), Ui::Io::Platform::Portal::HANDLE_TOKEN, G_VARIANT_TYPE_STRING));
-        std::string caller = std::string(sender).substr(1);
+        const variant_t token(g_variant_lookup_value(portal.m_options.get(),
+                                                     Ui::Io::Platform::Portal::HANDLE_TOKEN,
+                                                     G_VARIANT_TYPE_STRING));
+        std::string     caller = std::string(sender).substr(1);
         std::ranges::replace(caller, '.', '_');
         portal.m_requestPath = Ui::Io::Platform::Portal::REQUEST_PATH + caller + "/"
                              + (token ? g_variant_get_string(token.get(), nullptr) : "none");
@@ -211,13 +212,13 @@ private:
         // Made before the answer, as the real one makes it, so a Close can reach it
         g_dbus_connection_unregister_object(portal.m_connection.get(), portal.m_requestRegistration);
         portal.m_requestRegistration = g_dbus_connection_register_object(
-        portal.m_connection.get(),
-        portal.m_requestPath.c_str(),
-        g_dbus_node_info_lookup_interface(portal.m_node.get(), Ui::Io::Platform::Portal::REQUEST),
-        &portal.m_requestVtable,
-        &portal,
-        nullptr,
-        nullptr);
+            portal.m_connection.get(),
+            portal.m_requestPath.c_str(),
+            g_dbus_node_info_lookup_interface(portal.m_node.get(), Ui::Io::Platform::Portal::REQUEST),
+            &portal.m_requestVtable,
+            &portal,
+            nullptr,
+            nullptr);
         if (portal.m_isAnswerHeld) {
             portal.m_heldCall.reset(invocation);
             return;
@@ -533,7 +534,7 @@ TEST_F(PortalFileChooserOnDemandTest, APortalStartedByTheCallIsNotTakenForGone)
     // The chooser's connection, once up; turned until it has sent its call on this thread - the
     // last serial is none before - so the bus holds the call before the stand-in comes
     const Common::c_ptr_t<GDBusConnection, g_object_unref> connection(
-    g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr));
+        g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr));
     ASSERT_TRUE(connection);
     const Common::Time::point_t started = Common::Time::now();
     while (g_dbus_connection_get_last_serial(connection.get()) == guint32 {}

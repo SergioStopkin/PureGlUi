@@ -91,7 +91,7 @@ namespace {
                       const Ui::Render::shadow_t & /*shadow*/) override
         {
             fills.emplace_back(
-            drawn_t { .bound = bound, .color = colors.fg, .layer = layer, .isOverDrawn = colors.bg.a() == 0 });
+                drawn_t { .bound = bound, .color = colors.fg, .layer = layer, .isOverDrawn = colors.bg.a() == 0 });
         }
         void drawText(Ui::font_handle_t /*font*/,
                       std::string_view /*text*/,
@@ -242,7 +242,7 @@ TEST_F(GlideTest, HeldTabDrawnWhereTheDragPutsItOverTheOthers)
     EXPECT_FLOAT_EQ(held.bound.x, second.x + NUDGE);
     EXPECT_TRUE(held.isOverDrawn);
     EXPECT_TRUE(std::ranges::any_of(sink->images, [](const drawn_t & image) { return image.layer == 1; }))
-    << "its close glyph is drawn over the other tabs with it";
+        << "its close glyph is drawn over the other tabs with it";
 }
 
 TEST_F(GlideTest, HeldTabKeptAlongTheStrip)
@@ -306,9 +306,9 @@ TEST_F(GlideTest, DockRowSelectionFadesInAndOut)
     const std::string name = "glide-rows";
     resManager.setDockState(name, Ui::Res::Dock::dock_state_t { ROW_DOCK_WIDTH, ROW_DOCK_WIDTH });
     Ui::Render::DockColumn dock(
-    1,
-    Ui::Res::Dock::dock_config_t { name, Ui::Res::Dock::DockAnchor::Left, 1, ROW_DOCK_WIDTH },
-    resManager);
+        1,
+        Ui::Res::Dock::dock_config_t { name, Ui::Res::Dock::DockAnchor::Left, 1, ROW_DOCK_WIDTH },
+        resManager);
     dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
     renderer->setExtraOpsHook([&dock](Ui::Render::UiRenderer & out) { dock.render(out); });
 
@@ -320,7 +320,7 @@ TEST_F(GlideTest, DockRowSelectionFadesInAndOut)
 
     const Ui::Color &          selected = resManager.theme().menuItemActive.bg;
     const Common::Time::span_t fade     = Ui::Animation::durationOf(
-    resManager.transitionsFor(Ui::Res::Key::ElementKey::TopMenuItem));
+        resManager.transitionsFor(Ui::Res::Key::ElementKey::TopMenuItem));
     row.isSelected = true;
     dock.setRows({ row });
     draw(VIEW_W);

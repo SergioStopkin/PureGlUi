@@ -71,9 +71,10 @@ hook, and work the framework can finish itself (tab scroll, dock resize) sets
 
 - Content surfaces: `WindowManager::addContentSurface` / `removeContentSurface` /
   `setActiveContentSurface` / `setContentSurfaceReady` register host-owned child
-  render surfaces (e.g. a 3D viewport), and `setContentPointer` says what the
-  pointer shows over one. The framework drives
-  `[main window] + content surfaces` blind through `IWindow` + `IRenderer` + `IEventApp`.
+  render surfaces (e.g. a 3D viewport) by their connector's `Pairing`, and
+  `setContentPointer` says what the pointer shows over one. The framework drives
+  `[main window] + content surfaces` blind through a `Pairing` each - an `IWindow`
+  and an `IRenderer` (+ `IEventApp`) driven as one.
 - Dock content: `WindowManager::setDockRows(dockName, rows)` projects host rows
   into a dock the way `TabBar` takes tabs - the framework renders and hit-tests
   `Ui::Res::Dock::row_t` and never learns what a row means. Selection and
@@ -85,9 +86,9 @@ hook, and work the framework can finish itself (tab scroll, dock resize) sets
   `setFileHandler(extension, fn)` (per-type file loaders for OpenFile),
   `setOnDockRowValue(fn)` (a dock slider moved), `setOnTabMoved(fn)` (a tab dragged along
   the strip).
-- WindowManager hooks: `setOnDialogClose` / `setOnElementHover` /
-  `setDoubleClickConfig` / `setDialogContentResolver` / `setOnRowValue`, plus
-  `setCursor(PointerShape)`.
+- WindowManager hooks: `setOnElementHover` / `setDoubleClickConfig` /
+  `setOnRowValue`, `setCursor(PointerShape)`, and the dialog's
+  `dialog().setOnClose` / `dialog().setContentResolver`.
 - Actions: `shell.actions().on(key, fn)` binds a domain action to an opaque
   `actionKey` that res JSON (menus/shortcuts) references.
 - Resources: `Ui::Res::ResManager` exposes persisted state via getters plus an

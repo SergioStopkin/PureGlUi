@@ -294,20 +294,20 @@ public:
                 // actionKey fired by each auto-generated child (opaque string from
                 // JSON). An unknown key simply dispatches to nothing - inert.
                 item.submenuActionKey = Common::Sanitize::string(
-                Common::Json::string(subs, menuKeyName(MenuKey::Action)),
-                "menu.submenuAction");
+                    Common::Json::string(subs, menuKeyName(MenuKey::Action)),
+                    "menu.submenuAction");
             }
         }
 
         const auto & dialogJson = Common::Json::object(itemJson, menuKeyName(MenuKey::Dialog));
         if (!dialogJson.empty()) {
             item.dialog.type = Ui::Res::Type::dialogTypeFromName(
-            Common::Json::string(dialogJson, menuKeyName(MenuKey::Type), "Info"));
+                Common::Json::string(dialogJson, menuKeyName(MenuKey::Type), "Info"));
             item.dialog.title = Common::Sanitize::string(Common::Json::string(dialogJson, menuKeyName(MenuKey::Title)),
                                                          "dialog.title");
             item.dialog.content = Common::Sanitize::string(
-            Common::Json::string(dialogJson, menuKeyName(MenuKey::Content)),
-            "dialog.content");
+                Common::Json::string(dialogJson, menuKeyName(MenuKey::Content)),
+                "dialog.content");
             item.dialog.link = Common::Sanitize::string(Common::Json::string(dialogJson, menuKeyName(MenuKey::Link)),
                                                         "dialog.link");
             // Role name or file, same as a menu item's icon below - a dialog has
@@ -320,9 +320,9 @@ public:
             item.dialog.file  = Common::Sanitize::filePath(Common::Json::string(dialogJson, menuKeyName(MenuKey::File)),
                                                            "dialog.file");
             item.dialog.width = Ui::Convert::parseCssNumber(
-            Common::Json::string(dialogJson, menuKeyName(MenuKey::Width)));
+                Common::Json::string(dialogJson, menuKeyName(MenuKey::Width)));
             item.dialog.height = Ui::Convert::parseCssNumber(
-            Common::Json::string(dialogJson, menuKeyName(MenuKey::Height)));
+                Common::Json::string(dialogJson, menuKeyName(MenuKey::Height)));
 
             m_maxDialog.w = std::max(m_maxDialog.w, item.dialog.width);
             m_maxDialog.h = std::max(m_maxDialog.h, item.dialog.height);
@@ -505,7 +505,7 @@ public:
                 btn.tooltip   = Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Tooltip)),
                                                          "button.tooltip");
                 btn.anchor    = Ui::Res::Dock::dockAnchorFromName(
-                Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Anchor)), "button.anchor"));
+                    Common::Sanitize::string(Common::Json::string(j, menuKeyName(MenuKey::Anchor)), "button.anchor"));
                 btn.order   = Common::Json::number(j, menuKeyName(MenuKey::Order), int16_t {});
                 btn.enabled = Common::Json::boolean(j, menuKeyName(MenuKey::Enabled), true);
                 btn.visible = Common::Json::boolean(j, menuKeyName(MenuKey::Visible), true);

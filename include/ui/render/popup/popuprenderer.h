@@ -21,6 +21,7 @@
 #include "ui/config.h"
 #include "ui/gl/fontrenderer.h"
 #include "ui/gl/localglew.h"
+#include "ui/gl/svgdocuments.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/gl/textalign.h"
 #include "ui/render/elementevent.h"
@@ -93,7 +94,7 @@ public:
     ~PopupRenderer() override { cleanup(); }
 
     using SubmenuHoverFn = std::function<
-    void(const Ui::Res::Type::bound_t & bound, const Ui::Res::Type::menu_t & item, bool isFirst, bool isLast)>;
+        void(const Ui::Res::Type::bound_t & bound, const Ui::Res::Type::menu_t & item, bool isFirst, bool isLast)>;
 
     void setSubmenuHoverCallback(SubmenuHoverFn fn) { m_onSubmenuHover = std::move(fn); }
 
@@ -249,6 +250,15 @@ public:
     }
 
 private:
+    std::vector<Ui::Render::UiElement> m_popupElements;
+    Ui::font_handle_t                  m_popupFont       = 0;
+    Ui::font_handle_t                  m_popupFontBold   = 0;
+    Ui::font_handle_t                  m_popupScFont     = 0;
+    fpx_t                              m_shortcutColumnW = 0; // every shortcut starts where the widest one does
+    Ui::Res::Type::border_t            m_containerBorder;
+    SubmenuHoverFn                     m_onSubmenuHover;
+    id_t                               m_submenuParentId = Ui::INVALID_ID;
+
     void renderPopupElements(bool premultiplied)
     {
         if (m_width <= 0 || m_height <= 0) {
@@ -412,8 +422,8 @@ private:
                     return;
                 }
                 const std::string iconPath = m_resManager.resPath().icon(iconName);
-                const std::string iconKey  = Ui::Gl::SvgRenderer::ensureLoaded(iconPath);
-                if (iconKey.empty() || !Ui::Gl::SvgRenderer::isLoaded(iconKey)) {
+                const std::string iconKey  = Ui::Gl::SvgDocuments::ensureLoaded(iconPath);
+                if (iconKey.empty() || !Ui::Gl::SvgDocuments::isLoaded(iconKey)) {
                     return;
                 }
                 const fpx_t iconX = (place == Ui::Res::Type::IconPlace::Right ? el.bound.x + el.bound.w - pH - iconSz
@@ -422,9 +432,9 @@ private:
                 const fpx_t iconY = (el.bound.y + ((el.bound.h - iconSz) / 2.0F)) * g_config.scale;
                 beginSvgDraw();
                 m_svgRenderer.drawTinted(
-                iconKey,
-                { .x = iconX, .y = iconY, .w = iconSz * g_config.scale, .h = iconSz * g_config.scale },
-                cp.fg);
+                    iconKey,
+                    { .x = iconX, .y = iconY, .w = iconSz * g_config.scale, .h = iconSz * g_config.scale },
+                    cp.fg);
                 endSvgDraw();
             };
 
@@ -472,8 +482,8 @@ private:
                     if (!verts.empty()) {
                         const Ui::Color scColor = (el.state == Ui::Render::UiElementState::Hovered
                                                    || el.state == Ui::Render::UiElementState::Active)
-                                                ? theme.shortcutHoverColor
-                                                : theme.shortcutColor;
+                                                    ? theme.shortcutHoverColor
+                                                    : theme.shortcutColor;
                         drawTextVerts(verts, scColor, *scFr);
                     }
                 }
@@ -572,15 +582,6 @@ private:
         }
         return width;
     }
-
-    std::vector<Ui::Render::UiElement> m_popupElements;
-    Ui::font_handle_t                  m_popupFont       = 0;
-    Ui::font_handle_t                  m_popupFontBold   = 0;
-    Ui::font_handle_t                  m_popupScFont     = 0;
-    fpx_t                              m_shortcutColumnW = 0; // every shortcut starts where the widest one does
-    Ui::Res::Type::border_t            m_containerBorder;
-    SubmenuHoverFn                     m_onSubmenuHover;
-    id_t                               m_submenuParentId = Ui::INVALID_ID;
 };
 
 } // namespace Ui::Render::Popup

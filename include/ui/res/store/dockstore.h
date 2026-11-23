@@ -119,9 +119,9 @@ public:
                 continue;
             }
             const std::string name = Common::Sanitize::string(
-            Common::Json::string(entry, sessionKeyName(SessionKey::Name)),
-            "dock.name",
-            MAX_DOCK_NAME_LENGTH);
+                Common::Json::string(entry, sessionKeyName(SessionKey::Name)),
+                "dock.name",
+                MAX_DOCK_NAME_LENGTH);
             if (name.empty()) {
                 continue;
             }

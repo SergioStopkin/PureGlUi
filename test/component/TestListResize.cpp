@@ -60,21 +60,21 @@ protected:
     void openListLate(bool isFullscreen)
     {
         PureGlUi::runPasses(
-        [this, isFullscreen](int pass) {
-            if (pass == 0 && isFullscreen) {
-                mainWindow().setFullscreen(true);
-            } else if (pass == PASSES - 3) {
-                m_shell.openPopup(m_menuIds.at(0));
-            }
-        },
-        m_shell);
+            [this, isFullscreen](int pass) {
+                if (pass == 0 && isFullscreen) {
+                    mainWindow().setFullscreen(true);
+                } else if (pass == PASSES - 3) {
+                    m_shell.openPopup(m_menuIds.at(0));
+                }
+            },
+            m_shell);
     }
 
     // Where the compositor stood the open list's top against its title's bottom: 0 is flush
     [[nodiscard]] Ui::fpx_t listDrop()
     {
         const Ui::Res::Type::bound_t & title = m_shell.windowManager().elementBound(m_menuIds.at(0));
-        return m_shell.windowManager().popupWindow()->bound().y - Ui::toPhysEdge(title.y + title.h);
+        return m_shell.windowManager().menus().window()->bound().y - Ui::toPhysEdge(title.y + title.h);
     }
 };
 
@@ -85,10 +85,10 @@ TEST_F(ListResizeTest, AListStaysOpenAsTheWindowFirstReportsItsSize)
         GTEST_SKIP() << "no title opens a list here";
     }
     m_shell.openPopup(m_menuIds.at(0));
-    ASSERT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
+    ASSERT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
     PureGlUi::runPasses([](int /*pass*/) { }, m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(0)) << m_read;
-    EXPECT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
+    EXPECT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
 }
 
 // One loop, as a stop is for good: its first size read, then the list opened, then the resize
@@ -99,17 +99,17 @@ TEST_F(ListResizeTest, AListStaysOpenAsTheCompositorResizesTheWindow)
     }
     const Ui::fpx_t widthBefore = mainWindow().bound().w;
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 1) {
-            m_shell.openPopup(m_menuIds.at(0));
-        } else if (pass == 2) {
-            resizeAsTheCompositor();
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 1) {
+                m_shell.openPopup(m_menuIds.at(0));
+            } else if (pass == 2) {
+                resizeAsTheCompositor();
+            }
+        },
+        m_shell);
     EXPECT_FLOAT_EQ(m_shell.windowManager().windowWidth(), widthBefore + SHIFT) << m_read;
     EXPECT_EQ(openMenuId(), m_menuIds.at(0)) << m_read;
-    EXPECT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
+    EXPECT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
 }
 
 TEST_F(ListResizeTest, AListStandsFlushUnderItsTitle)
@@ -118,7 +118,7 @@ TEST_F(ListResizeTest, AListStandsFlushUnderItsTitle)
         GTEST_SKIP() << "no title opens a list here";
     }
     openListLate(false);
-    ASSERT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
+    ASSERT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
     EXPECT_FLOAT_EQ(listDrop(), 0.0F) << m_read;
 }
 
@@ -134,7 +134,7 @@ TEST_F(ListResizeTest, AListStandsFlushUnderItsTitleFullscreen)
     if (mainWindow().bound().w == widthBefore) {
         GTEST_SKIP() << "the compositor gave no fullscreen here";
     }
-    ASSERT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
+    ASSERT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
     EXPECT_FLOAT_EQ(listDrop(), 0.0F) << m_read;
 }
 
@@ -142,15 +142,15 @@ TEST_F(ListResizeTest, NoListOpensAsTheCompositorResizesTheWindow)
 {
     const Ui::fpx_t widthBefore = mainWindow().bound().w;
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 2) {
-            resizeAsTheCompositor();
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 2) {
+                resizeAsTheCompositor();
+            }
+        },
+        m_shell);
     EXPECT_FLOAT_EQ(m_shell.windowManager().windowWidth(), widthBefore + SHIFT) << m_read;
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
-    EXPECT_EQ(m_shell.windowManager().popupWindow(), nullptr) << m_read;
+    EXPECT_EQ(m_shell.windowManager().menus().window(), nullptr) << m_read;
 }
 
 } // namespace

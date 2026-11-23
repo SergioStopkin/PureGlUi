@@ -44,7 +44,9 @@
 #include "ui/render/uirenderer.h"
 #include "ui/res/resmanager.h"
 #include "ui/type.h"
-#include "ui/window/connector.h"
+#include "ui/window/clampedradiiof.h"
+#include "ui/window/connector/connector.h"
+#include "ui/window/connector/pairing.h"
 #include "ui/window/popup/popupwindow.h"
 
 #include <GL/glew.h>
@@ -400,10 +402,10 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
 
     // ---- 3. Create UiRenderer for main window (same as App::initialize) ----
     auto uiRender = std::make_unique<Ui::Render::UiRenderer>(
-    std::make_unique<Ui::Gl::GlRender>([this] { m_mainWindow.makeCurrent(); }, m_resManager.resPath().fontDir()),
-    kWinW,
-    kWinH,
-    m_resManager);
+        std::make_unique<Ui::Gl::GlRender>([this] { m_mainWindow.makeCurrent(); }, m_resManager.resPath().fontDir()),
+        kWinW,
+        kWinH,
+        m_resManager);
     uiRender->setContent();
     uiRender->resize(kWinW, kWinH);
 
@@ -662,11 +664,11 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
                                     int srcIdx = (py2 * capW + px2) * 4;
                                     int dstIdx = (dY * r + dX) * 4;
                                     buf[static_cast<size_t>(dstIdx + 0)] =
-                                    regionPixels[static_cast<size_t>(srcIdx + 0)];
+                                        regionPixels[static_cast<size_t>(srcIdx + 0)];
                                     buf[static_cast<size_t>(dstIdx + 1)] =
-                                    regionPixels[static_cast<size_t>(srcIdx + 1)];
+                                        regionPixels[static_cast<size_t>(srcIdx + 1)];
                                     buf[static_cast<size_t>(dstIdx + 2)] =
-                                    regionPixels[static_cast<size_t>(srcIdx + 2)];
+                                        regionPixels[static_cast<size_t>(srcIdx + 2)];
                                     buf[static_cast<size_t>(dstIdx + 3)] = 255;
                                 }
                             }
@@ -678,8 +680,8 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
             }
         }
 
-        if (!popup->render()) {
-            ADD_FAILURE() << label << ": popup->render() failed";
+        if (!popup->pairing().render()) {
+            ADD_FAILURE() << label << ": popup->pairing().render() failed";
             ++failures;
             popup->window().destroy();
             continue;
@@ -701,15 +703,8 @@ TEST_F(PopupCornerCaptureTest, RealHtmlMenuSwitch)
             std::memcpy(&popupPixels[y * popupRowBytes], &popupRaw[(popupHi - 1 - y) * popupRowBytes], popupRowBytes);
         }
 
-        // Clamp radii for verification (same logic as WindowManager::clampRadii)
-        auto clampRadii = [](const Ui::Res::Type::border_t & radii, fpx_t w, fpx_t h) -> Ui::Res::Type::border_t {
-            const fpx_t maxR = std::min(w, h) / 2;
-            return { std::min(maxR, std::round(radii.topLeft)),
-                     std::min(maxR, std::round(radii.topRight)),
-                     std::min(maxR, std::round(radii.bottomRight)),
-                     std::min(maxR, std::round(radii.bottomLeft)) };
-        };
-        Ui::Res::Type::border_t clamped = clampRadii(physRadii, popupW, popupH);
+        // Clamped as the corner capture clamps them
+        Ui::Res::Type::border_t clamped = Ui::Window::clampedRadiiOf(physRadii, popupW, popupH);
         fpx_t                   clTL    = clamped.topLeft;
         fpx_t                   clTR    = clamped.topRight;
         fpx_t                   clBR    = clamped.bottomRight;

@@ -307,7 +307,7 @@ inline bool isShownAt(const Ui::IWindow & window, int x, int y)
     int          count {};
     int          ordering {};
     XRectangle * rectangles =
-    XShapeGetRectangles(window.nativeDisplay(), window.nativeHandle(), ShapeBounding, &count, &ordering);
+        XShapeGetRectangles(window.nativeDisplay(), window.nativeHandle(), ShapeBounding, &count, &ordering);
     bool isShown = false;
     for (const XRectangle & rectangle : std::span(rectangles, static_cast<std::size_t>(count))) {
         const Ui::Res::Type::bound_t shown { .x = static_cast<Ui::fpx_t>(rectangle.x),
@@ -419,7 +419,7 @@ template <typename predicate_t>
     event.xclient.data.l[0] = isEnlarged ? 1 : 0;
     // NOLINTNEXTLINE(google-runtime-int)
     event.xclient.data.l[1] = static_cast<long>(
-    XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", Ui::Window::Platform::X11::False));
+        XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", Ui::Window::Platform::X11::False));
     event.xclient.data.l[3] = 1;
     XSendEvent(display,
                DefaultRootWindow(display),

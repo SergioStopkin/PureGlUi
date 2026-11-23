@@ -73,8 +73,11 @@ void drawFrame(Ui::Window::NativeWindow & window)
     PureGlUi::runWithin([&parent, &script, &isCreated] {
         Ui::PubSub::Subscribe    subscribe;
         Ui::Window::NativeWindow child(subscribe);
-        isCreated =
-        child.create(PureGlUi::CHILD_WIDTH, PureGlUi::CHILD_HEIGHT, parent.nativeDisplay(), parent.nativeHandle(), "");
+        isCreated = child.create(PureGlUi::CHILD_WIDTH,
+                                 PureGlUi::CHILD_HEIGHT,
+                                 parent.nativeDisplay(),
+                                 parent.nativeHandle(),
+                                 "");
         if (isCreated) {
             script(child);
         }

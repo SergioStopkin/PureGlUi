@@ -18,6 +18,7 @@
 #pragma once
 
 #include "ui/gl/localglew.h"
+#include "ui/res/type/bound.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -44,6 +45,12 @@ struct alignas(64) CompositeTexture final {
         w     = width;
         h     = height;
         dirty = true;
+    }
+
+    // The current context's frame, a window `bound` big
+    void capture(const Ui::Res::Type::bound_t & bound)
+    {
+        capture(static_cast<int>(bound.w), static_cast<int>(bound.h));
     }
 
     void clear()

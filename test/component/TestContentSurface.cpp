@@ -18,7 +18,7 @@
 /**
  * @file TestContentSurface.cpp
  * @brief WindowManager content-surface registry, headless. Drives the host-facing
- *        add/remove/setActive/setReady seam with a stub IWindow/IRenderer and
+ *        add/remove/setActive/setReady seam with a stub IWindow/IRenderer paired by a Connector and
  *        asserts the state machine + the centralized childIdForHandle lookup
  *        (the single source event peers resolve native-handle -> child id through).
  *
@@ -35,6 +35,8 @@
 #include "ui/interface/iwindow.h"
 #include "ui/res/resmanager.h"
 #include "ui/type.h"
+#include "ui/window/connector/connector.h"
+#include "ui/window/connector/pairing.h"
 #include "ui/window/pointershape.h"
 #include "ui/window/renderqueue.h"
 #include "ui/window/windowmanager.h"
@@ -133,6 +135,9 @@ private:
     int m_leaveCount = 0;
 };
 
+// The two paired as a host pairs its own, registered by the connector's pairing
+using FakeSurface = Ui::Window::Connector<FakeWindow, FakeRenderer>;
+
 class ContentSurfaceTest : public ::testing::Test {
 protected:
     Ui::Res::ResManager       resManager { TEST_RES_DIR };
@@ -144,42 +149,89 @@ protected:
 // source the event peers' child-window lookup is wired to.
 TEST_F(ContentSurfaceTest, RegisteredHandleResolvesToId)
 {
-    FakeWindow   windowA { 1001 };
-    FakeWindow   windowB { 1002 };
-    FakeRenderer rendererA;
-    FakeRenderer rendererB;
+    FakeSurface surfaceA { 1001 };
+    FakeSurface surfaceB { 1002 };
 
-    windowManager.addContentSurface(SURFACE_A, windowA, rendererA);
-    windowManager.addContentSurface(SURFACE_B, windowB, rendererB);
+    windowManager.addContentSurface(SURFACE_A, surfaceA.pairing());
+    windowManager.addContentSurface(SURFACE_B, surfaceB.pairing());
 
     EXPECT_EQ(windowManager.childIdForHandle(1001), SURFACE_A);
     EXPECT_EQ(windowManager.childIdForHandle(1002), SURFACE_B);
     EXPECT_EQ(windowManager.childIdForHandle(9999), Ui::INVALID_ID); // unregistered
-    EXPECT_EQ(windowManager.contentWindow(SURFACE_A), &windowA);
-    EXPECT_EQ(windowManager.contentPairing(SURFACE_B), &rendererB);
+    const auto window  = windowManager.contentWindow(SURFACE_A);
+    const auto pairing = windowManager.contentPairing(SURFACE_B);
+    ASSERT_TRUE(window.has_value());
+    ASSERT_TRUE(pairing.has_value());
+    EXPECT_EQ(&window->get(), &surfaceA.window());
+    EXPECT_EQ(&pairing->get(), &surfaceB.pairing());
 }
 
 // Removing a surface drops it from the lookup and clears the active id when it was
 // the active one.
 TEST_F(ContentSurfaceTest, RemoveDropsLookupAndResetsActive)
 {
-    FakeWindow   window { 1001 };
-    FakeRenderer renderer;
-    windowManager.addContentSurface(SURFACE_A, window, renderer);
+    FakeSurface surface { 1001 };
+    windowManager.addContentSurface(SURFACE_A, surface.pairing());
     windowManager.setActiveContentSurface(SURFACE_A);
-    EXPECT_EQ(windowManager.activeContentWindow(), &window);
+    const auto active = windowManager.activeContentWindow();
+    ASSERT_TRUE(active.has_value());
+    EXPECT_EQ(&active->get(), &surface.window());
 
     windowManager.removeContentSurface(SURFACE_A);
     EXPECT_EQ(windowManager.childIdForHandle(1001), Ui::INVALID_ID);
-    EXPECT_EQ(windowManager.activeContentWindow(), nullptr); // active was A -> reset
+    EXPECT_FALSE(windowManager.activeContentWindow().has_value()); // active was A -> reset
+}
+
+// Negative: an id is added once - a second add under it is refused, the first surface
+// still the one registered and the second's window never resolving to it
+TEST_F(ContentSurfaceTest, AddingAnIdTwiceKeepsTheFirst)
+{
+    FakeSurface first { 1001 };
+    FakeSurface second { 1002 };
+    windowManager.addContentSurface(SURFACE_A, first.pairing());
+    windowManager.addContentSurface(SURFACE_A, second.pairing());
+
+    const auto pairing = windowManager.contentPairing(SURFACE_A);
+    ASSERT_TRUE(pairing.has_value());
+    EXPECT_EQ(&pairing->get(), &first.pairing());
+    EXPECT_EQ(windowManager.childIdForHandle(1001), SURFACE_A);
+    EXPECT_EQ(windowManager.childIdForHandle(1002), Ui::INVALID_ID);
+}
+
+// Negative: the refused add leaves the first surface's state as it was, not reset to a new one's
+TEST_F(ContentSurfaceTest, ARefusedAddKeepsTheFirstsState)
+{
+    FakeSurface first { 1001 };
+    FakeSurface second { 1002 };
+    windowManager.addContentSurface(SURFACE_A, first.pairing());
+    windowManager.setContentSurfaceReady(SURFACE_A, false);
+    windowManager.addContentSurface(SURFACE_A, second.pairing());
+
+    EXPECT_FALSE(windowManager.isContentReady(SURFACE_A));
+}
+
+// Removed first, the id takes the new surface: the way to put another one under it
+TEST_F(ContentSurfaceTest, AnIdRemovedTakesANewSurface)
+{
+    FakeSurface first { 1001 };
+    FakeSurface second { 1002 };
+    windowManager.addContentSurface(SURFACE_A, first.pairing());
+    windowManager.removeContentSurface(SURFACE_A);
+    windowManager.addContentSurface(SURFACE_A, second.pairing());
+
+    const auto pairing = windowManager.contentPairing(SURFACE_A);
+    ASSERT_TRUE(pairing.has_value());
+    EXPECT_EQ(&pairing->get(), &second.pairing());
+    EXPECT_EQ(windowManager.childIdForHandle(1001), Ui::INVALID_ID);
+    EXPECT_EQ(windowManager.childIdForHandle(1002), SURFACE_A);
+    EXPECT_TRUE(windowManager.isContentReady(SURFACE_A));
 }
 
 // The ready flag defaults true, toggles, and reads false for an unknown id.
 TEST_F(ContentSurfaceTest, ReadyFlagTracks)
 {
-    FakeWindow   window { 1001 };
-    FakeRenderer renderer;
-    windowManager.addContentSurface(SURFACE_A, window, renderer);
+    FakeSurface surface { 1001 };
+    windowManager.addContentSurface(SURFACE_A, surface.pairing());
 
     EXPECT_TRUE(windowManager.isContentReady(SURFACE_A));
     windowManager.setContentSurfaceReady(SURFACE_A, false);
@@ -193,12 +245,12 @@ TEST_F(ContentSurfaceTest, ReadyFlagTracks)
 // the one hidden: that one is told, once, so its snap name and pointer go with it
 TEST_F(ContentSurfaceTest, SwitchingUnderThePointerLeavesTheHiddenOne)
 {
-    FakeWindow   windowA { 1001 };
-    FakeWindow   windowB { 1002 };
-    FakeRenderer rendererA;
-    FakeRenderer rendererB;
-    windowManager.addContentSurface(SURFACE_A, windowA, rendererA);
-    windowManager.addContentSurface(SURFACE_B, windowB, rendererB);
+    FakeSurface    surfaceA { 1001 };
+    FakeSurface    surfaceB { 1002 };
+    FakeRenderer & rendererA = surfaceA.emplaceRenderer();
+    FakeRenderer & rendererB = surfaceB.emplaceRenderer();
+    windowManager.addContentSurface(SURFACE_A, surfaceA.pairing());
+    windowManager.addContentSurface(SURFACE_B, surfaceB.pairing());
     windowManager.setActiveContentSurface(SURFACE_A);
     windowManager.onMouseMove(5, 5, SURFACE_A);
 
@@ -217,12 +269,12 @@ TEST_F(ContentSurfaceTest, SwitchingUnderThePointerLeavesTheHiddenOne)
 // it of a leave once it is gone
 TEST_F(ContentSurfaceTest, RemovingTheOneUnderThePointerForgetsIt)
 {
-    FakeWindow   windowA { 1001 };
-    FakeWindow   windowB { 1002 };
-    FakeRenderer rendererA;
-    FakeRenderer rendererB;
-    windowManager.addContentSurface(SURFACE_A, windowA, rendererA);
-    windowManager.addContentSurface(SURFACE_B, windowB, rendererB);
+    FakeSurface    surfaceA { 1001 };
+    FakeSurface    surfaceB { 1002 };
+    FakeRenderer & rendererA = surfaceA.emplaceRenderer();
+    FakeRenderer & rendererB = surfaceB.emplaceRenderer();
+    windowManager.addContentSurface(SURFACE_A, surfaceA.pairing());
+    windowManager.addContentSurface(SURFACE_B, surfaceB.pairing());
     windowManager.setActiveContentSurface(SURFACE_A);
     windowManager.onMouseMove(5, 5, SURFACE_A);
 
@@ -236,11 +288,10 @@ TEST_F(ContentSurfaceTest, RemovingTheOneUnderThePointerForgetsIt)
 // main window next commits, so a move with nothing else to draw would leave it where it was
 TEST_F(ContentSurfaceTest, PlacingASurfaceAsksForAMainFrame)
 {
-    FakeWindow   window { 1001 };
-    FakeRenderer renderer;
+    FakeSurface surface { 1001 };
     windowManager.renderQueue().clear();
 
-    windowManager.addContentSurface(SURFACE_A, window, renderer);
+    windowManager.addContentSurface(SURFACE_A, surface.pairing());
     EXPECT_TRUE(windowManager.renderQueue().pending().contains(Ui::MAIN_WINDOW_ID));
 }
 
@@ -250,7 +301,7 @@ TEST_F(ContentSurfaceTest, TooltipAndPointerForAnUnknownIdDoNothing)
     windowManager.setContentTooltip(UNKNOWN_SURFACE, "name", { 0.0F, 0.0F, 8.0F, 8.0F });
     windowManager.setContentPointer(UNKNOWN_SURFACE, Ui::Window::PointerShape::Crosshair);
     EXPECT_FALSE(windowManager.isContentReady(UNKNOWN_SURFACE)); // an entry made by either would read ready
-    EXPECT_EQ(windowManager.contentWindow(UNKNOWN_SURFACE), nullptr);
+    EXPECT_FALSE(windowManager.contentWindow(UNKNOWN_SURFACE).has_value());
 }
 
 } // namespace PureGlUi

@@ -48,7 +48,7 @@ namespace Ui::Window::Platform {
  * Implements Ui::IWindow for Linux using Wayland for window management and EGL for OpenGL context.
  * Main windows create their own EGL context; child windows use wl_subsurface.
  */
-class WaylandWindow : public WindowBase<WaylandWindow> {
+class WaylandWindow : public WindowBase {
 public:
     explicit WaylandWindow(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID)
         : WindowBase(subscribe, subscribeId)
@@ -291,14 +291,6 @@ public:
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
-    // -------- Wayland-specific methods (called by WindowBase via CRTP) --------
-
-    void applyRoundedCorners()
-    {
-        // Wayland with alpha compositing handles transparency natively
-        // No shape mask needed - just ensure alpha channel is in EGL config
-    }
-
     // -------- Wayland event callbacks --------
 
     void handleConfigure(int32_t width, int32_t height)
@@ -386,6 +378,10 @@ protected:
     wl_surface *                  m_surface = nullptr;
     std::unique_ptr<Ui::IContext> m_context;
     bool                          m_ownsDisplay = false;
+
+    // WindowBase's hook. Wayland with alpha compositing handles transparency natively:
+    // no shape mask needed - just ensure alpha channel is in EGL config
+    void applyRoundedCorners() override { }
 
 private:
     // Wayland globals
@@ -566,31 +562,31 @@ private:
     {
         if (interface == wl_compositor_interface.name) {
             m_compositor.reset(static_cast<wl_compositor *>(
-            wl_registry_bind(registry, name, &wl_compositor_interface, std::min(version, 4U))));
+                wl_registry_bind(registry, name, &wl_compositor_interface, std::min(version, 4U))));
         } else if (interface == xdg_wm_base_interface.name) {
             m_xdgWmBase.reset(static_cast<xdg_wm_base *>(
-            wl_registry_bind(registry, name, &xdg_wm_base_interface, std::min(version, 3U))));
+                wl_registry_bind(registry, name, &xdg_wm_base_interface, std::min(version, 3U))));
             xdg_wm_base_add_listener(m_xdgWmBase.get(), &s_xdgWmBaseListener, this);
         } else if (interface == wl_seat_interface.name && !m_seat) {
             // The first seat alone: the event handler holds it, and another would free it
             m_seat.reset(
-            static_cast<wl_seat *>(wl_registry_bind(registry, name, &wl_seat_interface, std::min(version, 5U))));
+                static_cast<wl_seat *>(wl_registry_bind(registry, name, &wl_seat_interface, std::min(version, 5U))));
         } else if (interface == wl_output_interface.name) {
             auto * output = static_cast<wl_output *>(
-            wl_registry_bind(registry, name, &wl_output_interface, std::min(version, 4U)));
+                wl_registry_bind(registry, name, &wl_output_interface, std::min(version, 4U)));
             wl_output_add_listener(output, &s_outputListener, this);
             m_outputs.emplace_back(output);
         } else if (interface == wl_subcompositor_interface.name) {
             m_subcompositor.reset(
-            static_cast<wl_subcompositor *>(wl_registry_bind(registry, name, &wl_subcompositor_interface, 1)));
+                static_cast<wl_subcompositor *>(wl_registry_bind(registry, name, &wl_subcompositor_interface, 1)));
         } else if (interface == wl_shm_interface.name) {
             m_shm.reset(static_cast<wl_shm *>(wl_registry_bind(registry, name, &wl_shm_interface, 1)));
         } else if (interface == wl_data_device_manager_interface.name) {
             m_dataDeviceManager.reset(static_cast<wl_data_device_manager *>(
-            wl_registry_bind(registry, name, &wl_data_device_manager_interface, std::min(version, 3U))));
+                wl_registry_bind(registry, name, &wl_data_device_manager_interface, std::min(version, 3U))));
         } else if (interface == zxdg_exporter_v2_interface.name) {
             m_exporter.reset(
-            static_cast<zxdg_exporter_v2 *>(wl_registry_bind(registry, name, &zxdg_exporter_v2_interface, 1)));
+                static_cast<zxdg_exporter_v2 *>(wl_registry_bind(registry, name, &zxdg_exporter_v2_interface, 1)));
         }
     }
 

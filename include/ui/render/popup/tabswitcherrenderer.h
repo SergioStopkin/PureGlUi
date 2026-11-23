@@ -22,6 +22,7 @@
 #include "ui/gl/fontrenderer.h"
 #include "ui/gl/localglew.h"
 #include "ui/gl/rounded.h"
+#include "ui/gl/svgdocuments.h"
 #include "ui/gl/svgrenderer.h"
 #include "ui/gl/textalign.h"
 #include "ui/render/elementevent.h"
@@ -81,7 +82,7 @@ public:
         , m_rows(std::move(rows))
         , m_font(m_fontRenderer.createFont(resManager.theme().tabSwitcherFont))
         , m_closeIconKey(
-          Ui::Gl::SvgRenderer::ensureLoaded(resManager.resPath().icon(resManager.layout().tabSwitcherCloseIcon)))
+              Ui::Gl::SvgDocuments::ensureLoaded(resManager.resPath().icon(resManager.layout().tabSwitcherCloseIcon)))
     {
     }
 
@@ -146,9 +147,9 @@ public:
         if (isShown(m_selectedRow)) {
             const fpx_t inset = layout.tabSwitcherItemActive.margin;
             m_rounded.draw(
-            { .x = inset, .y = rowY(m_selectedRow) + inset, .w = rowsW - (inset * 2), .h = rowH - (inset * 2) },
-            layout.tabSwitcherItemActive.border,
-            { .fg = theme.tabSwitcherItemActive.bg, .bg = bgColor });
+                { .x = inset, .y = rowY(m_selectedRow) + inset, .w = rowsW - (inset * 2), .h = rowH - (inset * 2) },
+                layout.tabSwitcherItemActive.border,
+                { .fg = theme.tabSwitcherItemActive.bg, .bg = bgColor });
         }
         // A close button's background only where it has one of its own (not inherit), so the
         // highlight moving onto or off its row never fades it. Premultiplied over what is drawn
@@ -179,7 +180,7 @@ public:
         }
 
         // Each close button's icon, its margin in, tinted where its fade stands
-        if (!m_closeIconKey.empty() && Ui::Gl::SvgRenderer::isLoaded(m_closeIconKey)) {
+        if (!m_closeIconKey.empty() && Ui::Gl::SvgDocuments::isLoaded(m_closeIconKey)) {
             const Ui::Res::Type::region_t & close = layout.tabSwitcherClose;
             beginSvgDraw();
             for (std::size_t row = m_firstRow; isShown(row); ++row) {
@@ -205,10 +206,10 @@ public:
             const auto                   baseline   = font->metrics.baselineCap(box.y, box.h, g_config.scale);
 
             auto labelVerts = Ui::Gl::FontRenderer::buildTextVerts(
-            *font,
-            tab.label,
-            Ui::Gl::TextAlign::startXLeft(box, padH, g_config.scale),
-            baseline);
+                *font,
+                tab.label,
+                Ui::Gl::TextAlign::startXLeft(box, padH, g_config.scale),
+                baseline);
             if (!labelVerts.empty()) {
                 drawTextVerts(labelVerts,
                               isSelected ? theme.tabSwitcherItemActive.fg : theme.tabSwitcherItem.fg,
@@ -222,10 +223,10 @@ public:
                                                               .w = width,
                                                               .h = rowH };
             auto                         descriptionVerts = Ui::Gl::FontRenderer::buildTextVerts(
-            *font,
-            tab.description,
-            Ui::Gl::TextAlign::startXLeft(after, padH, g_config.scale),
-            baseline);
+                *font,
+                tab.description,
+                Ui::Gl::TextAlign::startXLeft(after, padH, g_config.scale),
+                baseline);
             if (!descriptionVerts.empty()) {
                 drawTextVerts(descriptionVerts,
                               isSelected ? theme.tabSwitcherDescriptionActiveColor : theme.tabSwitcherDescriptionColor,
@@ -359,6 +360,18 @@ public:
     }
 
 private:
+    std::vector<Ui::tab_t>     m_rows;            // most recent first, fitted to the width
+    Ui::font_handle_t          m_font        = 0; // the theme's tab-switcher-item font
+    std::size_t                m_selectedRow = 0;
+    std::size_t                m_firstRow    = 0; // the first shown, while more rows than fit
+    std::optional<std::size_t> m_hoveredRow;      // what the pointer offers
+    std::string                m_closeIconKey;    // tab-switcher-close's icon, loaded once
+    std::optional<std::size_t> m_hoveredClose;    // the row whose close button the pointer is over
+    std::optional<std::size_t> m_pressedClose;    // the row whose close button a left press went down on
+    std::vector<bool>          m_isCloseOnSelected = std::vector<bool>(
+        m_rows.size());                                 // per row: its close button last drawn on the highlight
+    Ui::Render::ScrollBar m_scrollBar { m_resManager }; // where the rows shown stand among them all
+
     // layout.json's tab-switcher-item height
     [[nodiscard]] fpx_t rowHeight() const { return m_resManager.layout().tabSwitcherItem.height; }
 
@@ -372,8 +385,8 @@ private:
     bool setFirstRow(std::ptrdiff_t row)
     {
         const std::ptrdiff_t most = std::max<std::ptrdiff_t>(
-        static_cast<std::ptrdiff_t>(m_rows.size()) - static_cast<std::ptrdiff_t>(shownRows()),
-        0);
+            static_cast<std::ptrdiff_t>(m_rows.size()) - static_cast<std::ptrdiff_t>(shownRows()),
+            0);
         const auto first = static_cast<std::size_t>(std::clamp<std::ptrdiff_t>(row, 0, most));
         if (first == m_firstRow) {
             return false;
@@ -499,18 +512,6 @@ private:
         }
         return row;
     }
-
-    std::vector<Ui::tab_t>     m_rows;            // most recent first, fitted to the width
-    Ui::font_handle_t          m_font        = 0; // the theme's tab-switcher-item font
-    std::size_t                m_selectedRow = 0;
-    std::size_t                m_firstRow    = 0; // the first shown, while more rows than fit
-    std::optional<std::size_t> m_hoveredRow;      // what the pointer offers
-    std::string                m_closeIconKey;    // tab-switcher-close's icon, loaded once
-    std::optional<std::size_t> m_hoveredClose;    // the row whose close button the pointer is over
-    std::optional<std::size_t> m_pressedClose;    // the row whose close button a left press went down on
-    std::vector<bool>          m_isCloseOnSelected = std::vector<bool>(
-    m_rows.size());                                     // per row: its close button last drawn on the highlight
-    Ui::Render::ScrollBar m_scrollBar { m_resManager }; // where the rows shown stand among them all
 };
 
 } // namespace Ui::Render::Popup

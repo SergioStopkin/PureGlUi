@@ -32,16 +32,17 @@ add_executable(
     TestTabDrag.cpp
     TestTabSwitcherRows.cpp
     TestDialogKey.cpp
+    TestDialogRecapture.cpp
     # Last: gtest runs suites in the order their files register them, linked in this order, and
     # these come after every other
     TestHiddenSurface.cpp
 )
 
-# macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Twelve do:
+# macOS: any TU that reaches Cocoa must compile as Objective-C++ (same as the app's src/main.cpp). Thirteen do:
 # TestGlSmoke creates a real window via NativeWindow -> macoswindow.h, TestInitHooks, TestSecondMainWindow, TestMenuBar,
-# TestMenuBarWindowChange, TestListFocus, TestScaleChange, TestTabSwitcher and TestDialogKey include ui/shell.h, which
-# pulls Cocoa transitively through action/openfile.h -> io/filedialog.h, TestWindowGeometry includes
-# ui/window/windowmanager.h, which pulls it through eventfactory.h -> macosevent.h, and TestPopupPlacement and
+# TestMenuBarWindowChange, TestListFocus, TestScaleChange, TestTabSwitcher, TestDialogKey and TestDialogRecapture
+# include ui/shell.h, which pulls Cocoa transitively through action/openfile.h -> io/filedialog.h, TestWindowGeometry
+# includes ui/window/windowmanager.h, which pulls it through eventfactory.h -> macosevent.h, and TestPopupPlacement and
 # TestFullscreen ask AppKit itself for a window's place or its fullscreen (nativegeometry.h). So on macOS, including
 # shell.h or windowmanager.h at all forces Obj-C++ on the includer - windowless says nothing about it.
 # TestContentSurface and TestTabDrag include them too but are #if'd to X11 (and Win32), so they are empty TUs here. The
@@ -61,6 +62,7 @@ if(APPLE)
         TestFullscreen.cpp
         TestTabSwitcher.cpp
         TestDialogKey.cpp
+        TestDialogRecapture.cpp
         PROPERTIES LANGUAGE OBJCXX
     )
     target_compile_definitions(${TARGET} PRIVATE GL_SILENCE_DEPRECATION)

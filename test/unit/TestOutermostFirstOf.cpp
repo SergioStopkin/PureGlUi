@@ -60,16 +60,16 @@ std::vector<int> ordersIn(const std::vector<dock_config_t> & configs, const std:
 TEST(OutermostFirstOf, TheHighestOrderComesFirst)
 {
     EXPECT_EQ(
-    outermostFirstOf({ dockAt(DockAnchor::Left, 1), dockAt(DockAnchor::Left, 3), dockAt(DockAnchor::Left, 2) }),
-    (std::vector<std::size_t> { 1, 2, 0 }));
+        outermostFirstOf({ dockAt(DockAnchor::Left, 1), dockAt(DockAnchor::Left, 3), dockAt(DockAnchor::Left, 2) }),
+        (std::vector<std::size_t> { 1, 2, 0 }));
 }
 
 // Ties stay as configured, on one edge or across both
 TEST(OutermostFirstOf, TiesStayAsConfigured)
 {
     EXPECT_EQ(
-    outermostFirstOf({ dockAt(DockAnchor::Left, 1), dockAt(DockAnchor::Right, 1), dockAt(DockAnchor::Left, 1) }),
-    (std::vector<std::size_t> { 0, 1, 2 }));
+        outermostFirstOf({ dockAt(DockAnchor::Left, 1), dockAt(DockAnchor::Right, 1), dockAt(DockAnchor::Left, 1) }),
+        (std::vector<std::size_t> { 0, 1, 2 }));
     EXPECT_EQ(outermostFirstOf({ dockAt(DockAnchor::Left, 2),
                                  dockAt(DockAnchor::Left, 1),
                                  dockAt(DockAnchor::Right, 2),
@@ -121,6 +121,6 @@ TEST(OutermostFirstOf, OneDockIsItself)
 TEST(OutermostFirstOf, AnyOrderRanksByItsValue)
 {
     EXPECT_EQ(
-    outermostFirstOf({ dockAt(DockAnchor::Left, 0), dockAt(DockAnchor::Left, -1), dockAt(DockAnchor::Left, 5) }),
-    (std::vector<std::size_t> { 2, 0, 1 }));
+        outermostFirstOf({ dockAt(DockAnchor::Left, 0), dockAt(DockAnchor::Left, -1), dockAt(DockAnchor::Left, 5) }),
+        (std::vector<std::size_t> { 2, 0, 1 }));
 }

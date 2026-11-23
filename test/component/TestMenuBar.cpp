@@ -69,18 +69,18 @@ protected:
 TEST_F(MenuBarTest, APressOpensItsList)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            PureGlUi::postAt(m_shell, m_menuIds.at(0), [this](const Ui::IWindow & window, int x, int y) {
-                m_read += " posted " + std::to_string(x) + "," + std::to_string(y) + " with "
-                        + PureGlUi::placementOf(window) + ";";
-                PureGlUi::postPointerPress(window, x, y);
-            });
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                PureGlUi::postAt(m_shell, m_menuIds.at(0), [this](const Ui::IWindow & window, int x, int y) {
+                    m_read += " posted " + std::to_string(x) + "," + std::to_string(y) + " with "
+                            + PureGlUi::placementOf(window) + ";";
+                    PureGlUi::postPointerPress(window, x, y);
+                });
+            }
+        },
+        m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(0))
-    << m_read << " then " << PureGlUi::placementOf(m_shell.windowManager().mainWindow());
+        << m_read << " then " << PureGlUi::placementOf(m_shell.windowManager().mainWindow());
 }
 
 // A click made while the pointer sweeps on: pressed on the first title, the button comes
@@ -88,14 +88,14 @@ TEST_F(MenuBarTest, APressOpensItsList)
 TEST_F(MenuBarTest, AClickWhileSweepingOpensThePressedListThenFollows)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
-            PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
-            PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerRelease);
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
+                PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
+                PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerRelease);
+            }
+        },
+        m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(1)) << m_read;
 }
 
@@ -104,13 +104,13 @@ TEST_F(MenuBarTest, AClickWhileSweepingOpensThePressedListThenFollows)
 TEST_F(MenuBarTest, AQuickClickLeavesItsListOpen)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
-            PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerRelease);
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
+                PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerRelease);
+            }
+        },
+        m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(0)) << m_read;
 }
 
@@ -118,14 +118,14 @@ TEST_F(MenuBarTest, AQuickClickLeavesItsListOpen)
 TEST_F(MenuBarTest, APressOnTheOpenTitleClosesItsList)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.openPopup(m_menuIds.at(0));
-        } else if (pass == 2) {
-            PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.openPopup(m_menuIds.at(0));
+            } else if (pass == 2) {
+                PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
+            }
+        },
+        m_shell);
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
 }
 
@@ -134,15 +134,15 @@ TEST_F(MenuBarTest, APressOnTheOpenTitleClosesItsList)
 TEST_F(MenuBarTest, AClickOnTheOpenTitleLeavesItsListClosed)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.openPopup(m_menuIds.at(0));
-        } else if (pass == 2) {
-            PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
-            PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerRelease);
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.openPopup(m_menuIds.at(0));
+            } else if (pass == 2) {
+                PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
+                PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerRelease);
+            }
+        },
+        m_shell);
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
 }
 
@@ -151,14 +151,14 @@ TEST_F(MenuBarTest, AClickOnTheOpenTitleLeavesItsListClosed)
 TEST_F(MenuBarTest, APointerOnTheNextTitleByTheClickOpensItsList)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            // What the click on the first title does
-            m_shell.openPopup(m_menuIds.at(0));
-            PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                // What the click on the first title does
+                m_shell.openPopup(m_menuIds.at(0));
+                PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
+            }
+        },
+        m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(1)) << m_read;
 }
 
@@ -168,19 +168,19 @@ TEST_F(MenuBarTest, APointerOnTheNextTitleByTheClickOpensItsList)
 TEST_F(MenuBarTest, AListFollowsAPointerSweepingPastATitle)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.openPopup(m_menuIds.at(0));
-        } else if (pass == 1) {
-            // On the open list's own title: a pass with events, which ends the wait a
-            // list just made holds a switch off for
-            PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerMove);
-        } else if (pass == 2) {
-            PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
-            PureGlUi::postAt(m_shell, m_menuIds.at(2), PureGlUi::postPointerMove);
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.openPopup(m_menuIds.at(0));
+            } else if (pass == 1) {
+                // On the open list's own title: a pass with events, which ends the wait a
+                // list just made holds a switch off for
+                PureGlUi::postAt(m_shell, m_menuIds.at(0), PureGlUi::postPointerMove);
+            } else if (pass == 2) {
+                PureGlUi::postAt(m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
+                PureGlUi::postAt(m_shell, m_menuIds.at(2), PureGlUi::postPointerMove);
+            }
+        },
+        m_shell);
     EXPECT_EQ(openMenuId(), m_menuIds.at(2)) << m_read;
 }
 
@@ -191,14 +191,14 @@ TEST_F(MenuBarTest, AListFollowsAPointerSweepingPastATitle)
 TEST_F(MenuBarTest, APointerOffEveryWindowLeavesTheListOpen)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.openPopup(m_menuIds.at(1));
-        } else if (pass == 2) {
-            PureGlUi::postPointerMoveOffWindows();
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.openPopup(m_menuIds.at(1));
+            } else if (pass == 2) {
+                PureGlUi::postPointerMoveOffWindows();
+            }
+        },
+        m_shell);
     EXPECT_NE(m_read.find("move -1,-1;"), std::string::npos) << m_read;
     EXPECT_EQ(openMenuId(), m_menuIds.at(1)) << m_read;
 }

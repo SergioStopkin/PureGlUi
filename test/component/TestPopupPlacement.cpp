@@ -110,7 +110,7 @@ protected:
     [[nodiscard]] Ui::Window::Popup::PopupWindow * openList(Ui::id_t menuId)
     {
         m_shell.openPopup(menuId);
-        Ui::Window::Popup::PopupWindow * list = m_shell.windowManager().popupWindow();
+        Ui::Window::Popup::PopupWindow * list = m_shell.windowManager().menus().window();
         if (list != nullptr) {
             PureGlUi::settle(*list);
         }
@@ -143,8 +143,8 @@ TEST_P(PopupPlacementTest, APopupLandsWhereItIsAsked)
                                          .y = 0.0F,
                                          .w = Ui::toPhysEdge(160.0F),
                                          .h = Ui::toPhysEdge(120.0F) };
-    ASSERT_TRUE(m_shell.windowManager().createPopup(asked, {}, Ui::Color {}));
-    Ui::Window::Popup::PopupWindow * popup = m_shell.windowManager().popupWindow();
+    ASSERT_TRUE(m_shell.windowManager().menus().make(asked, {}, Ui::Color {}));
+    Ui::Window::Popup::PopupWindow * popup = m_shell.windowManager().menus().window();
     ASSERT_NE(popup, nullptr);
     tracePlacement(*popup, "made");
     PureGlUi::settle(*popup);
@@ -176,7 +176,7 @@ TEST_P(PopupPlacementTest, EveryMenuListStandsFlushUnderItsButton)
         const Ui::Res::Type::bound_t   shown  = PureGlUi::nativeContentRectOf(*list);
         EXPECT_FLOAT_EQ(shown.x - main.x, firstPixelFrom(button.x)) << "menu " << menuId << ": its list's left edge";
         EXPECT_FLOAT_EQ(shown.y - main.y, firstPixelFrom(button.y + button.h))
-        << "menu " << menuId << ": its list's top";
+            << "menu " << menuId << ": its list's top";
 
         m_shell.closePopup();
     }
@@ -193,8 +193,8 @@ TEST_P(PopupPlacementTest, EveryDialogStandsOnAWholeCssPx)
         dialog.title  = "placement";
         dialog.width  = 300.0F;
         dialog.height = height;
-        m_shell.windowManager().openDialog(dialog);
-        Ui::Window::Popup::DialogWindow * shown = m_shell.windowManager().dialogWindow();
+        m_shell.windowManager().dialog().open(dialog);
+        Ui::Window::Popup::DialogWindow * shown = m_shell.windowManager().dialog().window();
         ASSERT_NE(shown, nullptr) << height << " CSS px high";
         PureGlUi::settle(*shown);
 
@@ -211,9 +211,9 @@ TEST_P(PopupPlacementTest, EveryDialogStandsOnAWholeCssPx)
         const Ui::fpx_t leftCss = std::round(Ui::toCss(left));
         const Ui::fpx_t topCss  = std::round(Ui::toCss(top));
         EXPECT_FLOAT_EQ(placed.w, firstPixelFrom(leftCss + dialog.width) - firstPixelFrom(leftCss))
-        << height << " CSS px high: its width";
+            << height << " CSS px high: its width";
         EXPECT_FLOAT_EQ(placed.h, firstPixelFrom(topCss + dialog.height) - firstPixelFrom(topCss))
-        << height << " CSS px high: its height";
+            << height << " CSS px high: its height";
         const Ui::Res::Type::border_t & radii       = shown->cornerRadii();
         int                             firstHidden = -1;
         for (int x = static_cast<int>(std::ceil(radii.topLeft)); x < placed.w - radii.topRight && firstHidden < 0;
@@ -224,7 +224,7 @@ TEST_P(PopupPlacementTest, EveryDialogStandsOnAWholeCssPx)
         }
         EXPECT_EQ(firstHidden, -1) << height << " CSS px high: its top line is cut from x " << firstHidden;
 
-        m_shell.windowManager().closeDialog();
+        m_shell.windowManager().dialog().close();
     }
 }
 

@@ -175,7 +175,7 @@ TEST(Config, AnEdgeMovesOnWithEveryCssPx)
         const config_t cfg = configAt(scale);
         for (int css = -MOST_HALF_STEPS / 2; css < MOST_HALF_STEPS / 2; ++css) {
             EXPECT_GT(cfg.toPhysEdge(static_cast<Ui::fpx_t>(css + 1)), cfg.toPhysEdge(static_cast<Ui::fpx_t>(css)))
-            << "at " << scale << "x, " << css;
+                << "at " << scale << "x, " << css;
         }
     }
 }

@@ -72,7 +72,7 @@ public:
     static std::size_t timeKey()
     {
         return static_cast<std::size_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(Common::Time::now().time_since_epoch()).count());
+            std::chrono::duration_cast<std::chrono::nanoseconds>(Common::Time::now().time_since_epoch()).count());
     }
 };
 

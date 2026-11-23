@@ -68,7 +68,7 @@ protected:
         m_shell.setOnTabMoved([this](Ui::id_t id, Ui::id_t beforeId) { m_moves.emplace_back(id, beforeId); });
         m_shell.setOnTabActivated([this](Ui::id_t id) { m_activated.emplace_back(id); });
         m_shell.resManager().tabBar().setTabs(
-        { Ui::tab_t { .id = LEFT, .isActive = true }, Ui::tab_t { .id = MIDDLE }, Ui::tab_t { .id = RIGHT } });
+            { Ui::tab_t { .id = LEFT, .isActive = true }, Ui::tab_t { .id = MIDDLE }, Ui::tab_t { .id = RIGHT } });
         m_shell.windowManager().requestContentRefresh();
     }
 };
@@ -81,19 +81,19 @@ TEST_F(TabDragTest, ATabDraggedPastTheLeftEdgeGoesLeft)
 {
     bool isOnStrip = false;
     PureGlUi::runPasses(
-    [this, &isOnStrip](int pass) {
-        // The first pass lays the tabs out
-        if (pass != 1) {
-            return;
-        }
-        const Ui::Res::Type::bound_t middle = m_shell.windowManager().elementBound(MIDDLE);
-        isOnStrip                           = middle.w > 0;
-        const int y                         = Ui::roundToInt(Ui::toPhys(middle.y + (middle.h / 2.0F)));
-        PureGlUi::postPointerPress(mainWindow(), Ui::roundToInt(Ui::toPhys(middle.x + (middle.w / 2.0F))), y);
-        PureGlUi::postPointerMove(mainWindow(), PAST_LEFT_EDGE, y);
-        PureGlUi::postPointerRelease(mainWindow(), PAST_LEFT_EDGE, y);
-    },
-    m_shell);
+        [this, &isOnStrip](int pass) {
+            // The first pass lays the tabs out
+            if (pass != 1) {
+                return;
+            }
+            const Ui::Res::Type::bound_t middle = m_shell.windowManager().elementBound(MIDDLE);
+            isOnStrip                           = middle.w > 0;
+            const int y                         = Ui::roundToInt(Ui::toPhys(middle.y + (middle.h / 2.0F)));
+            PureGlUi::postPointerPress(mainWindow(), Ui::roundToInt(Ui::toPhys(middle.x + (middle.w / 2.0F))), y);
+            PureGlUi::postPointerMove(mainWindow(), PAST_LEFT_EDGE, y);
+            PureGlUi::postPointerRelease(mainWindow(), PAST_LEFT_EDGE, y);
+        },
+        m_shell);
     ASSERT_TRUE(isOnStrip) << "the tab was not laid out; " << m_read;
     EXPECT_EQ(m_moves, (std::vector<std::pair<Ui::id_t, Ui::id_t>> { { MIDDLE, LEFT } })) << m_read;
 }
@@ -102,18 +102,18 @@ TEST_F(TabDragTest, ATabDraggedPastTheLeftEdgeGoesLeft)
 TEST_F(TabDragTest, ADragReleasedOnATabIsNoClick)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass != 1) {
-            return;
-        }
-        const Ui::Res::Type::bound_t middle = m_shell.windowManager().elementBound(MIDDLE);
-        const Ui::fpx_t              x      = middle.x + (middle.w / 2.0F);
-        const int                    y      = Ui::roundToInt(Ui::toPhys(middle.y + (middle.h / 2.0F)));
-        PureGlUi::postPointerPress(mainWindow(), Ui::roundToInt(Ui::toPhys(x)), y);
-        PureGlUi::postPointerMove(mainWindow(), Ui::roundToInt(Ui::toPhys(x + NUDGE)), y);
-        PureGlUi::postPointerRelease(mainWindow(), Ui::roundToInt(Ui::toPhys(x + NUDGE)), y);
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass != 1) {
+                return;
+            }
+            const Ui::Res::Type::bound_t middle = m_shell.windowManager().elementBound(MIDDLE);
+            const Ui::fpx_t              x      = middle.x + (middle.w / 2.0F);
+            const int                    y      = Ui::roundToInt(Ui::toPhys(middle.y + (middle.h / 2.0F)));
+            PureGlUi::postPointerPress(mainWindow(), Ui::roundToInt(Ui::toPhys(x)), y);
+            PureGlUi::postPointerMove(mainWindow(), Ui::roundToInt(Ui::toPhys(x + NUDGE)), y);
+            PureGlUi::postPointerRelease(mainWindow(), Ui::roundToInt(Ui::toPhys(x + NUDGE)), y);
+        },
+        m_shell);
     EXPECT_TRUE(m_moves.empty()) << m_read;
     EXPECT_TRUE(m_activated.empty()) << m_read;
 }
@@ -122,17 +122,17 @@ TEST_F(TabDragTest, ADragReleasedOnATabIsNoClick)
 TEST_F(TabDragTest, APressShortOfTheThresholdIsStillAClick)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass != 1) {
-            return;
-        }
-        const Ui::Res::Type::bound_t middle = m_shell.windowManager().elementBound(MIDDLE);
-        const int                    x      = Ui::roundToInt(Ui::toPhys(middle.x + (middle.w / 2.0F)));
-        const int                    y      = Ui::roundToInt(Ui::toPhys(middle.y + (middle.h / 2.0F)));
-        PureGlUi::postPointerPress(mainWindow(), x, y);
-        PureGlUi::postPointerRelease(mainWindow(), x, y);
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass != 1) {
+                return;
+            }
+            const Ui::Res::Type::bound_t middle = m_shell.windowManager().elementBound(MIDDLE);
+            const int                    x      = Ui::roundToInt(Ui::toPhys(middle.x + (middle.w / 2.0F)));
+            const int                    y      = Ui::roundToInt(Ui::toPhys(middle.y + (middle.h / 2.0F)));
+            PureGlUi::postPointerPress(mainWindow(), x, y);
+            PureGlUi::postPointerRelease(mainWindow(), x, y);
+        },
+        m_shell);
     EXPECT_TRUE(m_moves.empty()) << m_read;
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { MIDDLE })) << m_read;
 }
@@ -145,21 +145,21 @@ TEST_F(TabDragTest, APressShortOfTheThresholdIsStillAClick)
 TEST_F(TabDragTest, ALeaveIntoAChildWindowKeepsTheDrag)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass != 1) {
-            return;
-        }
-        const Ui::Res::Type::bound_t middle = m_shell.windowManager().elementBound(MIDDLE);
-        const Ui::Res::Type::bound_t left   = m_shell.windowManager().elementBound(LEFT);
-        const int                    x      = Ui::roundToInt(Ui::toPhys(middle.x + (middle.w / 2.0F)));
-        const int                    y      = Ui::roundToInt(Ui::toPhys(middle.y + (middle.h / 2.0F)));
-        const int                    leftX  = Ui::roundToInt(Ui::toPhys(left.x));
-        PureGlUi::postPointerPress(mainWindow(), x, y);
-        PureGlUi::postPointerLeaveIntoChild(mainWindow(), x, y);
-        PureGlUi::postPointerMove(mainWindow(), leftX, y);
-        PureGlUi::postPointerRelease(mainWindow(), leftX, y);
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass != 1) {
+                return;
+            }
+            const Ui::Res::Type::bound_t middle = m_shell.windowManager().elementBound(MIDDLE);
+            const Ui::Res::Type::bound_t left   = m_shell.windowManager().elementBound(LEFT);
+            const int                    x      = Ui::roundToInt(Ui::toPhys(middle.x + (middle.w / 2.0F)));
+            const int                    y      = Ui::roundToInt(Ui::toPhys(middle.y + (middle.h / 2.0F)));
+            const int                    leftX  = Ui::roundToInt(Ui::toPhys(left.x));
+            PureGlUi::postPointerPress(mainWindow(), x, y);
+            PureGlUi::postPointerLeaveIntoChild(mainWindow(), x, y);
+            PureGlUi::postPointerMove(mainWindow(), leftX, y);
+            PureGlUi::postPointerRelease(mainWindow(), leftX, y);
+        },
+        m_shell);
     EXPECT_EQ(m_moves, (std::vector<std::pair<Ui::id_t, Ui::id_t>> { { MIDDLE, LEFT } })) << m_read;
 }
 
@@ -170,21 +170,22 @@ TEST_F(TabDragTest, ALeaveIntoAChildWindowKeepsTheDrag)
 TEST_F(TabDragTest, AMovedTabGlidesToItsPlaceWithNoEvents)
 {
     const Common::Time::span_t glide = Ui::Animation::durationOf(
-    m_shell.resManager().transitionsFor(Ui::Res::Key::ElementKey::WorkspaceTab));
+        m_shell.resManager().transitionsFor(Ui::Res::Key::ElementKey::WorkspaceTab));
     bool wasGliding = false;
     PureGlUi::runPasses(
-    [this, &glide, &wasGliding](int pass) {
-        // The first pass draws the tabs where they stand; the next moves two of them
-        if (pass == 1) {
-            m_shell.resManager().tabBar().setTabs(
-            { Ui::tab_t { .id = MIDDLE }, Ui::tab_t { .id = LEFT, .isActive = true }, Ui::tab_t { .id = RIGHT } });
-            m_shell.windowManager().requestContentRefresh();
-        } else if (pass == 2) {
-            wasGliding = m_shell.windowManager().isMainGliding();
-            Common::Time::sleepFor(glide + PureGlUi::GLIDE_MARGIN);
-        }
-    },
-    m_shell);
+        [this, &glide, &wasGliding](int pass) {
+            // The first pass draws the tabs where they stand; the next moves two of them
+            if (pass == 1) {
+                m_shell.resManager().tabBar().setTabs({ Ui::tab_t { .id = MIDDLE },
+                                                        Ui::tab_t { .id = LEFT, .isActive = true },
+                                                        Ui::tab_t { .id = RIGHT } });
+                m_shell.windowManager().requestContentRefresh();
+            } else if (pass == 2) {
+                wasGliding = m_shell.windowManager().isMainGliding();
+                Common::Time::sleepFor(glide + PureGlUi::GLIDE_MARGIN);
+            }
+        },
+        m_shell);
     ASSERT_TRUE(wasGliding) << "the move started no glide; " << m_read;
     EXPECT_FALSE(m_shell.windowManager().isMainGliding()) << "the glide stopped short of its end; " << m_read;
 }

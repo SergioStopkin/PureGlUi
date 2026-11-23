@@ -76,9 +76,9 @@ public:
                                                 Ui::Res::Key::elementKeyName(Ui::Res::Key::ElementKey::WorkspaceTab));
         // Under half, the jump back would be taken on the next frame: the tab swapping to and fro
         m_tabSwapAt = std::clamp(
-        Common::Json::number(tab, Ui::Res::Key::cssPropKeyName(Ui::Res::Key::CssPropKey::SwapAt), HALF),
-        HALF,
-        1.0F);
+            Common::Json::number(tab, Ui::Res::Key::cssPropKeyName(Ui::Res::Key::CssPropKey::SwapAt), HALF),
+            HALF,
+            1.0F);
     }
 };
 

@@ -57,6 +57,7 @@ add_executable(
     TestTooltipBoundOf.cpp
     TestTabSwitcherBoundOf.cpp
     TestUnderlayOf.cpp
+    TestClampedRadiiOf.cpp
     TestRefreshRateOf.cpp
     TestScaleFactorOf.cpp
     TestCursorPlacementOf.cpp

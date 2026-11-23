@@ -210,24 +210,24 @@ public:
             using Ui::Res::Key::cssPropKeyName;
             Ui::Res::Type::region_t region;
             region.height = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Height), "")));
+                resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Height), "")));
             region.width = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Width), "")));
+                resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Width), "")));
             region.margin = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Margin), "")));
+                resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Margin), "")));
             region.padding = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Padding), "")));
+                resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Padding), "")));
             region.top = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Top), "")));
+                resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Top), "")));
             region.left = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Left), "")));
+                resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Left), "")));
             region.right = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Right), "")));
+                resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Right), "")));
             region.bottom = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Bottom), "")));
+                resolveVariable(Common::Json::string(regionJson, cssPropKeyName(CssPropKey::Bottom), "")));
             // Read CSS border-radius and parse into numeric border values
             const std::string brs = resolveVariable(
-            Common::Json::string(regionJson, cssPropKeyName(CssPropKey::BorderRadius), ""));
+                Common::Json::string(regionJson, cssPropKeyName(CssPropKey::BorderRadius), ""));
             if (!brs.empty()) {
                 region.border = Ui::Convert::parseCssBorderRadius(brs);
             }
@@ -238,9 +238,9 @@ public:
         if (hasObject(ElementKey::Window)) {
             const auto & window     = block(ElementKey::Window);
             m_layout.windowMinWidth = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(window, cssPropKeyName(CssPropKey::MinWidth), "")));
+                resolveVariable(Common::Json::string(window, cssPropKeyName(CssPropKey::MinWidth), "")));
             m_layout.windowMinHeight = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(window, cssPropKeyName(CssPropKey::MinHeight), "")));
+                resolveVariable(Common::Json::string(window, cssPropKeyName(CssPropKey::MinHeight), "")));
         }
         if (hasObject(ElementKey::TopMenu)) {
             m_layout.topMenu = parseRegion(block(ElementKey::TopMenu));
@@ -270,8 +270,8 @@ public:
             const auto & close            = block(ElementKey::TabSwitcherClose);
             m_layout.tabSwitcherClose     = parseRegion(close);
             m_layout.tabSwitcherCloseIcon = Common::Sanitize::filePath(
-            resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Icon), "var(--close-icon)")),
-            "layout.tabSwitcherCloseIcon");
+                resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Icon), "var(--close-icon)")),
+                "layout.tabSwitcherCloseIcon");
         }
         if (hasObject(ElementKey::StatusBar)) {
             m_layout.statusBar = parseRegion(block(ElementKey::StatusBar));
@@ -283,9 +283,9 @@ public:
             const auto & wsTab    = block(ElementKey::WorkspaceTab);
             m_layout.workspaceTab = parseRegion(wsTab);
             m_layout.tabMinWidth  = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(wsTab,
-                                                 cssPropKeyName(CssPropKey::MinWidth),
-                                                 ""))); // Compute progress sectors: tabW / TL_radius
+                resolveVariable(Common::Json::string(wsTab,
+                                                     cssPropKeyName(CssPropKey::MinWidth),
+                                                     ""))); // Compute progress sectors: tabW / TL_radius
             const int tlr = Ui::roundToInt(m_layout.workspaceTab.border.topLeft);
             if (tlr > 0) {
                 m_layout.progressSectors = std::max(static_cast<int>(m_layout.workspaceTab.width) / tlr, 2);
@@ -296,31 +296,31 @@ public:
         if (hasObject(ElementKey::WorkspaceTabClose)) {
             const auto & close      = block(ElementKey::WorkspaceTabClose);
             m_layout.tabCloseMargin = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Margin), "")));
+                resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Margin), "")));
             m_layout.tabCloseRight = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Right), "")));
+                resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Right), "")));
             m_layout.tabCloseIconSize = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Height), "")));
+                resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Height), "")));
             m_layout.tabCloseBorderRadius = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::BorderRadius), "")));
             m_layout.tabCloseIcon = Common::Sanitize::filePath(
-            resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Icon), "var(--close-icon)")),
-            "layout.tabCloseIcon");
+                resolveVariable(Common::Json::string(close, cssPropKeyName(CssPropKey::Icon), "var(--close-icon)")),
+                "layout.tabCloseIcon");
         }
 
         // Parse workspace-tab-arrow layout (icon filenames + dimensions)
         if (hasObject(ElementKey::WorkspaceTabArrow)) {
             const auto & arrow     = block(ElementKey::WorkspaceTabArrow);
             m_layout.tabArrowWidth = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(arrow, cssPropKeyName(CssPropKey::Width), "")));
+                resolveVariable(Common::Json::string(arrow, cssPropKeyName(CssPropKey::Width), "")));
             m_layout.tabArrowHeight = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(arrow, cssPropKeyName(CssPropKey::Height), "")));
+                resolveVariable(Common::Json::string(arrow, cssPropKeyName(CssPropKey::Height), "")));
             m_layout.tabArrowIconLeft = Common::Sanitize::filePath(
-            Common::Json::string(arrow, cssPropKeyName(CssPropKey::IconLeft), m_layout.tabArrowIconLeft),
-            "layout.tabArrowIconLeft");
+                Common::Json::string(arrow, cssPropKeyName(CssPropKey::IconLeft), m_layout.tabArrowIconLeft),
+                "layout.tabArrowIconLeft");
             m_layout.tabArrowIconRight = Common::Sanitize::filePath(
-            Common::Json::string(arrow, cssPropKeyName(CssPropKey::IconRight), m_layout.tabArrowIconRight),
-            "layout.tabArrowIconRight");
+                Common::Json::string(arrow, cssPropKeyName(CssPropKey::IconRight), m_layout.tabArrowIconRight),
+                "layout.tabArrowIconRight");
         }
 
         // Parse top-menu-dropdown region used for popup styling (border-radius etc.)
@@ -333,15 +333,15 @@ public:
         if (hasObject(ElementKey::ThemePreview)) {
             const auto & tp             = block(ElementKey::ThemePreview);
             m_layout.themePreview.width = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::Width), "")));
+                resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::Width), "")));
             m_layout.themePreview.height = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::Height), "")));
+                resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::Height), "")));
             m_layout.themePreview.border = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::BorderRadius), "")));
             m_layout.themePreview.right = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::Right), "")));
+                resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::Right), "")));
             m_layout.themePreview.splitAngle = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::SplitAngle), "45")));
+                resolveVariable(Common::Json::string(tp, cssPropKeyName(CssPropKey::SplitAngle), "45")));
         }
 
         // Parse element-specific layout values
@@ -372,7 +372,7 @@ public:
         if (hasObject(ElementKey::TopMenuItemHover)) {
             const auto &      itemHover = block(ElementKey::TopMenuItemHover);
             const std::string brs       = resolveVariable(
-            Common::Json::string(itemHover, cssPropKeyName(CssPropKey::BorderRadius), ""));
+                Common::Json::string(itemHover, cssPropKeyName(CssPropKey::BorderRadius), ""));
             if (!brs.empty()) {
                 m_layout.menuItemHoverBorder = Ui::Convert::parseCssBorderRadius(brs);
             }
@@ -396,7 +396,7 @@ public:
         if (hasObject(ElementKey::TopMenuItemIcon)) {
             const auto &      itemIcon = block(ElementKey::TopMenuItemIcon);
             const std::string width    = resolveVariable(
-            Common::Json::string(itemIcon, cssPropKeyName(CssPropKey::Width), ""));
+                Common::Json::string(itemIcon, cssPropKeyName(CssPropKey::Width), ""));
             if (!width.empty()) {
                 m_layout.menuItemIconWidth = Ui::Convert::parseCssNumber(width);
             }
@@ -412,23 +412,23 @@ public:
         }
         if (cssVariables.contains(layoutKeyName(LayoutKey::ButtonIconHoverShadowX))) {
             m_layout.iconHoverShadowX = Ui::Convert::parseCssNumber(
-            cssVariables[layoutKeyName(LayoutKey::ButtonIconHoverShadowX)]);
+                cssVariables[layoutKeyName(LayoutKey::ButtonIconHoverShadowX)]);
         }
         if (cssVariables.contains(layoutKeyName(LayoutKey::ButtonIconHoverShadowY))) {
             m_layout.iconHoverShadowY = Ui::Convert::parseCssNumber(
-            cssVariables[layoutKeyName(LayoutKey::ButtonIconHoverShadowY)]);
+                cssVariables[layoutKeyName(LayoutKey::ButtonIconHoverShadowY)]);
         }
         if (cssVariables.contains(layoutKeyName(LayoutKey::ButtonIconHoverShadowBlur))) {
             m_layout.iconHoverShadowBlur = Ui::Convert::parseCssNumber(
-            cssVariables[layoutKeyName(LayoutKey::ButtonIconHoverShadowBlur)]);
+                cssVariables[layoutKeyName(LayoutKey::ButtonIconHoverShadowBlur)]);
         }
         if (cssVariables.contains(layoutKeyName(LayoutKey::ButtonIconActiveScale))) {
             m_layout.iconActiveScale = Ui::Convert::parseCssNumber(
-            cssVariables[layoutKeyName(LayoutKey::ButtonIconActiveScale)]);
+                cssVariables[layoutKeyName(LayoutKey::ButtonIconActiveScale)]);
         }
         if (cssVariables.contains(layoutKeyName(LayoutKey::FallbackCharWidth))) {
             m_layout.fallbackCharWidth = Ui::Convert::str2fpx(
-            cssVariables[layoutKeyName(LayoutKey::FallbackCharWidth)]);
+                cssVariables[layoutKeyName(LayoutKey::FallbackCharWidth)]);
         }
         if (cssVariables.contains(layoutKeyName(LayoutKey::MenuMaxDepth))) {
             // Nonpositive/malformed value keeps the default: a cap of 0 would
@@ -447,22 +447,22 @@ public:
         if (hasObject(ElementKey::DialogTitle)) {
             const auto & dt            = block(ElementKey::DialogTitle);
             m_layout.dialogTitleHeight = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dt, cssPropKeyName(CssPropKey::Height), "24px")));
+                resolveVariable(Common::Json::string(dt, cssPropKeyName(CssPropKey::Height), "24px")));
             m_layout.dialogTitleMargin = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dt, cssPropKeyName(CssPropKey::MarginBottom), "")));
+                resolveVariable(Common::Json::string(dt, cssPropKeyName(CssPropKey::MarginBottom), "")));
         }
 
         if (hasObject(ElementKey::DialogText)) {
             const auto & dtxt         = block(ElementKey::DialogText);
             m_layout.dialogTextMargin = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dtxt, cssPropKeyName(CssPropKey::MarginBottom), "")));
+                resolveVariable(Common::Json::string(dtxt, cssPropKeyName(CssPropKey::MarginBottom), "")));
         }
 
         if (hasObject(ElementKey::DialogIcon)) {
             const auto & di     = block(ElementKey::DialogIcon);
             const auto   number = [&di, &resolveVariable](CssPropKey key, const std::string & fallback) {
                 return Ui::Convert::parseCssNumber(
-                resolveVariable(Common::Json::string(di, cssPropKeyName(key), fallback)));
+                    resolveVariable(Common::Json::string(di, cssPropKeyName(key), fallback)));
             };
             m_layout.dialogIcon = { .x = number(CssPropKey::Left, "16px"),
                                     .y = number(CssPropKey::Top, "16px"),
@@ -473,56 +473,57 @@ public:
         if (hasObject(ElementKey::DialogClose)) {
             const auto & dialogClose = block(ElementKey::DialogClose);
             m_layout.dialogCloseSize = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Height), "12px")));
+                resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Height), "12px")));
             m_layout.dialogCloseBorder = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::BorderRadius), "")));
             m_layout.dialogCloseMargin = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Margin), "2px")));
+                resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Margin), "2px")));
             m_layout.dialogCloseTop = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Top), "8px")));
+                resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Top), "8px")));
             m_layout.dialogCloseRight = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Right), "8px")));
+                resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Right), "8px")));
             m_layout.dialogCloseIcon = Common::Sanitize::filePath(
-            resolveVariable(Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Icon), "var(--close-icon)")),
-            "layout.dialogCloseIcon");
+                resolveVariable(
+                    Common::Json::string(dialogClose, cssPropKeyName(CssPropKey::Icon), "var(--close-icon)")),
+                "layout.dialogCloseIcon");
         }
 
         if (hasObject(ElementKey::DialogButton)) {
             const auto & dialogButton = block(ElementKey::DialogButton);
             m_layout.dialogButtonH    = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::Height), "28px")));
+                resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::Height), "28px")));
             m_layout.dialogButtonBorder = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::BorderRadius), "")));
             m_layout.dialogButtonPad = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::Padding), "8px")));
+                resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::Padding), "8px")));
             m_layout.dialogButtonMinW = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::MinWidth), "70px")));
+                resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::MinWidth), "70px")));
             m_layout.dialogButtonShift = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::Shift), "")));
+                resolveVariable(Common::Json::string(dialogButton, cssPropKeyName(CssPropKey::Shift), "")));
         }
 
         if (hasObject(ElementKey::Scrollbar)) {
             const auto & scrollbar = block(ElementKey::Scrollbar);
             m_layout.scrollbarW    = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::Width), "")));
+                resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::Width), "")));
             m_layout.scrollbarRight = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::Right), "")));
+                resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::Right), "")));
             m_layout.scrollbarBorder = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::BorderRadius), "")));
             m_layout.scrollbarMinThumb = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::MinThumbHeight), "")));
+                resolveVariable(Common::Json::string(scrollbar, cssPropKeyName(CssPropKey::MinThumbHeight), "")));
         }
 
         if (hasObject(ElementKey::ScrollbarHover)) {
             const auto & scrollbarHover = block(ElementKey::ScrollbarHover);
             m_layout.scrollbarHoverW    = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::Width), "")));
+                resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::Width), "")));
             m_layout.scrollbarHoverRight = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::Right), "")));
+                resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::Right), "")));
             m_layout.scrollbarHoverBorder = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::BorderRadius), "")));
             m_layout.scrollbarHoverMinThumb = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::MinThumbHeight), "")));
+                resolveVariable(Common::Json::string(scrollbarHover, cssPropKeyName(CssPropKey::MinThumbHeight), "")));
         }
 
         // The dock slider, one block per PART. Split where the scrollbar's is not,
@@ -532,29 +533,29 @@ public:
         if (hasObject(ElementKey::DockSliderTrack)) {
             const auto & track    = block(ElementKey::DockSliderTrack);
             m_layout.sliderTrackH = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(track, cssPropKeyName(CssPropKey::Height), "")));
+                resolveVariable(Common::Json::string(track, cssPropKeyName(CssPropKey::Height), "")));
             m_layout.sliderTrackBorder = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(track, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(track, cssPropKeyName(CssPropKey::BorderRadius), "")));
         }
 
         if (hasObject(ElementKey::DockSliderThumb)) {
             const auto & thumb    = block(ElementKey::DockSliderThumb);
             m_layout.sliderThumbW = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(thumb, cssPropKeyName(CssPropKey::Width), "")));
+                resolveVariable(Common::Json::string(thumb, cssPropKeyName(CssPropKey::Width), "")));
             m_layout.sliderThumbH = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(thumb, cssPropKeyName(CssPropKey::Height), "")));
+                resolveVariable(Common::Json::string(thumb, cssPropKeyName(CssPropKey::Height), "")));
             m_layout.sliderThumbBorder = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(thumb, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(thumb, cssPropKeyName(CssPropKey::BorderRadius), "")));
         }
 
         if (hasObject(ElementKey::DockSliderThumbHover)) {
             const auto & thumbHover    = block(ElementKey::DockSliderThumbHover);
             m_layout.sliderThumbHoverW = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(thumbHover, cssPropKeyName(CssPropKey::Width), "")));
+                resolveVariable(Common::Json::string(thumbHover, cssPropKeyName(CssPropKey::Width), "")));
             m_layout.sliderThumbHoverH = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(thumbHover, cssPropKeyName(CssPropKey::Height), "")));
+                resolveVariable(Common::Json::string(thumbHover, cssPropKeyName(CssPropKey::Height), "")));
             m_layout.sliderThumbHoverBorder = Ui::Convert::parseCssBorderRadius(
-            resolveVariable(Common::Json::string(thumbHover, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(thumbHover, cssPropKeyName(CssPropKey::BorderRadius), "")));
         }
 
         // Shared dock dimensional tunables. One block applies to every dock
@@ -563,23 +564,23 @@ public:
         if (hasObject(ElementKey::DockDefaults)) {
             const auto & dd                 = block(ElementKey::DockDefaults);
             m_layout.dockDefaults.gripWidth = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::GripWidth), "")));
+                resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::GripWidth), "")));
             m_layout.dockDefaults.gripRadius = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::BorderRadius), "")));
+                resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::BorderRadius), "")));
             m_layout.dockDefaults.clickThreshold = Ui::Convert::str2fpx(
-            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::ClickThreshold), "")));
+                resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::ClickThreshold), "")));
             m_layout.dockDefaults.gripIcon = Common::Sanitize::filePath(
-            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::GripIcon), "")),
-            "dock.gripIcon");
+                resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::GripIcon), "")),
+                "dock.gripIcon");
             // parseCssNumber, not str2fpx: these are unitless fractions of the
             // row height, and str2fpx routes through str2int, which truncates
             // "0.5" to 0 - collapsing every expander and slider to zero height.
             m_layout.dockDefaults.rowIndentRatio = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::RowIndent), "")));
+                resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::RowIndent), "")));
             m_layout.dockDefaults.rowExpanderRatio = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::RowExpanderSize), "")));
+                resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::RowExpanderSize), "")));
             m_layout.dockDefaults.rowKeyRatio = Ui::Convert::parseCssNumber(
-            resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::RowKeyRatio), "")));
+                resolveVariable(Common::Json::string(dd, cssPropKeyName(CssPropKey::RowKeyRatio), "")));
         }
 
         const Ui::Res::Type::Changed layoutChanged = (m_layout == oldLayout) ? Ui::Res::Type::Changed::None

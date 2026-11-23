@@ -121,10 +121,10 @@ public:
 private:
     static inline unsigned s_requestCount = 0; // each call's token its own
     static constexpr int   REPLY_TIMEOUT_MS =
-    1000; // OpenFile answers before its dialog shows, about 0.1 s from a portal started cold
+        1000; // OpenFile answers before its dialog shows, about 0.1 s from a portal started cold
 
     Common::c_ptr_t<GCancellable, g_object_unref>
-    m_cancellable; // while a dialog is asked for; ends the bus or the call still waited for
+        m_cancellable; // while a dialog is asked for; ends the bus or the call still waited for
     Common::c_ptr_t<GDBusConnection, g_object_unref> m_connection; // the session bus, once reached
     Common::c_ptr_t<GVariant, g_variant_unref>       m_call;  // OpenFile's parameters, sent once the bus is reached
     std::string                                      m_token; // the call's, which names where the portal answers
@@ -250,8 +250,8 @@ private:
     static void addOption(const std::string & key, GVariant * value, GVariantBuilder & options)
     {
         g_variant_builder_add_value(
-        &options,
-        g_variant_new_dict_entry(g_variant_new_string(key.c_str()), g_variant_new_variant(value)));
+            &options,
+            g_variant_new_dict_entry(g_variant_new_string(key.c_str()), g_variant_new_variant(value)));
     }
 
     // A tuple of the values, each one's floating reference taken
@@ -286,7 +286,7 @@ private:
     {
         GError * failure = nullptr; // written by the call, owned on the next line
         const Common::c_ptr_t<GVariant, g_variant_unref> reply(
-        g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &failure));
+            g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &failure));
         const Common::c_ptr_t<GError, g_error_free> error(failure);
         // Cancelled, the chooser it was made for may be gone
         if (reply || g_error_matches(error.get(), G_IO_ERROR, G_IO_ERROR_CANCELLED) == TRUE) {
@@ -338,7 +338,7 @@ private:
 
         const Common::c_ptr_t<GVariant, g_variant_unref> results(g_variant_get_child_value(parameters, 1));
         const Common::c_ptr_t<GVariant, g_variant_unref> uris(
-        g_variant_lookup_value(results.get(), Ui::Io::Platform::Portal::URIS, G_VARIANT_TYPE_STRING_ARRAY));
+            g_variant_lookup_value(results.get(), Ui::Io::Platform::Portal::URIS, G_VARIANT_TYPE_STRING_ARRAY));
         std::vector<std::string> files;
         if (code == Ui::Io::Platform::PortalResponse::Succeeded && uris) {
             gsize                                        count = 0;

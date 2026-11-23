@@ -20,55 +20,46 @@
 #include "common/noncopyable.h"
 #include "common/system.h"
 #include "common/time.h"
-#include "common/unicode.h"
 #include "sig.h"
 #include "ui/action/actionmap.h"
 #include "ui/action/openpickedfiles.h"
 #include "ui/action/opentabswitcher.h"
 #include "ui/action/registry.h"
 #include "ui/config.h"
-#include "ui/gl/glutil.h"
-#include "ui/gl/localglew.h"
-#include "ui/gl/svgrenderer.h"
+#include "ui/gl/svgdocuments.h"
 #include "ui/idkind.h"
 #include "ui/inithooks.h"
 #include "ui/intent.h"
 #include "ui/interface/ichromecommands.h"
 #include "ui/io/filedialog.h"
+#include "ui/menubar.h"
 #include "ui/render/context.h"
 #include "ui/render/elementevent.h"
-#include "ui/render/popup/tabswitcherrenderer.h"
 #include "ui/render/renderscope.h"
 #include "ui/render/tabsshownof.h"
 #include "ui/render/tabstripwidthof.h"
 #include "ui/render/uielement.h"
 #include "ui/res/resmanager.h"
-#include "ui/res/store/menuheight.h"
-#include "ui/res/type/border.h"
-#include "ui/res/type/bound.h"
 #include "ui/res/type/dialog.h"
 #include "ui/res/type/dialogaction.h"
 #include "ui/res/type/layout.h"
 #include "ui/res/type/menu.h"
-#include "ui/res/util.h"
+#include "ui/resolvedcontentof.h"
 #include "ui/result.h"
-#include "ui/tab.h"
+#include "ui/shelldebug.h"
+#include "ui/statusline.h"
 #include "ui/tabbar.h"
 #include "ui/tabswitch.h"
+#include "ui/tabswitcher.h"
 #include "ui/type.h"
-#include "ui/window/displaystextof.h"
 #include "ui/window/event.h"
 #include "ui/window/eventtype.h"
 #include "ui/window/iscontrolkey.h"
 #include "ui/window/keymodifier.h"
-#include "ui/window/mousebutton.h"
-#include "ui/window/nativewindow.h"
-#include "ui/window/popup/popupwindow.h"
 #include "ui/window/windowmanager.h"
 
 #include <algorithm>
 #include <cctype>
-#include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <exception>
@@ -84,24 +75,15 @@
 
 namespace Ui {
 
-// Flip to true to trace the chrome orchestration: every click and key as it is
-// classified, menu hover, and the popup lifecycle with its geometry. One line
-// or more per input event, so this is loud under any real use.
-constexpr bool SHELL_DEBUG = false;
-
-// Flip to true to trace how the pointer switches the open list across the menu bar: a
-// move onto a button (from the main window or from over the list), what handleMenuHover
-// decides and why, a held hover and its replay, and the waits that hold a switch off
-constexpr bool MENU_HOVER_DEBUG = false;
-
 /**
  * @brief The runnable framework core - owns the fw object graph.
  *
  * Domain-blind: composes ResManager + WindowManager + Context + Action::Registry
  * (the chrome, windowing, intent mapping, and action dispatch table). It owns
  * the run loop, init spine, default shell actions, the event->intent dispatch,
- * and all interactive-chrome orchestration (popup/menu lifecycle, dialog close,
- * temp status). A host composes a Shell, adds content +
+ * and all interactive-chrome orchestration, through its parts: the open popup menu
+ * (MenuBar), the status text (StatusLine), the Ctrl+Tab list (TabSwitcher), and
+ * the dialog close itself. A host composes a Shell, adds content +
  * domain actions, and wires the domain hooks (tab activate/close, key press).
  */
 class Shell final : public Ui::IChromeCommands, private Common::NonCopyable {
@@ -154,7 +136,7 @@ public:
     // list goes down with any switch
     void setActiveTab(id_t tabId) override
     {
-        cancelTabSwitcher();
+        m_tabSwitcher.cancel();
         if (m_onTabActivated) {
             m_onTabActivated(tabId);
         }
@@ -173,14 +155,10 @@ public:
 
     // The Ctrl+Tab list while Ctrl is held, up or not yet: what OpenTabSwitcher opens, and the
     // shell's key, release and pointer handling drive
-    [[nodiscard]] Ui::TabSwitch & tabSwitch() { return m_tabSwitch; }
+    [[nodiscard]] Ui::TabSwitch & tabSwitch() { return m_tabSwitcher.tabSwitch(); }
 
     // The Ctrl+Tab list's highlight `delta` rows on, and its window showing it
-    void cycleTabSwitcher(int delta)
-    {
-        m_tabSwitch.cycle(delta);
-        m_windowManager.setTabSwitcherSelection(m_tabSwitch.selectedRow());
-    }
+    void cycleTabSwitcher(int delta) { m_tabSwitcher.cycle(delta); }
 
     void emitAction(const std::string & actionKey, const std::string & arg) override
     {
@@ -188,32 +166,23 @@ public:
         m_actions.dispatch(actionKey, arg);
     }
 
-    [[nodiscard]] bool isPopupOpen() const override { return m_openMenuId != Ui::INVALID_ID; }
+    [[nodiscard]] bool isPopupOpen() const override { return m_menuBar.isOpen(); }
 
     void openPopup(id_t menuId) override
     {
-        traceMenuHover("opened", menuId);
-        createMenuPopup(menuId);
+        m_menuBar.trace("opened", menuId);
+        m_menuBar.open(menuId);
     }
 
-    void closePopup() override
-    {
-        traceMenuHover("closed", m_openMenuId);
-        // Deferred: the click may originate inside the popup window we are about to
-        // destroy, so close after the current event drains. routeIntent has already
-        // gated this on isPopupOpen().
-        m_openMenuId = Ui::INVALID_ID;
-        m_resManager.clearActiveMenu();
-        m_windowManager.requestContentRefresh();
-        m_windowManager.subscribe().defer([this]() { destroyPopup(); });
-    }
+    // routeIntent has already gated this on isPopupOpen()
+    void closePopup() override { m_menuBar.closeAfterEvent(); }
 
     void openDialog(id_t itemId) override
     {
         const Ui::Res::Type::menu_t item = m_resManager.findMenuItem(itemId);
-        m_hoveredMenuId                  = Ui::INVALID_ID;
+        m_menuBar.forgetHover();
         m_windowManager.onMouseLeave();
-        m_windowManager.subscribe().defer([this, dialog = item.dialog]() { m_windowManager.openDialog(dialog); });
+        m_windowManager.subscribe().defer([this, dialog = item.dialog]() { m_windowManager.dialog().open(dialog); });
     }
 
     // A tab's close button - the strip's, or a row's in the Ctrl+Tab list, which then stays up,
@@ -223,9 +192,7 @@ public:
         if (m_onTabClosed) {
             m_onTabClosed(tabId);
         }
-        if (m_tabSwitch.isShown()) {
-            refreshTabSwitcher();
-        }
+        m_tabSwitcher.refresh();
     }
 
     void activateRow(id_t rowId) override
@@ -235,32 +202,7 @@ public:
         }
     }
 
-    void openRowMenu(id_t elementId) override
-    {
-        // The press that started this click already closed this row's menu, so the
-        // click IS the close - opening again would leave the chevron unable to close
-        if (m_pressClosedRowMenu == elementId) {
-            m_pressClosedRowMenu = Ui::INVALID_ID;
-            return;
-        }
-        const Ui::Res::Type::menu_t menu = m_resManager.findMenuItemByKey(m_windowManager.rowMenuKey(elementId));
-        if (menu.id == Ui::INVALID_ID || menu.items.empty()) {
-            std::cerr << "[Shell] Dock row names no menu with items: element " << elementId << std::endl;
-            return;
-        }
-
-        // Right-aligned under the row, where the value and its chevron sit - and above
-        // the row when the list would run past the bottom of the window, which is
-        // where a dock's last rows are. The row element's bound is the whole row:
-        // its value column shares the id and is laid out after it
-        const Ui::Res::Type::bound_t & row     = m_windowManager.elementBound(elementId);
-        const fpx_t                    height  = menuPopupCssHeight(menu);
-        const fpx_t                    below   = row.y + row.h;
-        const bool                     isBelow = below + height <= toCss(m_windowManager.windowHeight());
-        const fpx_t x = std::max(0.0F, row.x + row.w - m_windowManager.menuPopupCssWidth(menu.items));
-        showMenuPopup(menu, x, isBelow ? below : row.y - height);
-        m_rowMenuElement = elementId;
-    }
+    void openRowMenu(id_t elementId) override { m_menuBar.openRowMenu(elementId); }
 
     void toggleRow(id_t rowId) override
     {
@@ -365,20 +307,16 @@ public:
     // reassigned by loadAll() but label-derived keys survive it.
     void reloadChrome()
     {
-        const bool                    hadDialog   = m_windowManager.hasDialog();
-        const Ui::Res::Type::dialog_t savedDialog = hadDialog ? m_windowManager.lastDialogData()
+        const bool                    hadDialog   = m_windowManager.dialog().isOpen();
+        const Ui::Res::Type::dialog_t savedDialog = hadDialog ? m_windowManager.dialog().lastData()
                                                               : Ui::Res::Type::dialog_t {};
-        const Ui::key_t               activeKey   = activeMenuKey();
+        const Ui::key_t               activeKey   = m_menuBar.activeKey();
 
         // Close open popup/dialog
         if (hadDialog) {
-            m_windowManager.closeDialog();
+            m_windowManager.dialog().close();
         }
-        if (m_openMenuId != Ui::INVALID_ID) {
-            m_openMenuId = Ui::INVALID_ID;
-            m_resManager.clearActiveMenu();
-            destroyPopup();
-        }
+        m_menuBar.close();
 
         loadAllResources();
         gateAndDisableUnhandled();
@@ -400,9 +338,9 @@ public:
 
         // Reopen what was open
         if (hadDialog) {
-            m_windowManager.openDialog(savedDialog);
+            m_windowManager.dialog().open(savedDialog);
         } else if (!activeKey.empty()) {
-            restoreActiveMenu(activeKey);
+            m_menuBar.restore(activeKey);
         }
 
         if (m_hooks.afterReload) {
@@ -410,111 +348,15 @@ public:
         }
     }
 
-    // Hierarchical key of the deepest active menu node: the highlighted item
-    // (across popup + submenu) if any, else the open dropdown. "" = nothing open.
-    [[nodiscard]] Ui::key_t activeMenuKey() const
-    {
-        // A row menu has no key path to come back by - its anchor is a dock row that
-        // a reload or a resize may have moved or removed - so it is never restored
-        if (m_openMenuId == Ui::INVALID_ID || m_rowMenuElement != Ui::INVALID_ID) {
-            return {};
-        }
-        const id_t activeItem = m_windowManager.activePopupItemId();
-        const id_t node       = (activeItem != Ui::INVALID_ID) ? activeItem : m_openMenuId;
-        return m_resManager.findMenuItem(node).key;
-    }
-
-    // Reopen the dropdown + any submenu named by a hierarchical key ("File",
-    // "View:Theme", "View:Theme:default") and re-highlight the leaf node.
-    void restoreActiveMenu(const Ui::key_t & activeKey)
-    {
-        const std::vector<Ui::key_t> segments = Ui::Res::Util::splitMenuKey(activeKey);
-        if (segments.empty()) {
-            return;
-        }
-
-        const Ui::Res::Type::menu_t dropdown = m_resManager.findMenuItemByKey(segments.front());
-        if (dropdown.id == Ui::INVALID_ID) {
-            return;
-        }
-        createMenuPopup(dropdown.id);
-
-        // A node two levels deep that has children is the submenu to reopen
-        // (covers both a hovered submenu-parent and a hovered submenu-child).
-        if (segments.size() >= 2) {
-            const Ui::key_t             parentKey = segments.at(0) + ":" + segments.at(1);
-            const Ui::Res::Type::menu_t parent    = m_resManager.findMenuItemByKey(parentKey);
-            if (parent.id != Ui::INVALID_ID && !parent.items.empty()) {
-                m_windowManager.reopenSubmenu(parent.id);
-            }
-        }
-
-        const Ui::Res::Type::menu_t leaf = m_resManager.findMenuItemByKey(activeKey);
-        if (leaf.id != Ui::INVALID_ID) {
-            m_windowManager.setActivePopupItem(leaf.id);
-        }
-    }
-
-    // Recreate the open popup (+ submenu + active-item highlight) at its anchored
-    // position - e.g. after a window move/resize relocates or rebuilds the popup
-    // window. Mirrors the menu-state preservation reloadChrome does across a
-    // resource reload, so the highlighted item survives all three.
-    void reopenActivePopup()
-    {
-        // Closed rather than left behind at the old screen position
-        if (m_rowMenuElement != Ui::INVALID_ID) {
-            destroyPopup();
-            return;
-        }
-        const Ui::key_t activeKey = activeMenuKey();
-        if (activeKey.empty()) {
-            return;
-        }
-        destroyPopup();
-        restoreActiveMenu(activeKey);
-    }
-
     // Close any open popup menu (no-op if none). Generic chrome; the host calls
     // it before opening a native modal (e.g. the file dialog).
-    void closePopupMenu()
-    {
-        if (m_openMenuId != Ui::INVALID_ID) {
-            destroyPopup();
-        }
-    }
+    void closePopupMenu() { m_menuBar.close(); }
 
-    // True while a temporary (auto-expiring) status message is showing. The host
-    // model-status updater checks this so it does not clobber a temp message.
-    [[nodiscard]] bool hasTempStatus() const { return !m_tempStatusText.empty(); }
-
-    // The real status line. While a temp message shows it waits underneath and is
-    // what the expiry restores, so an update made during one is not lost
-    void setStatusText(const std::string & text)
-    {
-        if (m_tempStatusText.empty()) {
-            m_resManager.setStatusText(text);
-            m_windowManager.requestContentRefresh();
-        } else {
-            m_lastStatusText = text;
-        }
-    }
-
-    // Show a temporary (auto-expiring) status message: the feedback an action gives
-    // on what it just did. Resolved text, like setStatusText - the caller owns the
-    // locale lookup. An overlay on the real status, which checkTempStatusExpiry()
-    // puts back.
-    void showTempStatus(const std::string & text)
-    {
-        // Only a real status is worth restoring: while a temp one shows, the bar
-        // holds a temp message, and saving that would restore it for good
-        if (m_tempStatusText.empty()) {
-            m_lastStatusText = m_resManager.statusText();
-        }
-        m_tempStatusText   = text;
-        m_tempStatusExpiry = Common::Time::now() + TEMP_STATUS_DURATION;
-        m_resManager.setStatusText(text);
-        m_windowManager.requestContentRefresh();
-    }
+    // The status bar (StatusLine): whether a temporary message shows, the real status line,
+    // and a temporary message over it - the feedback an action gives on what it just did
+    [[nodiscard]] bool hasTempStatus() const { return m_statusLine.hasTemp(); }
+    void               setStatusText(const std::string & text) { m_statusLine.set(text); }
+    void               showTempStatus(const std::string & text) { m_statusLine.showTemp(text); }
 
     // --- init spine: framework-internal steps. initialize() owns their order; a
     // host supplies its domain steps as init_hooks_t instead of calling these. ---
@@ -529,7 +371,7 @@ public:
             if (button.icon.empty()) {
                 continue;
             }
-            if (!Ui::Gl::SvgRenderer::loadFromFile(m_resManager.resPath().iconPathOf(button.icon)).empty()) {
+            if (!Ui::Gl::SvgDocuments::loadFromFile(m_resManager.resPath().iconPathOf(button.icon)).empty()) {
                 ++preloaded;
             }
         }
@@ -640,10 +482,7 @@ public:
                 // Hide popup during resize (recreated in handleResize). A child
                 // popup tracks the parent itself, so leave it - hiding/recreating
                 // it every resize event is what makes it blink.
-                if (m_openMenuId != Ui::INVALID_ID && m_windowManager.popupWindow() != nullptr
-                    && !m_windowManager.popupFollowsParent()) {
-                    m_windowManager.popupWindow()->hide();
-                }
+                m_menuBar.hideForResize();
 
                 // Defer resize (only once per batch -- last dimensions win)
                 if (!m_pendingResize) {
@@ -670,22 +509,19 @@ public:
         // FocusLost: an open list closes, as every OS's own menu does when another app takes
         // the focus, and a switch waiting to make one stops; a dialog stays for the user's return
         sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::FocusLost), Ui::APP_ID, [this]() {
-            m_menuSwitchPending = false;
-            if (m_windowManager.hasPopup()) {
-                destroyPopup();
-            }
+            m_menuBar.closeForFocusLoss();
             // Ctrl going up elsewhere is never seen here, so the Ctrl+Tab list stops unswitched
-            cancelTabSwitcher();
+            m_tabSwitcher.cancel();
         });
 
         // MouseButtonPress
         sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::MouseButtonPress), Ui::APP_ID, [this]() {
-            if (m_windowManager.hasDialog()) {
+            if (m_windowManager.dialog().isOpen()) {
                 return;
             }
 
-            const auto & event   = m_windowManager.currentEvent();
-            m_pressClosedRowMenu = Ui::INVALID_ID;
+            const auto & event = m_windowManager.currentEvent();
+            m_menuBar.forgetClosingPress();
             if constexpr (MENU_HOVER_DEBUG) {
                 std::cout << "[MenuHover] press: list=" << event.isPopupEvent << " at " << event.mouse.x << ","
                           << event.mouse.y << " clickCount=" << event.mouse.clickCount << std::endl;
@@ -693,75 +529,16 @@ public:
 
             // The Ctrl+Tab list: a press on it is its row's, which the release switches to;
             // one off it takes it down unswitched and goes on as a press
-            if (m_tabSwitch.isOpen()) {
-                if (event.isPopupEvent && m_windowManager.hasTabSwitcher()) {
+            if (m_tabSwitcher.isOpen()) {
+                if (event.isPopupEvent && m_windowManager.tabSwitcher().isOpen()) {
                     return;
                 }
-                cancelTabSwitcher();
+                m_tabSwitcher.cancel();
             }
 
             // Popup press -- only handle outside-click policy (inside forwarding done by dispatchEvent)
-            if (event.isPopupEvent && m_windowManager.hasPopup()) {
-                if (!m_windowManager.popupEventConsumed()) {
-                    // Click outside popup visual region
-                    bool shouldClosePopup = true;
-
-                    int mainX = 0;
-                    int mainY = 0;
-                    m_windowManager.popupToMainCoords(event.mouse.x, event.mouse.y, mainX, mainY);
-
-                    if (m_windowManager.hasUiRenderer()) {
-                        const int menuBarHeight = toPhysFloor(m_resManager.layout().topMenu.height);
-                        if (mainY >= 0 && mainY < menuBarHeight) {
-                            if (mainX < menusTotalWidthPhysical()) {
-                                const bool hitMenuItem = m_windowManager
-                                                         .onMousePress(mainX,
-                                                                       mainY,
-                                                                       event.mouse.button,
-                                                                       event.mouse.clickCount,
-                                                                       event.mouse.modifiers)
-                                                         .isHit();
-                                m_windowManager.requestMainRender();
-                                if (hitMenuItem) {
-                                    shouldClosePopup = false;
-                                }
-                                if constexpr (SHELL_DEBUG) {
-                                    std::cout << (hitMenuItem ? "[Shell] Clicked menu item, switching popup"
-                                                              : "[Shell] Clicked menu bar between buttons - closing "
-                                                                "popup")
-                                              << std::endl;
-                                }
-                            } else {
-                                if constexpr (SHELL_DEBUG) {
-                                    std::cout << "[Shell] Clicked menu bar empty space after menus (x=" << mainX
-                                              << " > " << menusTotalWidthPhysical() << ") - closing popup" << std::endl;
-                                }
-                            }
-                        } else {
-                            if (event.mouse.x >= 0 && event.mouse.x < m_windowManager.popupWindow()->bound().w
-                                && event.mouse.y >= 0 && event.mouse.y < m_windowManager.popupWindow()->bound().h) {
-                                shouldClosePopup = false;
-                            }
-                        }
-                    }
-
-                    if (shouldClosePopup) {
-                        if constexpr (SHELL_DEBUG) {
-                            std::cout << "[Shell] Closing popup (clicked outside menu and popup area)" << std::endl;
-                        }
-                        m_pressClosedRowMenu = rowMenuUnder(mainX, mainY);
-                        destroyPopup();
-                        // Forward click to main window
-                        if (event.mouse.button == Ui::Window::MouseButton::Left) {
-                            m_windowManager.onMousePress(mainX,
-                                                         mainY,
-                                                         event.mouse.button,
-                                                         event.mouse.clickCount,
-                                                         event.mouse.modifiers);
-                            m_windowManager.requestMainRender();
-                        }
-                    }
-                }
+            if (event.isPopupEvent && m_windowManager.menus().isOpen()) {
+                m_menuBar.pressOnList(event);
                 return;
             }
 
@@ -770,35 +547,11 @@ public:
                 std::cout << "[Shell] MouseButtonPress event received at (" << event.mouse.x << "," << event.mouse.y
                           << ") clickCount=" << event.mouse.clickCount << std::endl;
             }
-            if (m_windowManager.hasPopup()) {
-                bool      closePopup    = true;
-                const int menuBarHeight = toPhysFloor(m_resManager.layout().topMenu.height);
-                if (event.mouse.y >= 0 && event.mouse.y < menuBarHeight) {
-                    if (event.mouse.x < menusTotalWidthPhysical()) {
-                        if constexpr (SHELL_DEBUG) {
-                            std::cout << "[Shell] Press on the menu bar while popup open - its title decides below"
-                                      << std::endl;
-                        }
-                        closePopup = false;
-                    } else {
-                        if constexpr (SHELL_DEBUG) {
-                            std::cout << "[Shell] Click in menu bar empty space (after menus at x=" << event.mouse.x
-                                      << " > " << menusTotalWidthPhysical() << ") - closing popup" << std::endl;
-                        }
-                    }
-                } else {
-                    if constexpr (SHELL_DEBUG) {
-                        std::cout << "[Shell] Closing popup (clicked outside)" << std::endl;
-                    }
-                }
-                if (closePopup) {
-                    m_pressClosedRowMenu = rowMenuUnder(event.mouse.x, event.mouse.y);
-                    destroyPopup();
-                }
-            }
+            m_menuBar.pressBesideList(event);
             // A title opens, closes or switches its list on the press (isListTitle)
-            if (const Ui::Render::element_event_t & press = m_windowManager.lastPressResult(); isListTitle(press)) {
-                traceMenuHover("pressed a title", press.id);
+            if (const Ui::Render::element_event_t & press = m_windowManager.lastPressResult();
+                m_menuBar.isListTitle(press)) {
+                m_menuBar.trace("pressed a title", press.id);
                 dispatchClick(press);
             }
             // Main window press routing already done by dispatchEvent
@@ -809,11 +562,11 @@ public:
 
         // MouseButtonRelease
         sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::MouseButtonRelease), Ui::APP_ID, [this]() {
-            if (m_windowManager.hasDialog()) {
+            if (m_windowManager.dialog().isOpen()) {
                 return;
             }
             // The Ctrl+Tab list's thumb let go over a row: the highlight goes there, as a move would take it
-            followTabSwitcherHover();
+            m_tabSwitcher.followHover();
 
             const auto & event = m_windowManager.currentEvent();
             if constexpr (MENU_HOVER_DEBUG) {
@@ -826,7 +579,7 @@ public:
             }
 
             // Popup release -- handle click result or close
-            if (event.isPopupEvent && m_windowManager.hasPopup()) {
+            if (event.isPopupEvent && m_windowManager.menus().isOpen()) {
                 if (m_windowManager.popupEventConsumed()) {
                     const auto & result = m_windowManager.lastClickResult();
                     if (result.id != Ui::INVALID_ID) {
@@ -837,7 +590,7 @@ public:
                         std::cout << "[Shell] Popup MouseButtonRelease outside visual region - closing popup"
                                   << std::endl;
                     }
-                    destroyPopup();
+                    m_menuBar.destroy();
                 }
                 return;
             }
@@ -845,7 +598,7 @@ public:
             // Main/child release -- handle click result. A title's press did its work, so
             // its release does nothing
             const auto & result = m_windowManager.lastClickResult();
-            if (result.id != Ui::INVALID_ID && !isListTitle(result)) {
+            if (result.id != Ui::INVALID_ID && !m_menuBar.isListTitle(result)) {
                 dispatchClick(result);
             }
             if (event.childWindowId == Ui::INVALID_ID) {
@@ -855,40 +608,24 @@ public:
 
         // MouseMove
         sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::MouseMove), Ui::APP_ID, [this]() {
-            if (m_windowManager.hasDialog()) {
+            if (m_windowManager.dialog().isOpen()) {
                 return;
             }
 
             const auto & event = m_windowManager.currentEvent();
             if constexpr (MENU_HOVER_DEBUG) {
-                if (m_openMenuId != Ui::INVALID_ID || m_menuSwitchPending) {
+                if (m_menuBar.isOpen() || m_menuBar.isSwitchPending()) {
                     std::cout << "[MenuHover] move with a list open: list=" << event.isPopupEvent
                               << " content=" << (event.childWindowId != Ui::INVALID_ID) << " at " << event.mouse.x
                               << "," << event.mouse.y << std::endl;
                 }
             }
 
-            followTabSwitcherHover();
+            m_tabSwitcher.followHover();
 
             // Popup move -- handle menu bar hover detection
             if (event.isPopupEvent) {
-                if (m_windowManager.hasUiRenderer() && m_windowManager.hasPopup()) {
-                    int mainX = 0;
-                    int mainY = 0;
-                    m_windowManager.popupToMainCoords(event.mouse.x, event.mouse.y, mainX, mainY);
-
-                    const int menuBarHeight = toPhysFloor(m_resManager.layout().topMenu.height);
-                    if (mainY >= 0 && mainY < menuBarHeight) {
-                        const bool isHoverChanged = m_windowManager.onMouseMove(mainX, mainY);
-                        if constexpr (MENU_HOVER_DEBUG) {
-                            std::cout << "[MenuHover] move over the bar from the list at " << mainX << "," << mainY
-                                      << " hover changed=" << isHoverChanged << std::endl;
-                        }
-                        if (isHoverChanged) {
-                            m_windowManager.requestMainRender();
-                        }
-                    }
-                }
+                m_menuBar.moveOverBarFromList(event);
                 return;
             }
 
@@ -905,27 +642,13 @@ public:
             }
 
             // Main window move -- render queued by forwardEvent on hover change
-            if (m_windowManager.hasUiRenderer()) {
-                const fpx_t cssX = toCss(event.mouse.x);
-                const fpx_t cssY = toCss(event.mouse.y);
-                for (const auto & m : m_resManager.menus()) {
-                    const auto & b = m_windowManager.elementBound(m.id);
-                    if (b.w > 0 && b.contains(cssX, cssY)) {
-                        if (m_hoveredMenuId != m.id) {
-                            traceMenuHover("move onto a button", m.id);
-                            m_hoveredMenuId = m.id;
-                            handleMenuHover(m.id);
-                        }
-                        break;
-                    }
-                }
-            }
+            m_menuBar.hoverAt(event.mouse.x, event.mouse.y);
         });
 
         // Scroll: the Ctrl+Tab list's rows moved under the pointer, so the highlight follows the
         // row now under it, as on a move
         sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::Scroll), Ui::APP_ID, [this]() {
-            followTabSwitcherHover();
+            m_tabSwitcher.followHover();
         });
 
         // KeyPress
@@ -935,7 +658,7 @@ public:
 
         // KeyRelease: Ctrl going up switches to what the Ctrl+Tab list has highlighted
         sub.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::KeyRelease), Ui::APP_ID, [this]() {
-            if (m_tabSwitch.isOpen() && Ui::Window::isControlKey(m_windowManager.currentEvent().key.name.data())) {
+            if (m_tabSwitcher.isOpen() && Ui::Window::isControlKey(m_windowManager.currentEvent().key.name.data())) {
                 commitTabSwitcher();
             }
         });
@@ -946,19 +669,20 @@ public:
             if constexpr (SHELL_DEBUG) {
                 std::cout << "[Shell] Menu button hover: id=" << id << std::endl;
             }
-            traceMenuHover("element hover", id);
-            handleMenuHover(id);
+            m_menuBar.trace("element hover", id);
+            m_menuBar.hover(id);
         });
 
         // Dialog content placeholders (%VERSION%/%CPU%/%RAM%/%GPU%/%GL%/%DISPLAYS%) resolved
         // from APP_VERSION + Common::System + the main window's GL context and displays.
-        m_windowManager.setDialogContentResolver(
-        [this](const std::string & tpl) { return resolveDialogPlaceholders(tpl); });
+        m_windowManager.dialog().setContentResolver([this](const std::string & content) {
+            return Ui::resolvedContentOf(content, m_windowManager.mainWindow());
+        });
 
         // Dialog close: WindowManager invokes this (deferred), not a cross-thread event.
-        m_windowManager.setOnDialogClose([this]() {
-            const auto   action = m_windowManager.lastDialogAction();
-            const auto & dialog = m_windowManager.lastDialogData();
+        m_windowManager.dialog().setOnClose([this]() {
+            const auto   action = m_windowManager.dialog().lastAction();
+            const auto & dialog = m_windowManager.dialog().lastData();
 
             if (action == Ui::Res::Type::DialogAction::CopyLink && !dialog.link.empty()) {
                 const std::string & linkText = m_resManager.localeManager().get(dialog.link);
@@ -968,62 +692,12 @@ public:
             }
 
             // Close popup menu if still open
-            if (m_openMenuId != Ui::INVALID_ID) {
-                m_openMenuId = Ui::INVALID_ID;
-                m_resManager.clearActiveMenu();
-                m_windowManager.requestContentRefresh();
-                destroyPopup();
-            }
+            m_menuBar.close();
 
             if constexpr (SHELL_DEBUG) {
                 std::cout << "[Shell] Dialog closed with result: " << static_cast<int>(action) << std::endl;
             }
         });
-    }
-
-    // Expand %KEY% placeholders in dialog content (the System Info / Version
-    // dialogs): %VERSION% from APP_VERSION, %CPU%/%RAM% from Common::System,
-    // %GPU%/%GL% from the main window's live GL context, %DISPLAYS% one line per display.
-    std::wstring resolveDialogPlaceholders(const std::string & tpl)
-    {
-        std::wstring result = Common::Unicode::fromUtf8(tpl);
-
-        auto replace = [&result](const std::wstring & key, const std::wstring & value) {
-            auto pos = result.find(key);
-            while (pos != std::wstring::npos) {
-                result.replace(pos, key.size(), value);
-                pos = result.find(key, pos + value.size());
-            }
-        };
-
-        replace(L"%VERSION%", L"" APP_VERSION);
-
-        std::string       cpu  = std::to_string(Common::System::cpuCores()) + " cores";
-        const std::string freq = Common::System::cpuFrequency();
-        if (freq != "N/A") {
-            cpu += " @ " + freq;
-        }
-        replace(L"%CPU%", Common::Unicode::fromUtf8(cpu));
-
-        // GL info (requires current context)
-        auto & mainWindow = m_windowManager.mainWindow();
-        mainWindow.makeCurrent();
-        const std::string gpuStr = Ui::Gl::Util::glString(GL_RENDERER);
-        std::string       glStr  = Ui::Gl::Util::glString(GL_VERSION);
-        // isHardwareGl() is authoritative: WindowManager folds the GL_RENDERER
-        // software-rasterizer check into it right after context creation.
-        glStr += mainWindow.isHardwareGl() ? " (hardware)" : " (software)";
-        replace(L"%GPU%", Common::Unicode::fromUtf8(gpuStr));
-        replace(L"%GL%", Common::Unicode::fromUtf8(glStr));
-
-        replace(L"%RAM%", Common::Unicode::fromUtf8(Common::System::systemRam()));
-
-        // Asked again here, not kept from startup: a display plugged in since is listed
-        replace(L"%DISPLAYS%",
-                Common::Unicode::fromUtf8(
-                Ui::Window::displaysTextOf(Ui::Window::NativeWindow::displaysOf(mainWindow.nativeDisplay()))));
-
-        return result;
     }
 
     // The main event loop: drain host frame tasks, poll+dispatch OS events,
@@ -1051,17 +725,14 @@ public:
             }
 
             if (hadEvents) {
-                handlePopupMove();       // popup-position tracking during window move
-                checkTempStatusExpiry(); // expire + restore an active temp status
-                if (m_onTick) {          // host: model-status update
+                m_menuBar.followWindowMove(); // popup-position tracking during window move
+                m_statusLine.expire();        // expire + restore an active temp status
+                if (m_onTick) {               // host: model-status update
                     m_onTick();
                 }
                 // Reset one-frame guard before draining deferred actions
                 // (deferred menu switch sets it; next iteration clears it)
-                if (m_menuJustActivated) {
-                    m_menuJustActivated = false;
-                    traceMenuHover("wait cleared, a pass had events", m_openMenuId);
-                }
+                m_menuBar.endWait("wait cleared, a pass had events");
                 m_windowManager.drainDeferred();
             }
 
@@ -1073,21 +744,16 @@ public:
             m_windowManager.keepGliding();
 
             // The Ctrl+Tab list, once Ctrl has been held past its delay: a held key sends none
-            if (m_tabSwitch.isDue(Common::Time::now())) {
-                showTabSwitcher();
-            }
+            m_tabSwitcher.showIfDue();
 
             if (m_windowManager.renderQueue().hasPending()) {
                 m_windowManager.renderAll();
                 // A list made before this frame has had it, so a switch may take it down -
                 // with no event after it, nothing else would say so
-                if (m_menuJustActivated) {
-                    m_menuJustActivated = false;
-                    traceMenuHover("wait cleared, a frame was drawn", m_openMenuId);
-                }
+                m_menuBar.endWait("wait cleared, a frame was drawn");
                 m_windowManager.drainDeferred();
             }
-            replayHeldHover();
+            m_menuBar.replayHeldHover();
 
             if (isStopAfterFrame) {
                 isStopAfterFrame = false;
@@ -1126,44 +792,22 @@ private:
     std::function<void(id_t)> m_onDockRowToggled;
     Ui::predicate_fn_t        m_onKeyPress;
 
-    Ui::TabSwitch m_tabSwitch; // the Ctrl+Tab list while Ctrl is held, up or not yet
+    Ui::MenuBar     m_menuBar { m_resManager, m_windowManager };     // the open popup menu and the pointer on the bar
+    Ui::StatusLine  m_statusLine { m_resManager, m_windowManager };  // the status text and a temp message over it
+    Ui::TabSwitcher m_tabSwitcher { m_resManager, m_windowManager }; // the Ctrl+Tab list while Ctrl is held
 
     // Per-extension file loaders (host-registered; empty on a standalone shell,
     // so OpenFile warns for every file type).
     std::unordered_map<std::string, Ui::action_fn_t> m_fileHandlers;
     Ui::Io::FileDialog                               m_fileDialog; // OpenFile's, asked after each pass
 
-    // Temporary status bar message (auto-expires).
-    Common::Time::point_t m_tempStatusExpiry;
-    std::string           m_tempStatusText;
-    std::string           m_lastStatusText; // real text to restore after a temp expires
-
     // Window dimensions (cached from resize events).
     fpx_t m_windowWidth  = 0;
     fpx_t m_windowHeight = 0;
 
-    // Window position tracking (for popup repositioning).
-    int m_lastWindowX = 0;
-    int m_lastWindowY = 0;
-
-    // Popup menu state.
-    id_t m_openMenuId = Ui::INVALID_ID; // ID of currently open popup menu (INVALID = none)
-    // The dock Menu row whose menu is open; INVALID when the open popup, if any,
-    // belongs to the top bar. It decides how a move, a reload and a hover treat it
-    id_t m_rowMenuElement = Ui::INVALID_ID;
-    // A press on that same row just closed its menu, so the click the press ends is
-    // the close rather than a request to open again. Cleared by the next press
-    id_t m_pressClosedRowMenu = Ui::INVALID_ID;
-    id_t m_hoveredMenuId      = Ui::INVALID_ID; // ID of menu currently hovered (avoids duplicate hover actions)
-    id_t m_heldMenuId         = Ui::INVALID_ID; // a hover handleMenuHover held off, for replayHeldHover
-
     // Bool flags (grouped for minimal padding).
-    bool m_pendingResize     = false;
-    bool m_isRescalePending  = false; // a reload for a new DPI waits for its batch to end
-    bool m_menuSwitchPending = false; // Re-entry guard for deferred menu switch; FocusLost clears it to stop one
-    bool m_menuJustActivated = false; // True briefly after creating a popup until it renders once
-
-    static constexpr std::chrono::seconds TEMP_STATUS_DURATION { 1 };
+    bool m_pendingResize    = false;
+    bool m_isRescalePending = false; // a reload for a new DPI waits for its batch to end
 
     // ---- the load cycle: the one ordering that must never differ between
     // startup and reload. Split in two because loadAll() has to precede window
@@ -1192,57 +836,6 @@ private:
         disableUnhandledItems();
     }
 
-    // Total physical pixel width of all menu buttons.
-    [[nodiscard]] int menusTotalWidthPhysical() const
-    {
-        if (!m_windowManager.hasUiRenderer()) {
-            return 0;
-        }
-
-        fpx_t totalW = 0;
-        for (const auto & menu : m_resManager.menus()) {
-            const auto & bound = m_windowManager.elementBound(menu.id);
-            totalW += bound.w;
-        }
-
-        return toPhysFloor(totalW);
-    }
-
-    // Track the popup while the main window moves: shift it by the window delta,
-    // hide during the move, recreate once the move settles. Generic chrome.
-    void handlePopupMove()
-    {
-        if (m_openMenuId == Ui::INVALID_ID || !m_windowManager.hasPopup()) {
-            return;
-        }
-        // An X11 child popup is moved by the server with its parent; tracking it
-        // here would double-move it. Only root-parented popups need manual moves.
-        if (m_windowManager.popupFollowsParent()) {
-            return;
-        }
-        int currentX = 0;
-        int currentY = 0;
-        m_windowManager.mainWindowScreenPosition(currentX, currentY);
-        if (currentX == m_lastWindowX && currentY == m_lastWindowY) {
-            return;
-        }
-        const int deltaX = currentX - m_lastWindowX;
-        const int deltaY = currentY - m_lastWindowY;
-        m_lastWindowX    = currentX;
-        m_lastWindowY    = currentY;
-
-        // Translate the popup (+ submenu) by the same delta as the main window
-        // so they stay attached - no destroy/recreate. A rigid move keeps the
-        // captured corner background valid (the parent pixels behind the corners
-        // translate identically), which is why no recapture is needed.
-        if (auto * popup = m_windowManager.popupWindow(); popup != nullptr) {
-            popup->move(popup->bound().x + deltaX, popup->bound().y + deltaY);
-        }
-        if (auto * submenu = m_windowManager.submenuWindow(); submenu != nullptr) {
-            submenu->move(submenu->bound().x + deltaX, submenu->bound().y + deltaY);
-        }
-    }
-
     // The files OpenFile's dialog picked, once it has closed: Linux's stays open beside the loop
     void takePickedFiles()
     {
@@ -1252,35 +845,6 @@ private:
         if (files.has_value()) {
             Ui::Action::openPickedFiles(*this, *files);
         }
-    }
-
-    // Expire an active temp status: restore the saved real text once the
-    // duration elapses. hasTempStatus() reports whether one is still showing.
-    void checkTempStatusExpiry()
-    {
-        if (!m_tempStatusText.empty() && Common::Time::now() >= m_tempStatusExpiry) {
-            m_tempStatusText.clear();
-            // Restore real status text
-            m_resManager.setStatusText(m_lastStatusText);
-            m_windowManager.requestContentRefresh();
-        }
-    }
-
-    /**
-     * @brief Helper to destroy popup and cleanup state
-     * @param syncDisplay If true, sync with X server to ensure window is removed before returning
-     */
-    void destroyPopup(bool syncDisplay = false)
-    {
-        traceMenuHover("list destroyed", m_openMenuId);
-        m_windowManager.destroyPopup(syncDisplay);
-
-        m_openMenuId     = Ui::INVALID_ID;
-        m_rowMenuElement = Ui::INVALID_ID;
-        m_resManager.clearActiveMenu();
-        m_windowManager.requestContentRefresh();
-        // Last, once no menu is open: a hover then switches to no other
-        m_windowManager.rehover();
     }
 
     // A key while the Ctrl+Tab list is open, Ctrl held: the key res binds to OpenTabSwitcher
@@ -1293,20 +857,20 @@ private:
     {
         if (!event.key.modifiers.has(Ui::Window::KeyModifier::Control)) {
             if (keyStr == "Escape") {
-                cancelTabSwitcher();
+                m_tabSwitcher.cancel();
                 return true;
             }
             commitTabSwitcher();
             return false;
         }
         if (keyStr == "Ctrl+Down") {
-            cycleTabSwitcher(1);
+            m_tabSwitcher.cycle(1);
         } else if (keyStr == "Ctrl+Up") {
-            cycleTabSwitcher(-1);
+            m_tabSwitcher.cycle(-1);
         } else if (keyStr == "Ctrl+Return") {
             commitTabSwitcher();
         } else if (keyStr == "Ctrl+Escape") {
-            cancelTabSwitcher();
+            m_tabSwitcher.cancel();
         } else {
             for (const Ui::intent_t & intent : m_context.mapKey(normalizeKeyString(keyStr)).intents) {
                 if (intent.actionKey == Ui::Action::OPEN_TAB_SWITCHER) {
@@ -1328,79 +892,14 @@ private:
                                        m_resManager.tabBar().count());
     }
 
-    // The Ctrl+Tab list's highlight on the row the pointer is over, when it is over one - the one
-    // Ctrl going up takes: on each move, on letting go of its thumb, and on a wheel turn that moved
-    // the rows under the pointer. Never on the keys' steps, which pick the row themselves
-    void followTabSwitcherHover()
-    {
-        if (!m_tabSwitch.isShown()) {
-            return;
-        }
-        const std::optional<std::size_t> row = m_windowManager.tabSwitcherHoveredRow();
-        if (row.has_value() && row.value() != m_tabSwitch.selectedRow()) {
-            m_tabSwitch.select(row.value());
-            m_windowManager.setTabSwitcherSelection(row.value());
-        }
-    }
-
-    // The Ctrl+Tab list goes up: a row per tab, as TabBar holds them
-    void showTabSwitcher()
-    {
-        m_tabSwitch.show();
-        std::vector<Ui::tab_t> rows;
-        rows.reserve(m_tabSwitch.ids().size());
-        for (const id_t id : m_tabSwitch.ids()) {
-            m_resManager.tabBar().visit(id, [&rows](const Ui::tab_t & tab) { rows.emplace_back(tab); });
-        }
-        m_windowManager.openTabSwitcher(std::move(rows), m_tabSwitch.selectedRow());
-    }
-
-    // The Ctrl+Tab list after a tab closed from it: a row per tab the host has left, the
-    // highlight on the row it stood on, opened again over itself; taken down with none left
-    void refreshTabSwitcher()
-    {
-        m_tabSwitch.setIds(m_resManager.tabBar().recentIds());
-        if constexpr (Ui::Render::Popup::TAB_SWITCHER_DEBUG) {
-            std::cout << "[TabSwitch] a tab closed from it: " << m_tabSwitch.ids().size() << " left, row "
-                      << m_tabSwitch.selectedRow() << " highlighted" << std::endl;
-        }
-        if (m_tabSwitch.isShown()) {
-            showTabSwitcher();
-        } else {
-            m_windowManager.closeTabSwitcher();
-        }
-    }
-
     // Switches to what the Ctrl+Tab list has highlighted, as a click on its tab does -
     // nothing for the active one, or one closed since it opened
     void commitTabSwitcher()
     {
-        const id_t selectedId = m_tabSwitch.selectedId();
-        if constexpr (Ui::Render::Popup::TAB_SWITCHER_DEBUG) {
-            std::cout << "[TabSwitch] switching to row " << m_tabSwitch.selectedRow() << ", tab " << selectedId
-                      << std::endl;
+        const id_t tabId = m_tabSwitcher.takeChosenId();
+        if (tabId != Ui::INVALID_ID) {
+            setActiveTab(tabId);
         }
-        cancelTabSwitcher();
-        const Ui::TabBar & tabBar = m_resManager.tabBar();
-        if (selectedId != tabBar.activeId() && tabBar.contains(selectedId)) {
-            setActiveTab(selectedId);
-        }
-    }
-
-    // Takes the Ctrl+Tab list down, unswitched
-    void cancelTabSwitcher()
-    {
-        if (!m_tabSwitch.isOpen()) {
-            return;
-        }
-        if constexpr (Ui::Render::Popup::TAB_SWITCHER_DEBUG) {
-            const Ui::Window::Event & event = m_windowManager.currentEvent();
-            std::cout << "[TabSwitch] closed on event type " << static_cast<int>(event.type)
-                      << " list=" << event.isPopupEvent << " child=" << event.childWindowId << " at " << event.mouse.x
-                      << "," << event.mouse.y << " key='" << event.toShortcutString() << "'" << std::endl;
-        }
-        m_tabSwitch.close();
-        m_windowManager.closeTabSwitcher();
     }
 
     void handleKeyPress(const Ui::Window::Event & event)
@@ -1417,22 +916,22 @@ private:
         }
 
         // The Ctrl+Tab list's keys come before every other while it is open
-        if (m_tabSwitch.isOpen() && handleTabSwitcherKey(event, keyStr)) {
+        if (m_tabSwitcher.isOpen() && handleTabSwitcherKey(event, keyStr)) {
             return;
         }
 
         // Dialog keyboard navigation (Escape, Return, Left, Right)
-        if (m_windowManager.hasDialog()) {
+        if (m_windowManager.dialog().isOpen()) {
             if (keyStr == "Escape" || keyStr == "Return" || keyStr == "Left" || keyStr == "Right") {
-                m_windowManager.dialogKeyPress(keyStr);
+                m_windowManager.dialog().keyPress(keyStr);
                 return;
             }
             // Let global shortcuts (Ctrl+R, Ctrl+Q, etc.) pass through
         }
 
         // Escape closes an open popup menu (no dialog is showing here).
-        if (keyStr == "Escape" && m_openMenuId != Ui::INVALID_ID) {
-            closePopupMenu();
+        if (keyStr == "Escape" && m_menuBar.isOpen()) {
+            m_menuBar.close();
             return;
         }
 
@@ -1469,236 +968,6 @@ private:
         return result;
     }
 
-    void handleMenuHover(id_t menuId)
-    {
-        // The newest hover is the one owed: one held off before it is dropped
-        m_heldMenuId = Ui::INVALID_ID;
-
-        // One read of the menu where it is: an unknown id reads as an enabled menu with no
-        // action, as an empty one does
-        bool isActionMenu = false;
-        bool isEnabled    = true;
-        m_resManager.visitMenuItem(menuId, [&isActionMenu, &isEnabled](const Ui::Res::Type::menu_t & menu) {
-            isActionMenu = !menu.actionKey.empty();
-            isEnabled    = menu.enabled;
-        });
-
-        // Skip action menus (icon buttons with no popup)
-        if (isActionMenu) {
-            traceMenuHover("skipped, an action button", menuId);
-            return;
-        }
-
-        // A disabled top menu has no usable dropdown: skip it. Leave the menu
-        // state untouched - moving across a disabled menu keeps the currently-open
-        // popup open (so moving back to it finds it still open) and never opens a
-        // dropdown of its own.
-        if (!isEnabled) {
-            traceMenuHover("skipped, disabled", menuId);
-            return;
-        }
-
-        // If no menu is currently open, hovering should NOT open a popup --
-        // a click is required to open the first menu. Just remember hovered id.
-        if (m_openMenuId == Ui::INVALID_ID && !m_menuSwitchPending) {
-            if (m_hoveredMenuId != menuId) {
-                if constexpr (SHELL_DEBUG) {
-                    std::cout << "[Shell] Hovered menu (no popup open): " << menuId << std::endl;
-                }
-                m_hoveredMenuId = menuId;
-            }
-            traceMenuHover("no list open, nothing to switch", menuId);
-            return;
-        }
-
-        // Don't switch to the same menu
-        if (m_openMenuId == menuId) {
-            traceMenuHover("already open", menuId);
-            return;
-        }
-
-        // A dock row's menu is not part of the bar: sweeping the pointer across the
-        // bar must not trade it for one of the bar's dropdowns
-        if (m_rowMenuElement != Ui::INVALID_ID) {
-            traceMenuHover("skipped, a row's menu is open", menuId);
-            return;
-        }
-
-        // Don't switch immediately after activation -- wait one render pass
-        // to avoid destroying a popup that was just created this frame. Nor while a
-        // switch waits for its frame. Either way the hover is held, and replayHeldHover
-        // asks again once nothing holds it: a pointer resting on the button sends no more
-        if (m_menuJustActivated || m_menuSwitchPending) {
-            m_heldMenuId = menuId;
-            traceMenuHover("held", menuId);
-            return;
-        }
-        traceMenuHover("switch started", menuId);
-
-        // Always defer menu switching when hovering:
-        // 1. Destroy old popup now (so the area it covered can be redrawn)
-        // 2. Mark main window for re-render
-        // 3. Create new popup AFTER render (via deferred mechanism)
-        // This ensures corner capture sees the properly rendered background.
-        destroyPopup(true); // Destroy old popup, triggers requestContentRefresh
-        m_menuSwitchPending = true;
-        m_windowManager.subscribe().defer([this, menuId]() {
-            // Stopped while it waited: the app lost the focus
-            if (!m_menuSwitchPending) {
-                traceMenuHover("switch stopped", menuId);
-                return;
-            }
-            if constexpr (SHELL_DEBUG) {
-                std::cout << "[Shell] Committing deferred menu switch to: " << menuId << std::endl;
-            }
-            createMenuPopup(menuId);
-            m_menuSwitchPending = false;
-            m_menuJustActivated = true;
-            traceMenuHover("switch made its list", menuId);
-        });
-    }
-
-    // A menu-bar title that opens a list, not an action button (actionKey): it reacts to the
-    // press, as every OS's menu bar does - doc/api/shell-actions.md "Menu bar behaviour" -
-    // and its release does nothing. Whatever else is pressed acts on the release
-    [[nodiscard]] bool isListTitle(const Ui::Render::element_event_t & event) const
-    {
-        return event.type == Ui::Render::UiElementType::MenuButton && event.id != Ui::INVALID_ID
-            && m_resManager.actionKeyFor(event.id).empty();
-    }
-
-    // One line of the menu-hover trace: what happened, to which menu, and the state that
-    // decides the next hover
-    void traceMenuHover(std::string_view what, id_t menuId) const
-    {
-        if constexpr (MENU_HOVER_DEBUG) {
-            const auto nameOf = [this](id_t id) {
-                return id == Ui::INVALID_ID ? std::string { "-" } : m_resManager.findMenuItem(id).label;
-            };
-            std::cout << "[MenuHover] " << what << ": menu=" << nameOf(menuId) << " open=" << nameOf(m_openMenuId)
-                      << " hovered=" << nameOf(m_hoveredMenuId) << " held=" << nameOf(m_heldMenuId)
-                      << " pending=" << m_menuSwitchPending << " justActivated=" << m_menuJustActivated << std::endl;
-        }
-    }
-
-    // A hover handleMenuHover held, once nothing holds a switch off, if the pointer is still
-    // on that button: resting there it sends nothing more, so the shell asks again
-    void replayHeldHover()
-    {
-        if (m_heldMenuId == Ui::INVALID_ID || m_menuJustActivated || m_menuSwitchPending) {
-            return;
-        }
-        const id_t menuId = std::exchange(m_heldMenuId, Ui::INVALID_ID);
-        if (m_windowManager.isPointerIn(m_windowManager.elementBound(menuId))) {
-            traceMenuHover("replaying a held hover", menuId);
-            handleMenuHover(menuId);
-        } else {
-            traceMenuHover("dropped a held hover, the pointer moved off", menuId);
-        }
-    }
-
-    // A top-bar dropdown, hung under its menu button
-    void createMenuPopup(id_t menuId)
-    {
-        // Under its button where the layout put it - empty before the first layout, the
-        // window's top-left then
-        const Ui::Res::Type::bound_t & button = m_windowManager.elementBound(menuId);
-
-        const bool isMenu = m_resManager.visitMenuItem(menuId, [this, &button](const Ui::Res::Type::menu_t & menu) {
-            if constexpr (SHELL_DEBUG) {
-                std::cout << "[Shell] Popup position: menuId=" << menu.id << " X=" << button.x
-                          << " Y=" << button.y + button.h << std::endl;
-            }
-            showMenuPopup(menu, button.x, button.y + button.h);
-        });
-        if (!isMenu) {
-            std::cerr << "[Shell] Menu not found: " << menuId << std::endl;
-        }
-    }
-
-    // Everything a popup menu needs once its anchor is known, for a top-bar dropdown
-    // and a dock row's menu alike: the anchor is the popup's top-left corner in
-    // main-window CSS px, which is where the two differ and all they differ in
-    void showMenuPopup(const Ui::Res::Type::menu_t & menu, fpx_t anchorXCss, fpx_t anchorYCss)
-    {
-        // Destroy any existing popup before creating a new one
-        // Use syncDisplay=true to ensure old popup is removed before corner capture
-        if (m_openMenuId != Ui::INVALID_ID) {
-            destroyPopup(true);
-        }
-
-        m_openMenuId = menu.id;
-        m_resManager.setActiveMenu(menu.id);
-        m_windowManager.requestContentRefresh(); // Rebuild layout with active menu highlight next frame
-        if constexpr (SHELL_DEBUG) {
-            std::cout << "[Shell] Creating popup for menu: " << menu.id << std::endl;
-        }
-
-        // Where the main window stands, for handlePopupMove to notice it move
-        m_windowManager.mainWindowScreenPosition(m_lastWindowX, m_lastWindowY);
-
-        // The anchor on the pixel its edge is drawn from (toPhysEdge), the size through
-        // toPhysRound: both whole CSS px first, so they stay divisible by g_config.scale -
-        // integer NS points on macOS (bsf=2). Fractional physical px produce a half-point NS
-        // frame; the CAShapeLayer mask then snaps to integer points while GL renders at the
-        // fractional edge, leaving a 1-px hairline at the top/right
-        const fpx_t popupWidth = toPhysRound(m_windowManager.menuPopupCssWidth(menu.items));
-
-        const fpx_t contentCssH = menuPopupCssHeight(menu);
-        const fpx_t popupHeight = toPhysRound(contentCssH);
-
-        if constexpr (SHELL_DEBUG) {
-            std::cout << "[Shell] Popup height calc: contentCssH=" << contentCssH << " scaled=" << popupHeight
-                      << std::endl;
-        }
-
-        const Ui::Res::Type::border_t popupRadii = m_resManager.layout().topMenuDropdown.border.scaled(g_config.scale);
-
-        const Ui::Res::Type::bound_t popupBound = { .x = toPhysEdge(anchorXCss),
-                                                    .y = toPhysEdge(anchorYCss),
-                                                    .w = popupWidth,
-                                                    .h = popupHeight };
-        if (!m_windowManager.createPopup(popupBound, popupRadii, m_resManager.theme().second.bg)) {
-            std::cerr << "[Shell] Failed to create popup window" << std::endl;
-            return;
-        }
-        // Made by createPopup above, so there
-        Ui::Window::Popup::PopupWindow & popupWindow = *m_windowManager.popupWindow();
-
-        if constexpr (SHELL_DEBUG) {
-            std::cout << "[Shell] Popup size: " << popupWidth << "x" << popupHeight << std::endl;
-        }
-
-        // Initialize renderer with corner capture (renders main window, captures corners)
-        m_windowManager.initPopupRenderer(menu);
-
-        // Render first frame before showing to avoid visible flat/unrounded flash.
-        // Composited, initPopupRenderer's recapture already drew it into the main frame
-        if (!g_config.isCompositing) {
-            if (m_windowManager.renderPopup()) {
-                popupWindow.swapBuffers();
-            }
-            popupWindow.show();
-        }
-
-        // Mark that this popup was just activated; we want to wait one render pass
-        // before honoring hover-triggered switches to avoid quick reentrancy.
-        m_menuJustActivated = true;
-
-        // Restore main window GL context after popup setup
-        // (popup creation switches to popup context)
-        m_windowManager.mainWindow().makeCurrent();
-
-        if constexpr (SHELL_DEBUG) {
-            std::cout << "[Shell] Popup renderer initialized successfully" << std::endl;
-        }
-    }
-
-    [[nodiscard]] fpx_t menuPopupCssHeight(const Ui::Res::Type::menu_t & menu) const
-    {
-        return Ui::Res::Store::menuHeightOf(menu.items, m_resManager.popup());
-    }
-
     // Map a resolved main-UI click to intents via the Context facade and execute
     // them, unless the element is chrome the framework services itself.
     void dispatchClick(const Ui::Render::element_event_t & click)
@@ -1713,7 +982,7 @@ private:
             return;
         }
 
-        const Ui::result_t result = m_context.mapClick(click, m_openMenuId);
+        const Ui::result_t result = m_context.mapClick(click, m_menuBar.openId());
         for (const Ui::intent_t & intent : result.intents) {
             execute(intent);
         }
@@ -1770,17 +1039,6 @@ private:
     // themselves are the IChromeCommands overrides in the public section
     void execute(const Ui::intent_t & intent) { Ui::routeIntent(intent, *this); }
 
-    // The open row menu's element when a press at these main-window px lands on its
-    // row, INVALID otherwise. Asked before the popup is destroyed, which forgets it
-    [[nodiscard]] id_t rowMenuUnder(int x, int y) const
-    {
-        if (m_rowMenuElement == Ui::INVALID_ID) {
-            return Ui::INVALID_ID;
-        }
-        const Ui::Res::Type::bound_t & row = m_windowManager.elementBound(m_rowMenuElement);
-        return row.contains(toCss(x), toCss(y)) ? m_rowMenuElement : Ui::INVALID_ID;
-    }
-
     void handleResize()
     {
         if constexpr (SHELL_DEBUG) {
@@ -1793,7 +1051,7 @@ private:
         // Force EGL surface to resize by doing a
         // swap - on Mesa/EGL X11 the surface resize
         // is deferred until eglSwapBuffers.
-        m_windowManager.flushMainWindow();
+        m_windowManager.swapAfterResize();
 
         // Rebuild UI for new dimensions and render+swap synchronously.
         // Without this, the next main swap happens in the next main-loop iteration,
@@ -1806,11 +1064,8 @@ private:
         m_windowManager.renderAll();
 
         // Recreate the popup at its new anchor (preserving submenu + active item,
-        // same as a resource reload) - but only root-parented popups, since a
-        // child popup is re-anchored by the server and recreating it would blink.
-        if (m_openMenuId != Ui::INVALID_ID && m_windowManager.hasPopup() && !m_windowManager.popupFollowsParent()) {
-            reopenActivePopup();
-        }
+        // same as a resource reload)
+        m_menuBar.reopenAfterResize();
 
         m_pendingResize = false;
     }

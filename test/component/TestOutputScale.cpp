@@ -200,8 +200,8 @@ TEST_F(OutputScaleTest, AListOpenedUnderAScaleFactorStandsAtItsOutputsScale)
     Ui::g_config.scale          = scaleBefore * 2.0F;
     m_shell.openPopup(m_menuIds.at(0));
     Ui::g_config.scale = scaleBefore;
-    ASSERT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
-    EXPECT_EQ(m_shell.windowManager().popupWindow()->dpi(), mainWindow().dpi());
+    ASSERT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
+    EXPECT_EQ(m_shell.windowManager().menus().window()->dpi(), mainWindow().dpi());
 }
 
 // A list open as its output's scale changes is made again at it, the same list: left as it was it
@@ -212,18 +212,18 @@ TEST_F(OutputScaleTest, AListOpenAsTheOutputsScaleChangesIsMadeAgainAtIt)
         GTEST_SKIP() << "no title opens a list here";
     }
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 1) {
-            m_shell.openPopup(m_menuIds.at(0));
-        } else if (pass == 2) {
-            mainWindow().handleOutputScale(m_scaleBefore * 2);
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 1) {
+                m_shell.openPopup(m_menuIds.at(0));
+            } else if (pass == 2) {
+                mainWindow().handleOutputScale(m_scaleBefore * 2);
+            }
+        },
+        m_shell);
     EXPECT_EQ(mainWindow().dpi(), m_scaleBefore * 2 * 96) << m_read;
     EXPECT_EQ(openMenuId(), m_menuIds.at(0)) << m_read;
-    ASSERT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
-    EXPECT_EQ(m_shell.windowManager().popupWindow()->dpi(), mainWindow().dpi()) << m_read;
+    ASSERT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
+    EXPECT_EQ(m_shell.windowManager().menus().window()->dpi(), mainWindow().dpi()) << m_read;
 }
 
 // A popup - a list, a dialog, the tooltip - made under a factor above 1: the size it asks in

@@ -50,16 +50,16 @@ void openTabSwitcher(Host & host, const std::string & arg)
         host.cycleTabSwitcher(delta);
         return;
     }
-    if (host.windowManager().hasDialog()) {
+    if (host.windowManager().dialog().isOpen()) {
         return;
     }
     if (host.isPopupOpen()) {
         host.closePopupMenu();
     }
     host.tabSwitch().open(
-    host.resManager().tabBar().recentIds(),
-    delta,
-    Common::Time::now() + std::chrono::milliseconds(host.resManager().input().tabSwitcherDelayMs));
+        host.resManager().tabBar().recentIds(),
+        delta,
+        Common::Time::now() + std::chrono::milliseconds(host.resManager().input().tabSwitcherDelayMs));
 }
 
 } // namespace Ui::Action

@@ -60,7 +60,7 @@ class ThemeStore final {
     std::string            m_themeMode = "dark";
     // Theme key -> {dark variant, light variant}; each variant = {cl-main, bg-main}.
     std::unordered_map<std::string, std::pair<Ui::Res::Type::color_pair_t, Ui::Res::Type::color_pair_t>>
-    m_themePreviewColors;
+        m_themePreviewColors;
     // Keys of the theme file's "host" block, in the order registered: what to do with
     // each value, and the one last handed over
     Ui::LinkedMap<std::string, Ui::Res::Type::host_param_t> m_hostParams;
@@ -92,8 +92,8 @@ public:
     {
         const auto it = m_themePreviewColors.find(key);
         return it != m_themePreviewColors.end()
-             ? it->second
-             : std::pair<Ui::Res::Type::color_pair_t, Ui::Res::Type::color_pair_t> {};
+                 ? it->second
+                 : std::pair<Ui::Res::Type::color_pair_t, Ui::Res::Type::color_pair_t> {};
     }
 
     // Raw setters for session restore: set the value without reloading (loadAll

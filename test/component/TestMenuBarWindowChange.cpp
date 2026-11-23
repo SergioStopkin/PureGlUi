@@ -129,13 +129,13 @@ protected:
     void inFirstPass(action_t action)
     {
         PureGlUi::runPasses(
-        [this, &action](int pass) {
-            m_passes = pass + 1;
-            if (pass == 0) {
-                action();
-            }
-        },
-        *m_shell);
+            [this, &action](int pass) {
+                m_passes = pass + 1;
+                if (pass == 0) {
+                    action();
+                }
+            },
+            *m_shell);
     }
 
     // A press on the first title in the loop's first pass, before and after done to the
@@ -157,7 +157,7 @@ protected:
         dialog.title  = "focus";
         dialog.width  = 300.0F;
         dialog.height = 200.0F;
-        m_shell->windowManager().openDialog(dialog);
+        m_shell->windowManager().dialog().open(dialog);
     }
 
 #ifdef __APPLE__
@@ -379,18 +379,18 @@ TEST_F(MenuBarWindowChangeTest, AListSwitchUnderWayStopsAsTheAppLosesTheFocus)
     subscribe.add(Ui::idOf(Ui::IdKind::Event, Ui::Window::EventType::MouseMove),
                   subscriber,
                   [this, &hasSwitchStarted, &isFocusLost] {
-                      if (!hasSwitchStarted && !m_shell->windowManager().hasPopup()) {
+                      if (!hasSwitchStarted && !m_shell->windowManager().menus().isOpen()) {
                           hasSwitchStarted = true;
                           isFocusLost      = PureGlUi::setActive(mainWindow(), false);
                       }
                   });
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 2) {
-            PureGlUi::postAt(*m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
-        }
-    },
-    *m_shell);
+        [this](int pass) {
+            if (pass == 2) {
+                PureGlUi::postAt(*m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
+            }
+        },
+        *m_shell);
     subscribe.remove(subscriber);
     (void)PureGlUi::setActive(mainWindow(), true);
 
@@ -412,14 +412,14 @@ TEST_F(MenuBarWindowChangeTest, ADialogStaysAsTheAppLosesTheFocus)
     }
     openDialog();
     Ui::Window::WindowManager & windowManager = m_shell->windowManager();
-    ASSERT_NE(windowManager.dialogWindow(), nullptr);
-    const Ui::id_t idBefore = windowManager.dialogWindow()->subscribeId();
+    ASSERT_NE(windowManager.dialog().window(), nullptr);
+    const Ui::id_t idBefore = windowManager.dialog().window()->subscribeId();
     if (!loseFocus()) {
         GTEST_SKIP() << NO_FOCUS_LOSS;
     }
     EXPECT_NE(m_read.find("focuslost;"), std::string::npos) << m_read;
-    ASSERT_NE(windowManager.dialogWindow(), nullptr) << m_read;
-    EXPECT_EQ(windowManager.dialogWindow()->subscribeId(), idBefore) << m_read;
+    ASSERT_NE(windowManager.dialog().window(), nullptr) << m_read;
+    EXPECT_EQ(windowManager.dialog().window()->subscribeId(), idBefore) << m_read;
 }
 
 // Negative: with nothing open there is nothing to close, and nothing appears
@@ -436,8 +436,8 @@ TEST_F(MenuBarWindowChangeTest, NothingOpenStaysThatWayAsTheAppLosesTheFocus)
     }
     EXPECT_NE(m_read.find("focuslost;"), std::string::npos) << m_read;
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
-    EXPECT_FALSE(m_shell->windowManager().hasPopup()) << m_read;
-    EXPECT_EQ(m_shell->windowManager().dialogWindow(), nullptr) << m_read;
+    EXPECT_FALSE(m_shell->windowManager().menus().isOpen()) << m_read;
+    EXPECT_EQ(m_shell->windowManager().dialog().window(), nullptr) << m_read;
 }
 
 TEST_F(MenuBarWindowChangeTest, AListAndItsSubmenuCloseAsTheAppLosesTheFocus)
@@ -463,13 +463,13 @@ TEST_F(MenuBarWindowChangeTest, AListAndItsSubmenuCloseAsTheAppLosesTheFocus)
     }
     Ui::Window::WindowManager & windowManager = m_shell->windowManager();
     m_shell->openPopup(menuId);
-    windowManager.reopenSubmenu(parentId);
-    ASSERT_TRUE(windowManager.hasSubmenu());
+    windowManager.menus().reopenSubmenu(parentId);
+    ASSERT_TRUE(windowManager.menus().hasSubmenu());
     if (!loseFocus()) {
         GTEST_SKIP() << NO_FOCUS_LOSS;
     }
-    EXPECT_FALSE(windowManager.hasSubmenu()) << m_read;
-    EXPECT_FALSE(windowManager.hasPopup()) << m_read;
+    EXPECT_FALSE(windowManager.menus().hasSubmenu()) << m_read;
+    EXPECT_FALSE(windowManager.menus().isOpen()) << m_read;
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
 }
 
@@ -482,11 +482,11 @@ TEST_F(MenuBarWindowChangeTest, ARowsMenuClosesAsTheAppLosesTheFocus)
         GTEST_SKIP() << NO_FOCUS;
     }
     openRowMenu();
-    ASSERT_TRUE(m_shell->windowManager().hasPopup());
+    ASSERT_TRUE(m_shell->windowManager().menus().isOpen());
     if (!loseFocus()) {
         GTEST_SKIP() << NO_FOCUS_LOSS;
     }
-    EXPECT_FALSE(m_shell->windowManager().hasPopup()) << m_read;
+    EXPECT_FALSE(m_shell->windowManager().menus().isOpen()) << m_read;
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
 }
 
@@ -501,22 +501,22 @@ TEST_F(MenuBarWindowChangeTest, AListFollowsThePointerAfterARowsMenuClosedThisWa
         GTEST_SKIP() << NO_FOCUS;
     }
     openRowMenu();
-    ASSERT_TRUE(m_shell->windowManager().hasPopup());
+    ASSERT_TRUE(m_shell->windowManager().menus().isOpen());
     bool isFocusLost = false;
     PureGlUi::runPasses(
-    [this, &isFocusLost](int pass) {
-        if (pass == 1) {
-            isFocusLost = PureGlUi::setActive(mainWindow(), false);
-        } else if (pass == 3) {
-            // The press alone: were the row's menu still open over the title, a release would run
-            // the item under it, and a native dialog would hold the whole run
-            (void)PureGlUi::setActive(mainWindow(), true);
-            PureGlUi::postAt(*m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
-        } else if (pass == 5) {
-            PureGlUi::postAt(*m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
-        }
-    },
-    *m_shell);
+        [this, &isFocusLost](int pass) {
+            if (pass == 1) {
+                isFocusLost = PureGlUi::setActive(mainWindow(), false);
+            } else if (pass == 3) {
+                // The press alone: were the row's menu still open over the title, a release would run
+                // the item under it, and a native dialog would hold the whole run
+                (void)PureGlUi::setActive(mainWindow(), true);
+                PureGlUi::postAt(*m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
+            } else if (pass == 5) {
+                PureGlUi::postAt(*m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
+            }
+        },
+        *m_shell);
     if (!isFocusLost) {
         GTEST_SKIP() << NO_FOCUS_LOSS;
     }
@@ -537,15 +537,15 @@ TEST_F(MenuBarWindowChangeTest, APressOpensTheListTheFocusLossClosed)
     ASSERT_EQ(openMenuId(), m_menuIds.at(0));
     bool isFocusLost = false;
     PureGlUi::runPasses(
-    [this, &isFocusLost](int pass) {
-        if (pass == 1) {
-            isFocusLost = PureGlUi::setActive(mainWindow(), false);
-        } else if (pass == 3) {
-            (void)PureGlUi::setActive(mainWindow(), true);
-            PureGlUi::postAt(*m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
-        }
-    },
-    *m_shell);
+        [this, &isFocusLost](int pass) {
+            if (pass == 1) {
+                isFocusLost = PureGlUi::setActive(mainWindow(), false);
+            } else if (pass == 3) {
+                (void)PureGlUi::setActive(mainWindow(), true);
+                PureGlUi::postAt(*m_shell, m_menuIds.at(0), PureGlUi::postPointerPress);
+            }
+        },
+        *m_shell);
     if (!isFocusLost) {
         GTEST_SKIP() << NO_FOCUS_LOSS;
     }
@@ -567,21 +567,21 @@ TEST_F(MenuBarWindowChangeTest, AHoverOpensNothingAfterTheFocusLossClosedTheList
     ASSERT_EQ(openMenuId(), m_menuIds.at(0));
     bool isFocusLost = false;
     PureGlUi::runPasses(
-    [this, &isFocusLost](int pass) {
-        if (pass == 1) {
-            isFocusLost = PureGlUi::setActive(mainWindow(), false);
-        } else if (pass == 3) {
-            (void)PureGlUi::setActive(mainWindow(), true);
-            PureGlUi::postAt(*m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
-        }
-    },
-    *m_shell);
+        [this, &isFocusLost](int pass) {
+            if (pass == 1) {
+                isFocusLost = PureGlUi::setActive(mainWindow(), false);
+            } else if (pass == 3) {
+                (void)PureGlUi::setActive(mainWindow(), true);
+                PureGlUi::postAt(*m_shell, m_menuIds.at(1), PureGlUi::postPointerMove);
+            }
+        },
+        *m_shell);
     if (!isFocusLost) {
         GTEST_SKIP() << NO_FOCUS_LOSS;
     }
     EXPECT_NE(m_read.find("focuslost;"), std::string::npos) << m_read;
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
-    EXPECT_FALSE(m_shell->windowManager().hasPopup()) << m_read;
+    EXPECT_FALSE(m_shell->windowManager().menus().isOpen()) << m_read;
 }
 
 #ifdef __APPLE__
@@ -631,7 +631,7 @@ TEST_F(MenuBarWindowChangeTest, QuitClosesTheWindowWithADialogOpen)
         GTEST_SKIP() << NO_FOCUS;
     }
     openDialog();
-    ASSERT_NE(m_shell->windowManager().dialogWindow(), nullptr);
+    ASSERT_NE(m_shell->windowManager().dialog().window(), nullptr);
     expectQuitCloses();
 }
 

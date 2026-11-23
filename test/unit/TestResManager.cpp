@@ -176,10 +176,10 @@ TEST(ResManager, RegisterPersistedAppearsInSession)
     rm.loadAll();
 
     rm.registerPersisted(
-    SectionKey::Paths,
-    "probeKey",
-    [] { return std::string("probeVal"); },
-    [](const std::string &) { });
+        SectionKey::Paths,
+        "probeKey",
+        [] { return std::string("probeVal"); },
+        [](const std::string &) { });
 
     const std::string session = rm.serializeSession();
     EXPECT_NE(session.find("probeKey"), std::string::npos);

@@ -32,15 +32,12 @@
 namespace Ui::Window {
 
 /**
- * @brief CRTP base class for platform-specific windows
+ * @brief Base class for platform-specific windows
  *
  * Provides common members and implementations shared across all platforms.
- * Derived classes (Platform::X11Window, Platform::Win32Window, Platform::MacOsWindow) implement
- * platform-specific Ui::IWindow methods.
- *
- * @tparam Derived The derived platform-specific window class
+ * Derived classes (Platform::X11Window, Platform::WaylandWindow, Platform::Win32Window,
+ * Platform::MacOsWindow) implement the platform-specific Ui::IWindow methods and its hooks.
  */
-template <typename Derived>
 class WindowBase : public Ui::IWindow, private Common::NonCopyable {
 public:
     ~WindowBase() override
@@ -94,15 +91,11 @@ public:
     {
         m_bgColor = color;
 
-        if (derived().isValid()) {
-            derived().makeCurrent();
+        if (isValid()) {
+            makeCurrent();
             auto rgba = m_bgColor.toGLRGBA();
             glClearColor(rgba.at(0), rgba.at(1), rgba.at(2), rgba.at(3));
-            // Only a platform with a native background pixel to match has this hook, so the
-            // base declares none for it to shadow
-            if constexpr (requires { derived().updateNativeBackground(); }) {
-                derived().updateNativeBackground();
-            }
+            updateNativeBackground();
             requestRender();
         }
     }
@@ -111,8 +104,8 @@ public:
     {
         m_rounded      = enabled;
         m_cornerRadius = radius;
-        if (derived().isValid()) {
-            derived().applyRoundedCorners();
+        if (isValid()) {
+            applyRoundedCorners();
         }
     }
 
@@ -150,10 +143,6 @@ public:
     }
 
 protected:
-    // CRTP helper to access derived class
-    [[nodiscard]] Derived &       derived() { return static_cast<Derived &>(*this); }
-    [[nodiscard]] const Derived & derived() const { return static_cast<const Derived &>(*this); }
-
     // -------- Common members --------
 
     // Subscribe ownership (RAII: destructor calls remove)
@@ -177,16 +166,19 @@ protected:
     // false on software-renderer fallback (currently only Platform::MacOsWindow).
     bool m_isHardwareGl = true;
 
-private:
-    // Only Derived builds its base: a WindowBase<A> under some B would cast *this
-    // to the wrong type in derived()
+    // Only a platform window builds its base
     explicit WindowBase(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID)
         : m_subscribe(subscribe)
         , m_subscribeId(subscribeId)
     {
     }
 
-    friend Derived;
+    // The rounded-corner state applied to the native window, once it is valid
+    virtual void applyRoundedCorners() = 0;
+
+    // The background colour matched in the native window's own background pixel, where the
+    // platform has one (X11); a no-op elsewhere
+    virtual void updateNativeBackground() { }
 };
 
 } // namespace Ui::Window

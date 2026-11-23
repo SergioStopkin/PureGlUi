@@ -34,24 +34,28 @@ Ui::Window::RenderQueue & renderQueue();
 [[nodiscard]] fpx_t windowWidth() const;
 [[nodiscard]] fpx_t windowHeight() const;
 [[nodiscard]] Ui::Res::Type::bound_t viewportBound() const;   // rect left for content after chrome + docks
+[[nodiscard]] MenuPopups &       menus();       // the menu and its submenu
+[[nodiscard]] DialogPopup &      dialog();      // the modal dialog
+[[nodiscard]] TabSwitcherPopup & tabSwitcher(); // the Ctrl+Tab list's window
+void swapAfterResize();                          // the main window's EGL surface flushed to a new size
 ```
 
 App-facing `std::function` setters (host hooks):
 
 ```cpp
-void setOnDialogClose(Ui::task_fn_t callback);
-void setDialogContentResolver(std::function<std::wstring(const std::string &)> resolver);
 void setOnElementHover(std::function<void(Ui::Render::UiElementType, id_t)> cb);
 void setDoubleClickConfig(uint32_t intervalMs, int distancePx);
 void setOnRowValue(std::function<void(id_t rowId, fpx_t ratio)> callback);
+void dialog().setOnClose(Ui::task_fn_t callback);
+void dialog().setContentResolver(std::function<std::wstring(const std::string &)> resolver);
 ```
 
-- `setOnDialogClose` - fired (deferred) when a dialog closes; the host then reads `lastDialogAction()` / `lastDialogData()`.
-- `setDialogContentResolver` - resolves dialog content placeholders (e.g. `%VERSION%`/`%CPU%`) to runtime values; if unset the locale string is shown verbatim.
+- `dialog().setOnClose` - fired (deferred) when a dialog closes; the host then reads `dialog().lastAction()` / `dialog().lastData()`.
+- `dialog().setContentResolver` - resolves dialog content placeholders (e.g. `%VERSION%`/`%CPU%`) to runtime values; if unset the locale string is shown verbatim. `Shell` installs `resolvedContentOf`.
 - `setOnElementHover` - forwarded to the main `UiRenderer`; reports `(elementType, id)` on hover.
 - `setDoubleClickConfig` - forwards double-click interval/distance thresholds to the platform event handler (host supplies these from its viewport config).
 - `setOnRowValue` - a dock slider row moved. This is a hook rather than an intent because a drag is a continuous stream, not a discrete request: the host gets `(rowId, ratio)` on every step and decides what the fraction means. `rowId` is the host's own id, which is why host row ids must be unique across docks. A host normally reaches this through `Ui::Shell::setOnDockRowValue`, which forwards here - see [shell-actions.md](shell-actions.md).
-- `setOnTabMoved` - a tab dragged along the strip moved: `(tabId, beforeId)`, the tab and the one it now stands right before (`INVALID_ID` the end), a call per jump. A hook for the same reason as a slider's. A left press on a tab holds it (`m_tabDragId`, `drag_track_t`) and goes on as a press, so a release short of the click threshold (`layout.json` `dockDefaults.clickThreshold`, the dock grip's) is still its click; past it the press is no click any more (the main renderer's pressed state cleared), the pointer is taken as a dock drag takes it, and the tab is drawn under the pointer (`UiRenderer::holdTab`, its left edge from the drag's track, begun at the tab's left), over its neighbours. `tabMoveOf` (`window/tabmoveof.h`, pure, unit-tested) says where it goes once it is drawn `ResManager::tabSwapAt()` of the way over a neighbour - `animation.json`'s workspace-tab `swap-at`, half by default, its leading edge at the neighbour's middle; Chrome's live reorder - measured on the tab as drawn, not on the pointer, so where it was grabbed does not move the swap. The neighbour passed glides into the place it leaves; let go (`releaseTab`), the tab glides into its own. `keepGliding`, which `Shell::run` calls every pass, asks for a frame while anything glides. It reads the strip's order now (`TabBar::rightIdOf`/`leftIdOf`, no wrapping) against the last layout's places, and a neighbour still standing on the wrong side of the tab's place is not passed, so a jump not redrawn yet is neither made twice nor taken back; a neighbour scrolled off the strip is never passed. The release ends it with no click and hands the pointer back (`rehover`). The host applies each jump to its order and projects the tabs back; the drag never activates the tab. Reached through `Ui::Shell::setOnTabMoved`.
+- `setOnTabMoved` - a tab dragged along the strip moved: `(tabId, beforeId)`, the tab and the one it now stands right before (`INVALID_ID` the end), a call per jump. A hook for the same reason as a slider's. A left press on a tab holds it (`TabDrag`, `window/tabdrag.h`: its `m_tabId` and a `drag_track_t`) and goes on as a press, so a release short of the click threshold (`layout.json` `dockDefaults.clickThreshold`, the dock grip's) is still its click; past it the press is no click any more (the main renderer's pressed state cleared), the pointer is taken as a dock drag takes it, and the tab is drawn under the pointer (`UiRenderer::holdTab`, its left edge from the drag's track, begun at the tab's left), over its neighbours. `tabMoveOf` (`window/tabmoveof.h`, pure, unit-tested) says where it goes once it is drawn `ResManager::tabSwapAt()` of the way over a neighbour - `animation.json`'s workspace-tab `swap-at`, half by default, its leading edge at the neighbour's middle; Chrome's live reorder - measured on the tab as drawn, not on the pointer, so where it was grabbed does not move the swap. The neighbour passed glides into the place it leaves; let go (`releaseTab`), the tab glides into its own. `keepGliding`, which `Shell::run` calls every pass, asks for a frame while anything glides. It reads the strip's order now (`TabBar::rightIdOf`/`leftIdOf`, no wrapping) against the last layout's places, and a neighbour still standing on the wrong side of the tab's place is not passed, so a jump not redrawn yet is neither made twice nor taken back; a neighbour scrolled off the strip is never passed. The release ends it with no click and hands the pointer back (`rehover`). The host applies each jump to its order and projects the tabs back; the drag never activates the tab. Reached through `Ui::Shell::setOnTabMoved`.
 
 Dock content (the host projects rows the way it projects tabs):
 
@@ -73,16 +77,21 @@ void setCursor(Ui::Window::PointerShape shape);
 Content-surface registry (the host-facing seam) - see "Content surfaces + render queue" below:
 
 ```cpp
-void addContentSurface(id_t id, Ui::IWindow & window, Ui::IRenderer & pairing);
+void addContentSurface(id_t id, Ui::Window::Pairing & pairing);
 void removeContentSurface(id_t id);
 void setActiveContentSurface(id_t id);
 void setContentSurfaceReady(id_t id, bool isReady);
 void setContentPointer(id_t id, Ui::Window::PointerShape shape);
 [[nodiscard]] bool isContentReady(id_t id) const;
 [[nodiscard]] id_t childIdForHandle(Ui::Window::NativeWindowHandle handle) const;
+[[nodiscard]] std::optional<std::reference_wrapper<Ui::IWindow>>         contentWindow(id_t id) const;
+[[nodiscard]] std::optional<std::reference_wrapper<Ui::IWindow>>         activeContentWindow() const;
+[[nodiscard]] std::optional<std::reference_wrapper<Ui::Window::Pairing>> contentPairing(id_t id) const;
+[[nodiscard]] std::optional<std::reference_wrapper<Ui::Window::Pairing>> activeContentPairing() const;
 ```
 
-- `addContentSurface(id, window, pairing)` - register a host-owned surface. The coordinator wires its render request into the queue and positions it in the viewport. `window` and `pairing` must outlive the registration (non-owning). `id` is the surface's render-queue entry as it is, so it carries a host kind (`Ui::isHostId`); one that does not is logged.
+- `addContentSurface(id, pairing)` - register a host-owned surface by its connector's `Pairing` (`Connector::pairing()`), which carries its window. The coordinator wires its render request into the queue and positions it in the viewport. The pairing must outlive the registration (held by reference). `id` is the surface's render-queue entry as it is, so it carries a host kind (`Ui::isHostId`); one that does not is logged, and an id already registered is logged and refused.
+- `contentWindow(id)` / `contentPairing(id)` and their `active` forms - the surface's window and pairing, none for an id not registered.
 - `removeContentSurface(id)` - drop the entry and free its composite texture in the main GL context; clears the active surface if it was this one.
 - `setActiveContentSurface(id)` - make one surface visible/interactive; the others are hidden (windows overlap). In composite mode the surfaces stay offscreen and only the active one is repainted.
 - `setContentSurfaceReady(id, isReady)` - the host clears this while a model loads asynchronously so the render loop skips the surface (avoids empty-scene frames), and sets it once the load lands.
@@ -107,37 +116,51 @@ void apply(Ui::Res::Type::changes_t changed); // push resource changes to all wi
 
 `WindowManager` implements the `Ui::IEventApp` pointer-event sink (`onMouseMove`/`onMousePress`/`onMouseRelease`/`onMouseLeave`/`onScroll`, plus child-routed overloads taking an `id_t childId`). Incoming OS events flow `pollEvent -> dispatchEvent`, which classifies the source (dialog is modal and wins; then popup/submenu; then main/content surface), rebases coordinates, routes to the right sink, and finally notifies subscribers via `Ui::idOf(Ui::IdKind::Event, EventType)` - the shell subscribes there for its policy decisions (menu management, shortcuts, popup close). Dock grip drag is captured exclusively until mouse-up.
 
-Popup / submenu / dialog orchestration is a large internal surface (`createPopup`/`initPopupRenderer`/`destroyPopup`, `createSubmenu`/`onSubmenuHover`/`destroySubmenu`, `openDialog`/`closeDialog`/`confirmDialog`/`dismissDialog`/`dialogKeyPress`). These are driven by `Ui::Shell`; hosts use the shell API rather than calling them directly. Query helpers include `hasPopup()`, `popupFollowsParent()`, `hasSubmenu()`, `hasDialog()`, `lastDialogAction()`, `lastDialogData()`.
+`WindowManager` owns every popup-type window, each in its slot (`popup_slots_t`, `window/popupslots.h`: the menu, the submenu, the dialog, the Ctrl+Tab list and the tooltip, `forEach` in the order they are drawn into the main window), and hands each kind's slot to the part that behaves as that kind does. The parts own no window and never call each other through `WindowManager`; each holds references to what it reads:
 
-The tooltip is the one popup `WindowManager` drives itself, since it answers no input and needs no policy. `syncTooltip()` settles it at the end of every `dispatchEvent` and every `renderAll` frame, into one `PopupWindow` + `TooltipRenderer` pairing: the toolbar or menu-bar button's the pointer is on (`UiRenderer::hoveredButton`; `tooltipTextOf` reads a toolbar button's `button_t::tooltip` or a top-level menu's `menu_t::tooltip`, an empty one showing none) - none after a press on it until the pointer leaves it - else the one the content surface under the pointer asks for (`setContentTooltip`); none while a menu or dialog is open. The first toolbar tooltip waits for the pointer to rest on its button (`input.json` `tooltip.delayMs`, `input_t::tooltipDelayMs`): it is held in `m_pendingTooltip` and shown by `showDueTooltip`, which `Shell::run` calls every loop iteration since a resting pointer sends no event to show it on. With one already up, the next shows at once, as on the platforms' own toolbars, and a snap's tooltip never waits. A press on a button silences its tooltip until the pointer leaves that button (`m_spentButton` + `m_spentBound`): ended only by a pointer move off its rect (`onMouseMove`) or onto a content surface, never by the button's hover, which the chrome clears with the pointer still on it - `Shell::openDialog` does, for a dialog the button opens. Those rules are pure functions, unit-tested apart from the windows: `tooltipWantedOf` (`window/tooltipwantedof.h`), `spentButtonOf` (`window/spentbuttonof.h`) and `isTooltipDelayed` (`window/istooltipdelayed.h`). A menu or dialog takes the pointer while it is open - a modal dialog every event, and `Shell::openDialog` even clears the main window's memory of where the pointer is - so when one closes the main window would show no hover until the pointer moved. `dispatchEvent` therefore keeps where the pointer is from every window's events (`trackPointer`, main-window physical px, `Ui::NO_POINTER` after a leave) and `rehover` hands it back through the main route when one closes (`Shell::destroyPopup`, the dialog's own close): hover, cursor, a content surface's preselection and the tooltip catch up without a move. What it shows is a `tooltip_t` (`window/tooltip.h`: `text` + `anchor` in main-window CSS px, empty text for none, a defaulted `==`) - `m_tooltip` - and the window stays while that does. A surface's request stays in its own frame (`content_surface_t::tooltipText` + `tooltipAnchor`, the surface's physical px) and is turned into a `tooltip_t` on every sync (`contentTooltip`), so it follows the viewport when that moves. It is a window rather than draw ops because a host's content surface covers the main window. `showTooltip(tooltip)` sizes it (`UiRenderer::tooltipWidthOf`, `layout.tooltip.height`), places it with `tooltipBoundOf` (`window/tooltipboundof.h`, pure, unit-tested) `layout.tooltip.margin` off its anchor - after it, or before it where after would run past the window's edge, which is what puts a right-toolbar button's on its left - then clamps it into the window so no edge cuts it off. It draws nothing itself - a second main swap in one loop iteration would wait on vsync again - but asks for a main frame, which recaptures its corners. Composited, that recapture renders and reads it and the same frame draws it in - it needs no frame of its own. Otherwise the recapture asks for the tooltip's own frame, and only once that is presented is the window shown (`renderFrame`, `m_isTooltipShown`), so it never appears flat. Its corners are recaptured like a menu's, so they stand on the content surface. It takes no pointer (`PopupWindow::setInputTransparent`): the pointer goes straight to what it covers, so the surface under it keeps its hover and gets no leave when the pointer crosses it. The window made for the first tooltip is kept: `hideTooltip` stops showing it (hidden, or composited its texture dropped, and never drawn while hidden), and the next `showTooltip` moves it (`moveResize`) and tells its `TooltipRenderer::setText` the new text rather than making a window, an EGL context and a font per snap. Only while the size holds: composited, the window never presents, so it keeps the buffers it was made with, and a wider tooltip read back from it would be cut - a tooltip of another size closes it and is made anew (about 12 ms against well under one for a move, and only when the width changes). Where a popup cannot move once made (`PopupWindow::isMovable` - an X11 ARGB popup on the root, Wayland's `xdg_popup`, the Win32 and macOS top-level popups) `hideTooltip` destroys it and the next is made anew. `destroyTooltip` removes it for good; `apply` does, when what it is made of changes (locale, buttons, theme, layout), and so does `shutdown`.
+- `MainFrame` (`window/mainframe.h`, kept to `WindowManager`, which forwards `swapAfterResize` alone) - the one place the main window is drawn and presented: `renderQueued` drains the render queue (main window, then each popup with a frame of its own due), `renderAndSwap` draws main with every composite in, `recapture(slot)` recaptures one popup's corners off a fresh main frame, `present(slot)` brings a popup just made up, never flat, and `swapAfterResize` flushes X11's EGL surface to a new size.
+- `MenuPopups` (`window/menupopups.h`, `menus()`) - the menu and its submenu: `make(bound, radii, bg)` then `show(menu)`, `close(syncDisplay)`, `isOpen`/`hasSubmenu`/`window`/`submenuWindow`, `followsParent`, `hideForResize`, `moveBy`, `contains`, `mainPointOf`, `cssWidthOf`, `reopenSubmenu`, `activeItemId`/`setActiveItem`; the submenu a hovered item opens is its own (`followItemHover`).
+- `DialogPopup` (`window/dialogpopup.h`, `dialog()`) - `open(dialog)`, `close`, `isOpen`, `window`, `keyPress`, `recenter`, `area`, `lastAction`/`lastData`, and the two hooks above.
+- `TabSwitcherPopup` (`window/tabswitcherpopup.h`, `tabSwitcher()`) - the Ctrl+Tab list's window (below).
 
-The Ctrl+Tab list is a fourth popup kind beside the menu, the dialog and the tooltip: one `PopupWindow` + `TabSwitcherRenderer` pairing (`render/popup/tabswitcherrenderer.h`) over the main window's middle. `Shell` drives it (`Ui::TabSwitch` holds what it shows); `WindowManager` makes, routes and draws it. `openTabSwitcher(rows, selectedRow)` measures and fits its rows on the main renderer first, as a menu's width is (`UiRenderer::fitTabSwitcherRows`: a row its label, then a gap and its description, between the menu's paddings; a description cut first, then a label), shows as many rows as the window is tall, and brings it up as a menu's popup comes up - corners captured off a fresh main frame and drawn in before its swap when composited, else its first frame presented before it shows. Its look is res's own: `layout.json` `tab-switcher` (its narrowest width, margin off the window's edges, corners), `tab-switcher-item` (row height, padding at either end and before the description) and `tab-switcher-item:active` (the highlight's inset and corners), and the theme's blocks of the same names (background; font and colour; the highlight's colour and background) with `tab-switcher-description` and its `:active` (the description's colour) - `layout_t::tabSwitcher*`, `theme_t::tabSwitcher*`. Every shipped theme carries them (the host's `TestTabSwitcherTheme`). Its mouse events are matched before a menu's (`matchPopupTarget`, `routePopupEvent`): the renderer only offers the row the pointer is over (`tabSwitcherHoveredRow`), which the shell makes the selection (`setTabSwitcherSelection`, scrolled to show it), and a click on a row reports that tab's element, so it switches by the tab click's own path; one on a row's close button (`tab-switcher-close`, both files' blocks) reports the tab's close button, the strip's `CloseTab` path, after which the shell opens the list again over itself with the tabs left - `openTabSwitcher` keeping the first row the list it replaces showed, and hovering what stands under a pointer already there. It counts as open chrome (`isChromeOpen`), so no tooltip shows over it. `closeTabSwitcher` takes it down and hands the pointer back (`rehover`). What switches is Ctrl going up, a key release every platform has to deliver: X11 sends one only to a window that selected `KeyReleaseMask`, which the main window does (`X11Window::createWindow`), with `XkbSetDetectableAutoRepeat` on its display so a held key repeats as presses alone, never a release and a press. `test/component/TestTabSwitcher.cpp` posts the release as X11, Win32 and macOS do, so one of them that stops delivering it fails there; native Wayland offers a client no way to put key events in its own queue, so there `test/unit/TestXkbKeyNameOf.cpp` checks the naming instead (`window/platform/xkbkeynameof.h`: Shift+Tab is `Tab`, each Ctrl by its side, a release named too), built in a `wl` build alone.
+These are driven by `Ui::Shell` (`MenuBar`, `TabSwitcher`, its dialog intents); hosts use the shell API rather than calling them directly. A dialog or the Ctrl+Tab list closed hands the pointer back through the `rehover` its part is given at construction - the one way a part reaches back into `WindowManager`.
+
+The tooltip is the one popup `WindowManager` drives itself, since it answers no input and needs no policy. `syncTooltip()` settles it at the end of every `dispatchEvent` and every `renderAll` frame, into one `PopupWindow` + `TooltipRenderer` pairing: the toolbar or menu-bar button's the pointer is on (`UiRenderer::hoveredButton`; `TooltipPopup::textOf` reads a toolbar button's `button_t::tooltip` or a top-level menu's `menu_t::tooltip`, an empty one showing none) - none after a press on it until the pointer leaves it - else the one the content surface under the pointer asks for (`setContentTooltip`); none while a menu or dialog is open. The first toolbar tooltip waits for the pointer to rest on its button (`input.json` `tooltip.delayMs`, `input_t::tooltipDelayMs`): it is held in `TooltipPopup`'s `m_pending` and shown by `showDueTooltip`, which `Shell::run` calls every loop iteration since a resting pointer sends no event to show it on. With one already up, the next shows at once, as on the platforms' own toolbars, and a snap's tooltip never waits. A press on a button silences its tooltip until the pointer leaves that button (`m_spentButton` + `m_spentBound`): ended only by a pointer move off its rect (`onMouseMove`) or onto a content surface, never by the button's hover, which the chrome clears with the pointer still on it - `Shell::openDialog` does, for a dialog the button opens. Those rules are pure functions, unit-tested apart from the windows: `tooltipWantedOf` (`window/tooltipwantedof.h`), `spentButtonOf` (`window/spentbuttonof.h`) and `isTooltipDelayed` (`window/istooltipdelayed.h`). A menu or dialog takes the pointer while it is open - a modal dialog every event, and `Shell::openDialog` even clears the main window's memory of where the pointer is - so when one closes the main window would show no hover until the pointer moved. `dispatchEvent` therefore keeps where the pointer is from every window's events (`trackPointer`, main-window physical px, `Ui::NO_POINTER` after a leave) and `rehover` hands it back through the main route when one closes (`Ui::MenuBar::destroy`, the dialog's own close, the Ctrl+Tab list's): hover, cursor, a content surface's preselection and the tooltip catch up without a move. What it shows is a `tooltip_t` (`window/tooltip.h`: `text` + `anchor` in main-window CSS px, empty text for none, a defaulted `==`) - `m_tooltip` - and the window stays while that does. A surface's request stays in its own frame (`content_surface_t::tooltipText` + `tooltipAnchor`, the surface's physical px) and is turned into a `tooltip_t` on every sync (`HostSurfaces::tooltip`), so it follows the viewport when that moves. It is a window rather than draw ops because a host's content surface covers the main window. `TooltipPopup::show(tooltip)` sizes it (`UiRenderer::tooltipWidthOf`, `layout.tooltip.height`), places it with `tooltipBoundOf` (`window/tooltipboundof.h`, pure, unit-tested) `layout.tooltip.margin` off its anchor - after it, or before it where after would run past the window's edge, which is what puts a right-toolbar button's on its left - then clamps it into the window so no edge cuts it off. It draws nothing itself - a second main swap in one loop iteration would wait on vsync again - but asks for a main frame, which recaptures its corners. Composited, that recapture renders and reads it and the same frame draws it in - it needs no frame of its own. Otherwise the recapture asks for the tooltip's own frame, and only once that is presented is the window shown (`MainFrame::renderQueued`, `TooltipPopup::markPresented`), so it never appears flat. Its corners are recaptured like a menu's, so they stand on the content surface. It takes no pointer (`PopupWindow::setInputTransparent`): the pointer goes straight to what it covers, so the surface under it keeps its hover and gets no leave when the pointer crosses it. The window made for the first tooltip is kept: `TooltipPopup::hide` stops showing it (hidden, or composited its texture dropped, and never drawn while hidden), and the next `show` moves it (`moveResize`) and tells its `TooltipRenderer::setText` the new text rather than making a window, an EGL context and a font per snap. Only while the size holds: composited, the window never presents, so it keeps the buffers it was made with, and a wider tooltip read back from it would be cut - a tooltip of another size closes it and is made anew (about 12 ms against well under one for a move, and only when the width changes). Where a popup cannot move once made (`PopupWindow::isMovable` - an X11 ARGB popup on the root, Wayland's `xdg_popup`, the Win32 and macOS top-level popups) `hide` destroys it and the next is made anew. `TooltipPopup::destroy` removes it for good; `apply` does, when what it is made of changes (locale, buttons, theme, layout), and so does `shutdown`.
+
+The Ctrl+Tab list is a fourth popup kind beside the menu, the dialog and the tooltip: one `PopupWindow` + `TabSwitcherRenderer` pairing (`render/popup/tabswitcherrenderer.h`) over the main window's middle. `Shell`'s `Ui::TabSwitcher` drives it (its `Ui::TabSwitch` holds what it shows); `WindowManager` makes, routes and draws it, the window's part being `TabSwitcherPopup` (`tabSwitcher()`). `tabSwitcher().open(rows, selectedRow)` measures and fits its rows on the main renderer first, as a menu's width is (`UiRenderer::fitTabSwitcherRows`: a row its label, then a gap and its description, between the menu's paddings; a description cut first, then a label), shows as many rows as the window is tall, and brings it up as a menu's popup comes up - corners captured off a fresh main frame and drawn in before its swap when composited, else its first frame presented before it shows. Its look is res's own: `layout.json` `tab-switcher` (its narrowest width, margin off the window's edges, corners), `tab-switcher-item` (row height, padding at either end and before the description) and `tab-switcher-item:active` (the highlight's inset and corners), and the theme's blocks of the same names (background; font and colour; the highlight's colour and background) with `tab-switcher-description` and its `:active` (the description's colour) - `layout_t::tabSwitcher*`, `theme_t::tabSwitcher*`. Every shipped theme carries them (the host's `TestTabSwitcherTheme`). Its mouse events are matched before a menu's (`matchPopupTarget`, `routePopupEvent`): the renderer only offers the row the pointer is over (`tabSwitcher().hoveredRow()`), which the shell makes the selection (`tabSwitcher().setSelectedRow`, scrolled to show it), and a click on a row reports that tab's element, so it switches by the tab click's own path; one on a row's close button (`tab-switcher-close`, both files' blocks) reports the tab's close button, the strip's `CloseTab` path, after which the shell opens the list again over itself with the tabs left - `open` keeping the first row the list it replaces showed, and hovering what stands under a pointer already there. It counts as open chrome (`isChromeOpen`), so no tooltip shows over it. `tabSwitcher().close()` takes it down and hands the pointer back (`rehover`). What switches is Ctrl going up, a key release every platform has to deliver: X11 sends one only to a window that selected `KeyReleaseMask`, which the main window does (`X11Window::createWindow`), with `XkbSetDetectableAutoRepeat` on its display so a held key repeats as presses alone, never a release and a press. `test/component/TestTabSwitcher.cpp` posts the release as X11, Win32 and macOS do, so one of them that stops delivering it fails there; native Wayland offers a client no way to put key events in its own queue, so there `test/unit/TestXkbKeyNameOf.cpp` checks the naming instead (`window/platform/xkbkeynameof.h`: Shift+Tab is `Tab`, each Ctrl by its side, a release named too), built in a `wl` build alone.
 
 `void setContentTooltip(id_t id, const std::string & text, const bound_t & anchor)` - a host names something it marks on a content surface (a point a tool snaps to, say): `anchor` is a rect in that surface's physical pixels, an empty `text` for none. Stored on the surface beside its `pointer`, so it goes with the surface.
 
-### Ui::Window::Connector
+### Ui::Window::Connector + Ui::Window::Pairing
 
-Header: `include/ui/window/connector.h`
+Headers: `include/ui/window/connector/connector.h`, `include/ui/window/connector/pairing.h` - with the framework's pairings beside them, one alias a header (`mainconnector.h`, `menuconnector.h`, `dialogconnector.h`, `tabswitcherconnector.h`, `tooltipconnector.h`)
 
 ```cpp
 template <Window TWindow, Renderer TRenderer>
-class Connector final : public Ui::IRenderer, private Common::NonCopyable;
+class Connector final : private Common::NonCopyable;
+
+class Pairing final : private Common::NonCopyable;
 ```
 
-Binds one window to one renderer. Windows and renderers are independent families that never reference each other; the `Connector` is the only place a pairing exists and the only home for the glue that needs both sides (make-current-then-draw, event-to-redraw coupling). It implements `Ui::IRenderer` itself, so the coordinator can drive any pairing type-erased. Two concepts constrain the template parameters:
+Windows and renderers are independent families that never reference each other; a pairing of one of each exists in these two classes alone, split by job, since a class template has no virtual function:
+
+- `Connector` owns: the window and the renderer by their own types, their order of construction and teardown, and typed access to both. Nothing in it is virtual.
+- `Pairing` drives: a non-template holding the two by their interfaces (`Ui::IWindow &`, and the `Ui::IRenderer` from its emplace until its reset) and implementing neither. It is the only home for the glue that needs both sides (make-current-then-draw, event-to-redraw coupling), and what the coordinator drives every pairing by, blind - its own windows and a host's content surfaces alike.
+
+Two concepts constrain the template parameters:
 
 ```cpp
-template <typename T> concept Window   = requires(T w) { w.makeCurrent(); w.swapBuffers(); w.requestRender(); };
+template <typename T> concept Window   = std::derived_from<T, Ui::IWindow>;
 template <typename T> concept Renderer = std::derived_from<T, Ui::IRenderer>;
 ```
 
-Lifetime is structural: the renderer member is declared after the window, so it is destroyed first - GL teardown always runs while the window's context is alive. The renderer is emplaced after `window.create()` because renderers need a live GL context to construct.
+Lifetime is structural: the renderer member is declared after the window, so it is destroyed first - GL teardown always runs while the window's context is alive - and the pairing after both, so it goes first. The renderer is emplaced after `window.create()` because renderers need a live GL context to construct.
 
-Public API:
+`Connector`:
 
 ```cpp
 template <typename... WindowArgs> explicit Connector(WindowArgs &&... windowArgs);   // constructs the window
-~Connector() override;                                                               // resetRenderer()
+~Connector();                                                                        // resetRenderer()
 
 [[nodiscard]] TWindow &       window();
 [[nodiscard]] const TWindow & window() const;
@@ -145,14 +168,37 @@ template <typename... WindowArgs> explicit Connector(WindowArgs &&... windowArgs
 template <typename... RendererArgs> TRenderer & emplaceRenderer(RendererArgs &&... rendererArgs);
 [[nodiscard]] bool        hasRenderer() const;
 [[nodiscard]] TRenderer & renderer();
+[[nodiscard]] Pairing &   pairing();
 void                      resetRenderer();
 ```
 
 - `Connector(windowArgs...)` - forwards to the window constructor (e.g. `(subscribe, subscribeId)`).
-- `emplaceRenderer(rendererArgs...)` - makes the window's GL context current, then constructs the renderer in place and returns it. Call after `window().create()`.
-- `resetRenderer()` - explicit early teardown: makes the context current, then destroys the renderer.
+- `emplaceRenderer(rendererArgs...)` - makes the window's GL context current, then constructs the renderer in place, attaches it to the pairing and returns it. Call after `window().create()`.
+- `pairing()` - the window and renderer driven as one; what a content surface is registered by.
+- `resetRenderer()` - explicit early teardown: detaches the renderer from the pairing, makes the context current, then destroys it.
 
-`Ui::IRenderer` overrides (`render`/`resize`/`apply`/`cleanup`/`readPixels`) each make the window's context current, then forward to the renderer (no-op / default when no renderer). `render()` does NOT swap - callers present explicitly (`swapBuffers` or a composite capture). `Ui::IEventApp` overrides (`onMouseMove`/`onMousePress`/`onMouseRelease`/`onMouseLeave`/`onScroll`) forward to the renderer and call `window().requestRender()` when the renderer reports a change.
+`Pairing`:
+
+```cpp
+explicit Pairing(Ui::IWindow & window);
+void attach(Ui::IRenderer & renderer);
+void detach();
+[[nodiscard]] Ui::IWindow & window() const;
+
+bool render();
+void resize(fpx_t width, fpx_t height);
+void apply(Ui::Res::Type::changes_t changed);
+void cleanup();
+std::vector<uint8_t> readPixels(const Ui::Res::Type::bound_t & region);
+
+bool onMouseMove(int x, int y);
+Ui::Render::element_event_t onMousePress(int x, int y, MouseButton button, int clickCount, key_modifiers_t modifiers);
+Ui::Render::element_event_t onMouseRelease(int x, int y, MouseButton button);
+bool onMouseLeave();
+Ui::Render::element_event_t onScroll(int x, int y, fpx_t deltaY);
+```
+
+`render`/`resize`/`apply`/`cleanup`/`readPixels` each make the window's context current, then forward to the renderer (no-op, `false` or no pixels with none attached). `render()` does NOT swap - callers present explicitly (`swapBuffers` or a composite capture). The pointer's events forward to the renderer and call `window().requestRender()` when it reports a change.
 
 ## Backend primitives
 
@@ -161,14 +207,12 @@ void                      resetRenderer();
 Header: `include/ui/window/windowbase.h`
 
 ```cpp
-template <typename Derived>
 class WindowBase : public Ui::IWindow, private Common::NonCopyable;
 ```
 
-CRTP base for the platform windows. Holds the members and behavior shared across every backend (`X11Window`, `WaylandWindow`, `Win32Window`, `MacOsWindow`); the derived class implements the platform-specific `Ui::IWindow` methods and is reached via the `derived()` helper.
+Base of the platform windows. Holds the members and behavior shared across every backend (`X11Window`, `WaylandWindow`, `Win32Window`, `MacOsWindow`); the derived class implements the platform-specific `Ui::IWindow` methods and the base's two protected hooks. Not a template: a base implementing an interface reaches its platform through virtual hooks, never CRTP, since a class template has no virtual function.
 
 ```cpp
-explicit WindowBase(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID);
 ~WindowBase() override;                                     // removes m_subscribeId from Subscribe
 
 void setPosition(fpx_t x, fpx_t y) override;
@@ -188,8 +232,14 @@ void setSubscribeId(id_t subscribeId);
 void setRenderRequest(Ui::task_fn_t fn) override;
 void requestRender() override;                              // invokes the render-request callback
 void syncDimensions(fpx_t width, fpx_t height);            // sync geometry on OS resize (no OS resize call)
+
+protected:
+explicit WindowBase(Ui::PubSub::Subscribe & subscribe, id_t subscribeId = Ui::INVALID_ID);
+virtual void applyRoundedCorners() = 0;                     // the rounded-corner state onto the native window
+virtual void updateNativeBackground();                      // the background in a native background pixel (X11); default no-op
 ```
 
+- `setBackground` and `setRoundedCorners` keep the state, then, once the window is valid, call the hooks (`setBackground` with its context current).
 - Subscribe ownership is RAII: the destructor calls `subscribe.remove(subscribeId)` so a torn-down window unwires its render-queue entry automatically.
 - `isHardwareGl()` defaults true; macOS flips it false on software-renderer fallback. `refreshHardwareGl()` additionally folds in the runtime `GL_RENDERER` check (Mesa llvmpipe, SwiftShader, GDI Generic name themselves there) - the coordinator calls it after context creation so the flag is authoritative.
 - `syncDimensions` updates the cached `bound()` and requests a render without calling the OS resize (use it when responding to OS resize events to avoid feedback loops).
@@ -344,17 +394,16 @@ Header: `include/ui/window/contentsurface.h`
 
 ```cpp
 struct alignas(128) content_surface_t final {
-    CompositeTexture composite;
-    Ui::IWindow *    window  = nullptr;   // geometry / visibility / native ops (non-owning)
-    Ui::IRenderer *  pairing = nullptr;   // host's window+renderer Connector: frames, events, resize, apply, readPixels
-    bool             isReady = true;      // false while the host is mid async-load (skip rendering)
-    PointerShape     pointer = PointerShape::Default; // what the pointer shows over it (setContentPointer)
-    std::string            tooltipText;   // what its host names under the pointer (setContentTooltip), empty for none
-    Ui::Res::Type::bound_t tooltipAnchor; // beside what, in the surface's own physical px
+    CompositeTexture                composite;
+    std::reference_wrapper<Pairing> pairing;   // the host Connector's: frames, events, resize, apply, readPixels, and its window
+    bool                            isReady = true; // false while the host is mid async-load (skip rendering)
+    PointerShape                    pointer = PointerShape::Default; // what the pointer shows over it (setContentPointer)
+    std::string                     tooltipText;   // what its host names under the pointer (setContentTooltip), empty for none
+    Ui::Res::Type::bound_t          tooltipAnchor; // beside what, in the surface's own physical px
 };
 ```
 
-A host-provided content surface embedded in the viewport. Both pointers are non-owning (the host owns them). `window` carries only geometry/native ops; `pairing` (an `IRenderer`, typically a host `Connector`) drives frame production and consumes events. `composite` holds the Wayland offscreen->texture cache.
+A host-provided content surface embedded in the viewport. `pairing` is held by reference (the host owns it, inside its `Connector`), set by `addContentSurface` - the only way an entry is made - so it is never empty; it drives frame production, consumes events, and reaches the surface's window (`pairing.window()`) for geometry and native ops. `composite` holds the Wayland offscreen->texture cache.
 
 ### Ui::Window::content_hit_t
 
@@ -362,13 +411,13 @@ Header: `include/ui/window/contenthit.h`
 
 ```cpp
 struct alignas(16) content_hit_t final {
-    Ui::IRenderer * pairing = nullptr;
-    int             lx = 0;
-    int             ly = 0;
+    std::reference_wrapper<Pairing> pairing;
+    int                             lx = 0;
+    int                             ly = 0;
 };
 ```
 
-Hit-test result with coordinates pre-translated into the content surface's own frame (`lx`/`ly`). In XWayland composite mode the offscreen child receives main-local coords, so translating here keeps the renderer from seeing out-of-bounds x/y. Events route to `pairing`.
+Hit-test result with coordinates pre-translated into the content surface's own frame (`lx`/`ly`), handed back as a `std::optional` - none off the active surface. In XWayland composite mode the offscreen child receives main-local coords, so translating here keeps the renderer from seeing out-of-bounds x/y. Events route to `pairing`.
 
 ### Ui::Window::CompositeTexture
 
@@ -399,11 +448,11 @@ public:
 };
 ```
 
-The set of window ids needing a redraw this frame. Windows push their id via their render-request callback (wired by the coordinator); `WindowManager::renderFrame()` reads `pending()`, clears, then repaints main + popups in the correct GL-context order. A `std::set` deduplicates and orders by id.
+The set of window ids needing a redraw this frame. Windows push their id via their render-request callback (wired by the coordinator); `MainFrame::renderQueued()` reads `pending()`, clears, then repaints main + popups in the correct GL-context order. A `std::set` deduplicates and orders by id.
 
-A popup's rounded corners are software: `recaptureCorners` reads what the main window shows behind each corner (`captureCornerPixels`, a few pixels each) and the popup draws them under itself. A popup whose window background is see-through - its theme block's colour with an alpha under 255 (`#rrggbbaa`) - takes instead what stands under its whole rect (`PopupRendererBase::setUnderlay`), so its body shows the window under it as its corners do; that read is the popup's size, so only a see-through popup pays for it. Both are one reader, `captureUnderlayPixels(area, bgColor)` - the corners four calls on their squares, the underlay one on the rect: the main back buffer, and a content surface's overlap through its renderer's `readPixels` when it is a window of its own, only the pixels the area needs. Elements drawn inside a popup, and everything the main window draws, need neither: their alpha blends over what their own window has already drawn.
+A popup's rounded corners are software: `Underlay::recapture` reads what the main window shows behind each corner (a few pixels each) and the popup draws them under itself. A popup whose window background is see-through - its theme block's colour with an alpha under 255 (`#rrggbbaa`) - takes instead what stands under its whole rect (`PopupRendererBase::setUnderlay`), so its body shows the window under it as its corners do; that read is the popup's size, so only a see-through popup pays for it. Both are one reader, `Underlay::read(area, bgColor)` - the corners four calls on their squares, the underlay one on the rect: the main back buffer, and a content surface's overlap through its renderer's `readPixels` when it is a window of its own, only the pixels the area needs. Elements drawn inside a popup, and everything the main window draws, need neither: their alpha blends over what their own window has already drawn.
 
-Composited, a main frame's corner recapture (`notifyMainWindowChanged` -> `recaptureCorners`) renders and reads every popup, submenu and tooltip standing on the main window, and the same frame draws them in (`drawPopupComposite`) before its swap. So `renderFrame` skips their own frames when it has drawn main (`isRecaptured`) - each would only present the same picture again, with a full main render and swap of its own (`refreshComposite`) - and a recapture queues no popup frame; menu and submenu opening skip theirs for the same reason. A popup changing on its own (a hover) with main untouched still takes its own frame. The dialog is not recaptured by main frames, so its frame is never skipped. Not composited, the recapture only draws into the popup's back buffer, and its own frame is what swaps it onto the screen. There a popup-type window is an X11 window of its own over the content surface, so when one closes or hides the surface is asked for a frame (`requestActiveContentRender` - in `destroyPopup`, `destroySubmenu`, `closeDialog`, `hideTooltip`, `destroyTooltip`): nothing else redraws what it revealed, and the surface would keep the bare window background there until the pointer next moved over it.
+Composited, a main frame's corner recapture (the content-changed notify `MainFrame::renderQueued` sends -> `Underlay::recapture`) renders and reads every popup-type window standing on the main window - the dialog only on the first frame after a resize recentres it - and the same frame draws them in (`MainFrame::drawComposites`) before its swap. So `renderQueued` skips the own frames of those that pass took (`popup_slot_t::isRecaptured`, set by `Underlay::recapture` and cleared as each pass starts) - each would only present the same picture again, with a full main render and swap of its own (`renderAndSwap`) - and a recapture queues no popup frame; menu and submenu opening skip theirs for the same reason. A popup changing on its own (a hover) with main untouched still takes its own frame. Not composited, the recapture only draws into the popup's back buffer, and its own frame is what swaps it onto the screen. There a popup-type window is an X11 window of its own over the content surface, so when one closes or hides the surface is asked for a frame (`HostSurfaces::redrawUnder` - in `PopupWindows::close`, which every popup-type window's close goes through, and in `TooltipPopup` when it hides the tooltip): nothing else redraws what it revealed, and the surface would keep the bare window background there until the pointer next moved over it.
 ## Popup/dialog windows
 
 ### Ui::Window::Popup::PopupWindow
@@ -462,7 +511,7 @@ Headers: `include/ui/window/platform/{x11,wayland,macos,win32}window.h` and the 
 
 Each OS provides one window impl and one event impl, selected at compile time through the `NativeWindow` / `NativeEvent` aliases - the coordinator and popups only ever name the aliases, never a concrete platform class.
 
-- Window peers (`Platform::X11Window` / `WaylandWindow` / `MacOsWindow` / `Win32Window`) derive `WindowBase<Derived>` (CRTP) and implement the platform half of `Ui::IWindow`: native handle/display accessors, `create` / `destroy`, `resize` / `move` / `moveResize` / `show` / `hide`, `makeCurrent` / `swapBuffers` / `clear`, `screenPosition` / `screenFramePosition`, `setTitle` / `setWindowIcon`, `isFullscreen` / `setFullscreen` (main-window-only, on `WindowBase` as a no-op default; Wayland's asks the compositor, whose configure brings the state, since a size alone never covers what the desktop keeps for itself; macOS's toggles AppKit's fullscreen, read from the window's style mask, and `MacOsEvent` turns its did-enter and did-exit into a resize, so the shell keeps the state however the user got there), and rounded-corner application. The first macOS main window launches the app as `NSApplicationMain` would, once per process (as GLFW does): `[NSApp run]` until AppKit says it has finished launching, the menu bar made just before - an app that calls `finishLaunching` itself, started from a terminal, is not made active, nor shown its menu bar or fullscreen's reveal, until the user switches away and back. The menu bar is the one every Mac app has: the app menu (Hide, Hide Others, Show All, and Quit on Cmd+Q, which closes the main window, minimized too, so the shell's close path runs and saves the session) and the Window menu (Minimize, Zoom, Toggle Full Screen on Ctrl+Cmd+F); fullscreen reveals it at the screen's top edge together with the title bar's buttons. `MacOsEvent` converts only events from our own windows - the main one and each popup, dialog and tooltip the `WindowManager` registers through `addPopupWindow` - and leaves every other window's to AppKit, such as that revealed title bar over our menu bar. The X11 window owns its `EglContext` and the `m_ownsDisplay` flag that gates `eglTerminate` (see the EGLDisplay lifetime rule above); `IWindow::dpi()` - X11 `Xft.dpi`, else 96 as GTK takes it; Win32 the window's own per-monitor DPI, as `WM_DPICHANGED` last said, the rect it suggests taken except inside `moveResize`, whose size wins; macOS 96 times the window's backing scale; Wayland its output's scale - times `PUREGLUI_SCALE` (`ui/window/scalefactorof.h`, a factor as Qt's `QT_SCALE_FACTOR`, unset or not a number from 0.25 to 8 is 1) feeds `g_config.scale` (on Wayland the UI's alone: every surface's buffer, and every conversion between surface and physical px - the pointer, a subsurface's and a popup's place and size, the minimum size - stands at `WaylandWindow::bufferScale()`, the output's), and `NativeWindow::displaysOf(display)` lists every display as a `display_t` (`ui/window/display.h`: name, physical size, refresh rate, primary) - X11 every lit output through XRandR (libXrandr), its mode's dot clock over its frame's pixels; Wayland the bound `wl_output`'s current mode; macOS every `NSScreen`, the menu-bar one primary, `maximumFramesPerSecond` from macOS 12; Win32 `EnumDisplayDevicesW` + `EnumDisplaySettingsW`. `refreshRateOf(displays)` (`ui/window/refreshrateof.h`) feeds `g_config.refreshRate` - the primary's rate, else the first known; 0, no answer, keeps the 60 Hz default - and `displaysTextOf(displays)` (`ui/window/displaystextof.h`) is the System info dialog's `%DISPLAYS%`, one line each.
+- Window peers (`Platform::X11Window` / `WaylandWindow` / `MacOsWindow` / `Win32Window`) derive `WindowBase`, override its hooks (`applyRoundedCorners`; X11 `updateNativeBackground` too) and implement the platform half of `Ui::IWindow`: native handle/display accessors, `create` / `destroy`, `resize` / `move` / `moveResize` / `show` / `hide`, `makeCurrent` / `swapBuffers` / `clear`, `screenPosition` / `screenFramePosition`, `setTitle` / `setWindowIcon`, `isFullscreen` / `setFullscreen` (main-window-only, on `WindowBase` as a no-op default; Wayland's asks the compositor, whose configure brings the state, since a size alone never covers what the desktop keeps for itself; macOS's toggles AppKit's fullscreen, read from the window's style mask, and `MacOsEvent` turns its did-enter and did-exit into a resize, so the shell keeps the state however the user got there), and rounded-corner application. The first macOS main window launches the app as `NSApplicationMain` would, once per process (as GLFW does): `[NSApp run]` until AppKit says it has finished launching, the menu bar made just before - an app that calls `finishLaunching` itself, started from a terminal, is not made active, nor shown its menu bar or fullscreen's reveal, until the user switches away and back. The menu bar is the one every Mac app has: the app menu (Hide, Hide Others, Show All, and Quit on Cmd+Q, which closes the main window, minimized too, so the shell's close path runs and saves the session) and the Window menu (Minimize, Zoom, Toggle Full Screen on Ctrl+Cmd+F); fullscreen reveals it at the screen's top edge together with the title bar's buttons. `MacOsEvent` converts only events from our own windows - the main one and each popup, dialog and tooltip the `WindowManager` registers through `addPopupWindow` - and leaves every other window's to AppKit, such as that revealed title bar over our menu bar. The X11 window owns its `EglContext` and the `m_ownsDisplay` flag that gates `eglTerminate` (see the EGLDisplay lifetime rule above); `IWindow::dpi()` - X11 `Xft.dpi`, else 96 as GTK takes it; Win32 the window's own per-monitor DPI, as `WM_DPICHANGED` last said, the rect it suggests taken except inside `moveResize`, whose size wins; macOS 96 times the window's backing scale; Wayland its output's scale - times `PUREGLUI_SCALE` (`ui/window/scalefactorof.h`, a factor as Qt's `QT_SCALE_FACTOR`, unset or not a number from 0.25 to 8 is 1) feeds `g_config.scale` (on Wayland the UI's alone: every surface's buffer, and every conversion between surface and physical px - the pointer, a subsurface's and a popup's place and size, the minimum size - stands at `WaylandWindow::bufferScale()`, the output's), and `NativeWindow::displaysOf(display)` lists every display as a `display_t` (`ui/window/display.h`: name, physical size, refresh rate, primary) - X11 every lit output through XRandR (libXrandr), its mode's dot clock over its frame's pixels; Wayland the bound `wl_output`'s current mode; macOS every `NSScreen`, the menu-bar one primary, `maximumFramesPerSecond` from macOS 12; Win32 `EnumDisplayDevicesW` + `EnumDisplaySettingsW`. `refreshRateOf(displays)` (`ui/window/refreshrateof.h`) feeds `g_config.refreshRate` - the primary's rate, else the first known; 0, no answer, keeps the 60 Hz default - and `displaysTextOf(displays)` (`ui/window/displaystextof.h`) is the System info dialog's `%DISPLAYS%`, one line each.
 - Event peers (`Platform::X11Event` / `WaylandEvent` / `MacOsEvent` / `Win32Event`) implement `Ui::IEventOS`: `init(window)`, `pollEvent(event, window)` / `hasPendingEvents(window)` / `flush(window)`, `setChildWindowLookup(child_id_fn_t)` (wired to `WindowManager::childIdForHandle`), `addPopupWindow` / `removePopupWindow`, `setDoubleClickConfig(intervalMs, distancePx)`, `setDialogAwaited(window, isAwaited)` (X11 hands the desktop's file dialog the focus GNOME holds back; the rest do nothing), and `copyToClipboard(window, text)`. Peers on platforms without native click counts use `ClickCounter` to stamp `event.mouse.clickCount`.
 
 ## Pub/sub
@@ -483,7 +532,7 @@ public:
 };
 ```
 
-An in-process publish/subscribe dispatcher keyed by numeric source/subscriber ids. Everything in the windowing layer wires through it: popup-type windows subscribe to `MAIN_WINDOW_ID` to recapture their corners after every main frame (which a content surface redrawing under one requests too), the shell subscribes to `idOf(IdKind::Event, EventType)` for policy, and windows own their subscriber id (RAII-removed in `WindowBase`'s destructor).
+An in-process publish/subscribe dispatcher keyed by numeric source/subscriber ids. Everything in the windowing layer wires through it: popup-type windows subscribe to `MAIN_WINDOW_ID` to recapture their corners after every main frame (which a content surface redrawing under one requests too; the dialog only on the first after a resize recentres it, since it may stand over the host's view for as long as it is open), the shell subscribes to `idOf(IdKind::Event, EventType)` for policy, and windows own their subscriber id (RAII-removed in `WindowBase`'s destructor).
 
 - `add(source, subscriber, callback)` - register `callback` to fire when `source` is notified; the `initializer_list` overload registers one callback across several sources.
 - `remove(subscriber)` - drop every entry for a subscriber id (used by `WindowBase`'s destructor).
@@ -495,9 +544,8 @@ Source and subscriber ids are ids like any other (`Ui::IdKind`, see [vocabulary.
 ## Usage: registering a content surface
 
 ```cpp
-// A host owns its content window + renderer, pairs them in a Connector, and
-// registers the pairing with the coordinator. The framework drives it blind
-// through IWindow + IRenderer + IEventApp.
+// A host owns its content window + renderer in a Connector and registers the
+// connector's Pairing with the coordinator, which drives it blind through it.
 Ui::Window::WindowManager & wm = /* from Ui::Shell */;
 
 // Build a host pairing: a native window bound to a UiRenderer (any Ui::IRenderer).
@@ -506,13 +554,13 @@ auto surface = std::make_unique<Ui::Window::Connector<Ui::Window::NativeWindow, 
 surface->window().create(/* width */ 800, /* height */ 600, /* display */ nullptr,
                          wm.mainWindow().nativeHandle(), "viewport");
 surface->emplaceRenderer(/* renderer ctor args; context is made current for you */);
-surface->render();   // makes the window's context current, then draws (no swap)
+surface->pairing().render();   // makes the window's context current, then draws (no swap)
 
-// Register with the coordinator. window + pairing must outlive the registration.
+// Register with the coordinator. The pairing must outlive the registration.
 // The id carries a host kind (Ui::IdKind) - it is the surface's render-queue
 // entry as it is.
 const Ui::id_t surfaceId = Ui::idOf(Ui::IdKind::HostFirst, 0);
-wm.addContentSurface(surfaceId, surface->window(), *surface);
+wm.addContentSurface(surfaceId, surface->pairing());
 wm.setActiveContentSurface(surfaceId);
 wm.setContentSurfaceReady(surfaceId, true);   // clear/set around async loads
 ```

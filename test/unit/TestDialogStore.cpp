@@ -71,7 +71,7 @@ TEST(DialogStore, LoadedTypesHaveButtons)
                                           DialogType::Warning };
     for (const DialogType type : types) {
         EXPECT_FALSE(store.dialogTypeConfig(type).buttons.empty())
-        << "type " << static_cast<int>(type) << " has no buttons";
+            << "type " << static_cast<int>(type) << " has no buttons";
     }
 }
 

@@ -301,32 +301,32 @@ public:
             if (py < m_cornerRadii.topLeft) {
                 alpha = std::max(alpha,
                                  1.0F
-                                 - smoothStep(m_cornerRadii.topLeft - m_borderAA,
-                                              m_cornerRadii.topLeft + m_borderAA,
-                                              m_cornerRadii.topLeft - py));
+                                     - smoothStep(m_cornerRadii.topLeft - m_borderAA,
+                                                  m_cornerRadii.topLeft + m_borderAA,
+                                                  m_cornerRadii.topLeft - py));
             }
             if (py > m_bound.h - m_cornerRadii.bottomRight) {
                 alpha = std::max(alpha,
                                  1.0F
-                                 - smoothStep(m_cornerRadii.bottomRight - m_borderAA,
-                                              m_cornerRadii.bottomRight + m_borderAA,
-                                              py - (m_bound.h - m_cornerRadii.bottomRight)));
+                                     - smoothStep(m_cornerRadii.bottomRight - m_borderAA,
+                                                  m_cornerRadii.bottomRight + m_borderAA,
+                                                  py - (m_bound.h - m_cornerRadii.bottomRight)));
             }
         }
         if (py >= m_cornerRadii.topLeft && py <= m_bound.h - m_cornerRadii.bottomRight) {
             if (px < m_cornerRadii.topLeft) {
                 alpha = std::max(alpha,
                                  1.0F
-                                 - smoothStep(m_cornerRadii.topLeft - m_borderAA,
-                                              m_cornerRadii.topLeft + m_borderAA,
-                                              m_cornerRadii.topLeft - px));
+                                     - smoothStep(m_cornerRadii.topLeft - m_borderAA,
+                                                  m_cornerRadii.topLeft + m_borderAA,
+                                                  m_cornerRadii.topLeft - px));
             }
             if (px > m_bound.w - m_cornerRadii.topRight) {
                 alpha = std::max(alpha,
                                  1.0F
-                                 - smoothStep(m_cornerRadii.topRight - m_borderAA,
-                                              m_cornerRadii.topRight + m_borderAA,
-                                              px - (m_bound.w - m_cornerRadii.topRight)));
+                                     - smoothStep(m_cornerRadii.topRight - m_borderAA,
+                                                  m_cornerRadii.topRight + m_borderAA,
+                                                  px - (m_bound.w - m_cornerRadii.topRight)));
             }
         }
 
@@ -342,8 +342,8 @@ public:
         }
         if (px > m_bound.w - m_cornerRadii.topRight && py < m_cornerRadii.topLeft && m_cornerRadii.topRight > 0.0F) {
             alpha = std::max(
-            alpha,
-            cornerMask(m_bound.w - m_cornerRadii.topRight, m_cornerRadii.topLeft, m_cornerRadii.topRight));
+                alpha,
+                cornerMask(m_bound.w - m_cornerRadii.topRight, m_cornerRadii.topLeft, m_cornerRadii.topRight));
         }
         if (px > m_bound.w - m_cornerRadii.bottomRight && py > m_bound.h - m_cornerRadii.bottomRight
             && m_cornerRadii.bottomRight > 0.0F) {
@@ -355,8 +355,8 @@ public:
         if (px < m_cornerRadii.bottomLeft && py > m_bound.h - m_cornerRadii.bottomLeft
             && m_cornerRadii.bottomLeft > 0.0F) {
             alpha = std::max(
-            alpha,
-            cornerMask(m_cornerRadii.bottomLeft, m_bound.h - m_cornerRadii.bottomLeft, m_cornerRadii.bottomLeft));
+                alpha,
+                cornerMask(m_cornerRadii.bottomLeft, m_bound.h - m_cornerRadii.bottomLeft, m_cornerRadii.bottomLeft));
         }
 
         return alpha > 0.5F;
@@ -368,6 +368,37 @@ public:
     }
 
 private:
+    NativeWindow * m_parent = nullptr;
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+#ifdef HAVE_WAYLAND
+    // Wayland popup-specific members (base class provides m_display, m_surface, m_context)
+    xdg_surface * m_popupXdgSurface = nullptr;
+    xdg_popup *   m_xdgPopup        = nullptr;
+    bool          m_popupConfigured = false;
+    bool          m_popupDismissed  = false;
+#endif // HAVE_WAYLAND
+#endif // !defined(_WIN32) && !defined(__APPLE__)
+
+    bool m_hasAlpha           = false;
+    bool m_hasCompositor      = false;
+    bool m_msaa               = false;
+    bool m_isWayland          = false;
+    bool m_followsParent      = false; // parented to the main window (X11 child) -> auto-tracks parent move/resize
+    bool m_isInputTransparent = false; // setInputTransparent
+    bool m_isFocusable        = false; // setFocusable
+
+#ifdef HAVE_X11
+    // What the discovery that cached EglContext's config found of a compositor, for every
+    // popup made from that config (survives popup destroy/recreate)
+    inline static bool s_hasCompositor = false;
+#endif // HAVE_X11
+
+    Ui::Res::Type::border_t m_cornerRadii {};
+    fpx_t                   m_borderAA = 1.0F;
+
+    Ui::Color m_bgColor;
+
 #if !defined(_WIN32) && !defined(__APPLE__)
 
 #ifdef HAVE_X11
@@ -929,17 +960,9 @@ private:
     }
 #endif // __APPLE__
 
-    NativeWindow * m_parent = nullptr;
-
 #if !defined(_WIN32) && !defined(__APPLE__)
 
 #ifdef HAVE_WAYLAND
-    // Wayland popup-specific members (base class provides m_display, m_surface, m_context)
-    xdg_surface * m_popupXdgSurface = nullptr;
-    xdg_popup *   m_xdgPopup        = nullptr;
-    bool          m_popupConfigured = false;
-    bool          m_popupDismissed  = false;
-
     void cleanupWayland()
     {
         if (m_xdgPopup) {
@@ -993,25 +1016,6 @@ private:
                                                                .repositioned = xdgPopupRepositioned };
 #endif // HAVE_WAYLAND
 #endif // !defined(_WIN32) && !defined(__APPLE__)
-
-    bool m_hasAlpha           = false;
-    bool m_hasCompositor      = false;
-    bool m_msaa               = false;
-    bool m_isWayland          = false;
-    bool m_followsParent      = false; // parented to the main window (X11 child) -> auto-tracks parent move/resize
-    bool m_isInputTransparent = false; // setInputTransparent
-    bool m_isFocusable        = false; // setFocusable
-
-#ifdef HAVE_X11
-    // What the discovery that cached EglContext's config found of a compositor, for every
-    // popup made from that config (survives popup destroy/recreate)
-    inline static bool s_hasCompositor = false;
-#endif // HAVE_X11
-
-    Ui::Res::Type::border_t m_cornerRadii {};
-    fpx_t                   m_borderAA = 1.0F;
-
-    Ui::Color m_bgColor;
 };
 
 } // namespace Ui::Window::Popup

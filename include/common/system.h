@@ -177,7 +177,7 @@ public:
                          nullptr,
                          &mhz,
                          &size)
-            == ERROR_SUCCESS
+                == ERROR_SUCCESS
             && mhz > 0) {
             return formatGHz(mhz / 1000.0);
         }
@@ -231,8 +231,8 @@ public:
         HMODULE shell32 = LoadLibraryA("shell32.dll");
         if (shell32) {
             SetAppUserModelIDFunc setID = (SetAppUserModelIDFunc)GetProcAddress(
-            shell32,
-            "SetCurrentProcessExplicitAppUserModelID");
+                shell32,
+                "SetCurrentProcessExplicitAppUserModelID");
             if (setID) {
                 setID(Common::Unicode::fromUtf8(name).c_str());
             }

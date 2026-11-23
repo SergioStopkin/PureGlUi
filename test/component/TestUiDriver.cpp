@@ -199,9 +199,9 @@ TEST_F(UiDriverTest, PopupItemHitTestResolvesToItemId)
     ASSERT_NE(menu, nullptr);
 
     const std::vector<Ui::Render::UiElement> popup = Ui::Render::UiLayout::buildPopup(
-    *menu,
-    resManager,
-    resManager.layout().topMenuDropdown.width);
+        *menu,
+        resManager,
+        resManager.layout().topMenuDropdown.width);
     ASSERT_FALSE(popup.empty());
 
     const Ui::Render::UiElement * target = nullptr;

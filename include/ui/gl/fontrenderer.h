@@ -803,6 +803,13 @@ public:
     }
 
 private:
+    Ui::task_fn_t                                                      m_makeCurrent;
+    std::string                                                        m_fontDir;
+    std::unordered_map<Ui::font_handle_t, std::unique_ptr<font_rec_t>> m_fonts;
+    Ui::font_handle_t                                                  m_nextFontHandle = 1;
+
+    std::unordered_map<Ui::Res::Type::font_t, Ui::font_handle_t> m_fontCache;
+
     // Release FreeType faces and GL resources owned by font_rec_t and remove
     // its cache entry. GL resources must be deleted in the context where they
     // were created, so the main context is made current here.
@@ -887,13 +894,6 @@ private:
             }
         }
     }
-
-    Ui::task_fn_t                                                      m_makeCurrent;
-    std::string                                                        m_fontDir;
-    std::unordered_map<Ui::font_handle_t, std::unique_ptr<font_rec_t>> m_fonts;
-    Ui::font_handle_t                                                  m_nextFontHandle = 1;
-
-    std::unordered_map<Ui::Res::Type::font_t, Ui::font_handle_t> m_fontCache;
 };
 
 } // namespace Ui::Gl

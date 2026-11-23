@@ -103,7 +103,7 @@ protected:
         dialog.title  = "scale";
         dialog.width  = 300.0F;
         dialog.height = 200.0F;
-        m_shell.windowManager().openDialog(dialog);
+        m_shell.windowManager().dialog().open(dialog);
     }
 
     // Rows into the first dock, open at its default width as a double-click on its grip opens
@@ -133,8 +133,8 @@ protected:
 TEST_F(ScaleChangeTest, TheUiFollowsTheDpiItsOsGives)
 {
     m_shell.openPopup(m_menuIds.at(0));
-    ASSERT_NE(m_shell.windowManager().popupWindow(), nullptr);
-    const Ui::fpx_t listWidth = m_shell.windowManager().popupWindow()->bound().w;
+    ASSERT_NE(m_shell.windowManager().menus().window(), nullptr);
+    const Ui::fpx_t listWidth = m_shell.windowManager().menus().window()->bound().w;
     const Ui::fpx_t scale     = Ui::g_config.scale;
 
     const int changed = m_dpiBefore * 3 / 2;
@@ -147,8 +147,8 @@ TEST_F(ScaleChangeTest, TheUiFollowsTheDpiItsOsGives)
     EXPECT_EQ(Ui::g_config.dpi, m_shell.windowManager().askedDpi()) << m_read;
     EXPECT_NEAR(Ui::g_config.scale, scale * 1.5F, 0.02F) << m_read;
     EXPECT_EQ(openMenuId(), m_menuIds.at(0)) << m_read;
-    ASSERT_NE(m_shell.windowManager().popupWindow(), nullptr) << m_read;
-    EXPECT_NEAR(m_shell.windowManager().popupWindow()->bound().w, listWidth * 1.5F, 3.0F) << m_read;
+    ASSERT_NE(m_shell.windowManager().menus().window(), nullptr) << m_read;
+    EXPECT_NEAR(m_shell.windowManager().menus().window()->bound().w, listWidth * 1.5F, 3.0F) << m_read;
 }
 
 // At the size it has, to a lower DPI: the minimum size is in CSS px, so it holds at both, where
@@ -195,12 +195,12 @@ TEST_F(ScaleChangeTest, ALaterChangeOfDpiReloadsAgain)
     }
     m_isDpiChanged = true;
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 3) {
-            (void)PureGlUi::setDpi(mainWindow(), m_dpiBefore * 2);
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 3) {
+                (void)PureGlUi::setDpi(mainWindow(), m_dpiBefore * 2);
+            }
+        },
+        m_shell);
     EXPECT_EQ(m_reloads, 2) << m_read;
 }
 
@@ -210,9 +210,9 @@ TEST_F(ScaleChangeTest, ADialogOpenAcrossAChangeOfDpiIsOpenAgainAtItsNewSize)
 {
     Ui::Window::WindowManager & windowManager = m_shell.windowManager();
     openDialog();
-    ASSERT_NE(windowManager.dialogWindow(), nullptr);
-    const Ui::id_t               idBefore = windowManager.dialogWindow()->subscribeId();
-    const Ui::Res::Type::bound_t before   = windowManager.dialogWindow()->bound();
+    ASSERT_NE(windowManager.dialog().window(), nullptr);
+    const Ui::id_t               idBefore = windowManager.dialog().window()->subscribeId();
+    const Ui::Res::Type::bound_t before   = windowManager.dialog().window()->bound();
 
     if (!PureGlUi::setDpi(mainWindow(), m_dpiBefore * 3 / 2)) {
         GTEST_SKIP() << "the OS gives a window no other DPI here";
@@ -220,9 +220,9 @@ TEST_F(ScaleChangeTest, ADialogOpenAcrossAChangeOfDpiIsOpenAgainAtItsNewSize)
     m_isDpiChanged = true;
     PureGlUi::runPasses([](int /*pass*/) { }, m_shell);
 
-    ASSERT_NE(windowManager.dialogWindow(), nullptr) << m_read;
-    EXPECT_NE(windowManager.dialogWindow()->subscribeId(), idBefore) << m_read;
-    const Ui::Res::Type::bound_t after = windowManager.dialogWindow()->bound();
+    ASSERT_NE(windowManager.dialog().window(), nullptr) << m_read;
+    EXPECT_NE(windowManager.dialog().window()->subscribeId(), idBefore) << m_read;
+    const Ui::Res::Type::bound_t after = windowManager.dialog().window()->bound();
     EXPECT_NEAR(after.w, before.w * 1.5F, 3.0F) << m_read;
     EXPECT_NEAR(after.h, before.h * 1.5F, 3.0F) << m_read;
     EXPECT_FLOAT_EQ(after.x, Ui::toPhysEdge(std::round(Ui::toCss(after.x)))) << m_read;
@@ -254,12 +254,12 @@ TEST_F(ScaleChangeTest, ASubmenuOpenAcrossAChangeOfDpiIsOpenAgainWithItsItem)
     }
     Ui::Window::WindowManager & windowManager = m_shell.windowManager();
     m_shell.openPopup(menuId);
-    windowManager.reopenSubmenu(parentId);
-    ASSERT_TRUE(windowManager.hasSubmenu());
-    windowManager.setActivePopupItem(childId);
-    ASSERT_EQ(windowManager.activePopupItemId(), childId);
+    windowManager.menus().reopenSubmenu(parentId);
+    ASSERT_TRUE(windowManager.menus().hasSubmenu());
+    windowManager.menus().setActiveItem(childId);
+    ASSERT_EQ(windowManager.menus().activeItemId(), childId);
     const Ui::key_t key   = m_shell.resManager().findMenuItem(childId).key;
-    const Ui::fpx_t width = windowManager.submenuWindow()->bound().w;
+    const Ui::fpx_t width = windowManager.menus().submenuWindow()->bound().w;
 
     if (!PureGlUi::setDpi(mainWindow(), m_dpiBefore * 3 / 2)) {
         GTEST_SKIP() << "the OS gives a window no other DPI here";
@@ -273,9 +273,9 @@ TEST_F(ScaleChangeTest, ASubmenuOpenAcrossAChangeOfDpiIsOpenAgainWithItsItem)
         GTEST_SKIP() << "the display's pointer moved over the window: " << m_read;
     }
     EXPECT_EQ(openMenuId(), menuId) << m_read;
-    ASSERT_TRUE(windowManager.hasSubmenu()) << m_read;
-    EXPECT_EQ(m_shell.resManager().findMenuItem(windowManager.activePopupItemId()).key, key) << m_read;
-    EXPECT_NEAR(windowManager.submenuWindow()->bound().w, width * 1.5F, 3.0F) << m_read;
+    ASSERT_TRUE(windowManager.menus().hasSubmenu()) << m_read;
+    EXPECT_EQ(m_shell.resManager().findMenuItem(windowManager.menus().activeItemId()).key, key) << m_read;
+    EXPECT_NEAR(windowManager.menus().submenuWindow()->bound().w, width * 1.5F, 3.0F) << m_read;
 }
 
 // Negative: a reload puts back what was open, and only that
@@ -288,8 +288,8 @@ TEST_F(ScaleChangeTest, NothingOpenAcrossAChangeOfDpiStaysThatWay)
     PureGlUi::runPasses([](int /*pass*/) { }, m_shell);
     EXPECT_EQ(m_reloads, 1) << m_read;
     EXPECT_EQ(openMenuId(), Ui::INVALID_ID) << m_read;
-    EXPECT_EQ(m_shell.windowManager().popupWindow(), nullptr) << m_read;
-    EXPECT_EQ(m_shell.windowManager().dialogWindow(), nullptr) << m_read;
+    EXPECT_EQ(m_shell.windowManager().menus().window(), nullptr) << m_read;
+    EXPECT_EQ(m_shell.windowManager().dialog().window(), nullptr) << m_read;
 }
 
 // A reload builds every dock afresh, and a host is told of no change of DPI: the rows it
@@ -301,14 +301,14 @@ TEST_F(ScaleChangeTest, ADocksRowsAreBackAfterAChangeOfDpi)
     ASSERT_FALSE(m_shell.resManager().layout().docks.empty()) << "the shipped layout declares no dock";
     bool wasShown = false;
     PureGlUi::runPasses(
-    [this, &wasShown](int pass) {
-        if (pass == 1) {
-            projectRows({ projectedRow() });
-            wasShown       = isRowShown();
-            m_isDpiChanged = PureGlUi::setDpi(mainWindow(), m_dpiBefore * 3 / 2);
-        }
-    },
-    m_shell);
+        [this, &wasShown](int pass) {
+            if (pass == 1) {
+                projectRows({ projectedRow() });
+                wasShown       = isRowShown();
+                m_isDpiChanged = PureGlUi::setDpi(mainWindow(), m_dpiBefore * 3 / 2);
+            }
+        },
+        m_shell);
     if (!m_isDpiChanged) {
         GTEST_SKIP() << "the OS gives a window no other DPI here";
     }
@@ -324,15 +324,15 @@ TEST_F(ScaleChangeTest, ADocksRowsAreBackAfterItsDockIsBuiltAgain)
     ASSERT_FALSE(m_shell.resManager().layout().docks.empty()) << "the shipped layout declares no dock";
     bool wasShown = false;
     PureGlUi::runPasses(
-    [this, &wasShown](int pass) {
-        if (pass == 1) {
-            projectRows({ projectedRow() });
-            wasShown = isRowShown();
-            m_shell.windowManager().apply(Ui::Res::Type::changes_t(Ui::Res::Type::Changed::Layout));
-            m_shell.windowManager().renderAll();
-        }
-    },
-    m_shell);
+        [this, &wasShown](int pass) {
+            if (pass == 1) {
+                projectRows({ projectedRow() });
+                wasShown = isRowShown();
+                m_shell.windowManager().apply(Ui::Res::Type::changes_t(Ui::Res::Type::Changed::Layout));
+                m_shell.windowManager().renderAll();
+            }
+        },
+        m_shell);
     ASSERT_TRUE(wasShown) << "the row projected never stood in the layout: " << m_read;
     EXPECT_TRUE(isRowShown()) << m_read;
 }
@@ -344,16 +344,16 @@ TEST_F(ScaleChangeTest, ADocksRowsTakenBackStayGoneAfterAChangeOfDpi)
     bool wasShown     = false;
     bool wasTakenBack = false;
     PureGlUi::runPasses(
-    [this, &wasShown, &wasTakenBack](int pass) {
-        if (pass == 1) {
-            projectRows({ projectedRow() });
-            wasShown = isRowShown();
-            projectRows({});
-            wasTakenBack   = !isRowShown();
-            m_isDpiChanged = PureGlUi::setDpi(mainWindow(), m_dpiBefore * 3 / 2);
-        }
-    },
-    m_shell);
+        [this, &wasShown, &wasTakenBack](int pass) {
+            if (pass == 1) {
+                projectRows({ projectedRow() });
+                wasShown = isRowShown();
+                projectRows({});
+                wasTakenBack   = !isRowShown();
+                m_isDpiChanged = PureGlUi::setDpi(mainWindow(), m_dpiBefore * 3 / 2);
+            }
+        },
+        m_shell);
     if (!m_isDpiChanged) {
         GTEST_SKIP() << "the OS gives a window no other DPI here";
     }
@@ -393,14 +393,14 @@ TEST_F(ScaleChangeTest, ADialogStaysTheSameWindowThroughARewriteAtTheSameDpi)
 {
     Ui::Window::WindowManager & windowManager = m_shell.windowManager();
     openDialog();
-    ASSERT_NE(windowManager.dialogWindow(), nullptr);
-    const Ui::id_t idBefore = windowManager.dialogWindow()->subscribeId();
+    ASSERT_NE(windowManager.dialog().window(), nullptr);
+    const Ui::id_t idBefore = windowManager.dialog().window()->subscribeId();
     ASSERT_TRUE(PureGlUi::setDpi(mainWindow(), m_dpiBefore));
     m_isDpiChanged = true;
     PureGlUi::runPasses([](int /*pass*/) { }, m_shell);
     EXPECT_EQ(scaleEventsIn(m_read), 1) << m_read;
-    ASSERT_NE(windowManager.dialogWindow(), nullptr) << m_read;
-    EXPECT_EQ(windowManager.dialogWindow()->subscribeId(), idBefore) << m_read;
+    ASSERT_NE(windowManager.dialog().window(), nullptr) << m_read;
+    EXPECT_EQ(windowManager.dialog().window()->subscribeId(), idBefore) << m_read;
 }
 
 // Negative: nor is a list made again
@@ -408,14 +408,14 @@ TEST_F(ScaleChangeTest, AListStaysTheSameWindowThroughARewriteAtTheSameDpi)
 {
     Ui::Window::WindowManager & windowManager = m_shell.windowManager();
     m_shell.openPopup(m_menuIds.at(0));
-    ASSERT_NE(windowManager.popupWindow(), nullptr);
-    const Ui::id_t idBefore = windowManager.popupWindow()->subscribeId();
+    ASSERT_NE(windowManager.menus().window(), nullptr);
+    const Ui::id_t idBefore = windowManager.menus().window()->subscribeId();
     ASSERT_TRUE(PureGlUi::setDpi(mainWindow(), m_dpiBefore));
     m_isDpiChanged = true;
     PureGlUi::runPasses([](int /*pass*/) { }, m_shell);
     EXPECT_EQ(scaleEventsIn(m_read), 1) << m_read;
-    ASSERT_NE(windowManager.popupWindow(), nullptr) << m_read;
-    EXPECT_EQ(windowManager.popupWindow()->subscribeId(), idBefore) << m_read;
+    ASSERT_NE(windowManager.menus().window(), nullptr) << m_read;
+    EXPECT_EQ(windowManager.menus().window()->subscribeId(), idBefore) << m_read;
 }
 
 // Negative: the batch ends where it began

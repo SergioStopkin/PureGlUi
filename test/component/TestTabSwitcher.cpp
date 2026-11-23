@@ -75,8 +75,8 @@ protected:
         m_shell.setOnTabActivated([this](Ui::id_t id) { m_activated.emplace_back(id); });
         // Tabs 1, 2, 3 on the strip; 3 the active one, 1 viewed before it, 2 the least recent
         m_shell.resManager().tabBar().setTabs(
-        { Ui::tab_t { .id = 1 }, Ui::tab_t { .id = 2 }, Ui::tab_t { .id = 3, .isActive = true } },
-        { 3, 1, 2 });
+            { Ui::tab_t { .id = 1 }, Ui::tab_t { .id = 2 }, Ui::tab_t { .id = 3, .isActive = true } },
+            { 3, 1, 2 });
     }
 
     // `name` going down with `modifiers` held, handed on as the loop hands a key: to the shell
@@ -102,7 +102,7 @@ protected:
     template <typename Post>
     void postAt(int x, int y, Post post)
     {
-        const Ui::Window::Popup::PopupWindow & list  = *m_shell.windowManager().tabSwitcherWindow();
+        const Ui::Window::Popup::PopupWindow & list  = *m_shell.windowManager().tabSwitcher().window();
         const Ui::Res::Type::bound_t           bound = list.bound();
         if (Ui::g_config.isCompositing) {
             post(mainWindow(), Ui::roundToInt(bound.x) + x, Ui::roundToInt(bound.y) + y);
@@ -115,7 +115,7 @@ protected:
     template <typename Post>
     void postAtRow(int row, Post post)
     {
-        const Ui::Res::Type::bound_t bound = m_shell.windowManager().tabSwitcherWindow()->bound();
+        const Ui::Res::Type::bound_t bound = m_shell.windowManager().tabSwitcher().window()->bound();
         const Ui::fpx_t              rowH  = m_shell.resManager().layout().tabSwitcherItem.height;
         postAt(Ui::roundToInt(bound.w / 2.0F), Ui::roundToInt(Ui::toPhys((row + 0.5F) * rowH)), post);
     }
@@ -125,11 +125,11 @@ protected:
     template <typename Post>
     void postAtClose(int row, Post post)
     {
-        const Ui::Res::Type::bound_t bound = m_shell.windowManager().tabSwitcherWindow()->bound();
+        const Ui::Res::Type::bound_t bound = m_shell.windowManager().tabSwitcher().window()->bound();
         const Ui::fpx_t              rowH  = m_shell.resManager().layout().tabSwitcherItem.height;
         const Ui::Res::Type::bound_t close = Ui::Render::rowCloseBoundOf(
-        m_shell.resManager().layout().tabSwitcherClose,
-        { .x = 0.0F, .y = static_cast<Ui::fpx_t>(row) * rowH, .w = Ui::toCss(bound.w), .h = rowH });
+            m_shell.resManager().layout().tabSwitcherClose,
+            { .x = 0.0F, .y = static_cast<Ui::fpx_t>(row) * rowH, .w = Ui::toCss(bound.w), .h = rowH });
         postAt(Ui::roundToInt(Ui::toPhys(close.x + (close.w / 2.0F))),
                Ui::roundToInt(Ui::toPhys(close.y + (close.h / 2.0F))),
                post);
@@ -166,15 +166,15 @@ protected:
 TEST_F(TabSwitcherTest, ACtrlTapSwitchesToTheTabViewedBefore)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            PureGlUi::postControlRelease(mainWindow());
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                PureGlUi::postControlRelease(mainWindow());
+            }
+        },
+        m_shell);
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { 1 })) << m_read;
-    EXPECT_FALSE(m_shell.windowManager().hasTabSwitcher()) << m_read;
+    EXPECT_FALSE(m_shell.windowManager().tabSwitcher().isOpen()) << m_read;
 }
 
 // Ctrl held past the delay: the list goes up, and Ctrl going up then switches to the tab it
@@ -184,22 +184,22 @@ TEST_F(TabSwitcherTest, CtrlGoingUpWithTheListUpSwitchesAndTakesItDown)
     bool isListUp = false;
     bool isPosted = false;
     PureGlUi::runPasses(
-    [this, &isListUp, &isPosted](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
-            return;
-        }
-        if (!isPosted && m_shell.windowManager().hasTabSwitcher()) {
-            isListUp = true;
-            isPosted = true;
-            PureGlUi::postControlRelease(mainWindow());
-        }
-    },
-    m_shell);
+        [this, &isListUp, &isPosted](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
+                return;
+            }
+            if (!isPosted && m_shell.windowManager().tabSwitcher().isOpen()) {
+                isListUp = true;
+                isPosted = true;
+                PureGlUi::postControlRelease(mainWindow());
+            }
+        },
+        m_shell);
     ASSERT_TRUE(isListUp) << "the list never went up; " << m_read;
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { 1 })) << m_read;
-    EXPECT_FALSE(m_shell.windowManager().hasTabSwitcher()) << m_read;
+    EXPECT_FALSE(m_shell.windowManager().tabSwitcher().isOpen()) << m_read;
 }
 
 // The action again with the list open steps it, as the key bound to it does while Ctrl is
@@ -207,14 +207,14 @@ TEST_F(TabSwitcherTest, CtrlGoingUpWithTheListUpSwitchesAndTakesItDown)
 TEST_F(TabSwitcherTest, OpeningItAgainStepsTheOpenList)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            PureGlUi::postControlRelease(mainWindow());
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                PureGlUi::postControlRelease(mainWindow());
+            }
+        },
+        m_shell);
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { 2 })) << m_read;
 }
 
@@ -223,17 +223,17 @@ TEST_F(TabSwitcherTest, OpeningItAgainStepsTheOpenList)
 TEST_F(TabSwitcherTest, AKeyBoundToNothingLeavesTheOpenListAlone)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            pressWithControl("Tab");
-            // Ignored, not taken for Ctrl going up: the list still open, nothing switched yet
-            EXPECT_TRUE(m_shell.tabSwitch().isOpen()) << m_read;
-            EXPECT_TRUE(m_activated.empty()) << m_read;
-            PureGlUi::postControlRelease(mainWindow());
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                pressWithControl("Tab");
+                // Ignored, not taken for Ctrl going up: the list still open, nothing switched yet
+                EXPECT_TRUE(m_shell.tabSwitch().isOpen()) << m_read;
+                EXPECT_TRUE(m_activated.empty()) << m_read;
+                PureGlUi::postControlRelease(mainWindow());
+            }
+        },
+        m_shell);
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { 1 })) << m_read;
 }
 
@@ -241,14 +241,14 @@ TEST_F(TabSwitcherTest, AKeyBoundToNothingLeavesTheOpenListAlone)
 TEST_F(TabSwitcherTest, CtrlDownStepsTheList)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            pressWithControl("Down");
-            PureGlUi::postControlRelease(mainWindow());
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                pressWithControl("Down");
+                PureGlUi::postControlRelease(mainWindow());
+            }
+        },
+        m_shell);
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { 2 })) << m_read;
 }
 
@@ -256,15 +256,15 @@ TEST_F(TabSwitcherTest, CtrlDownStepsTheList)
 TEST_F(TabSwitcherTest, CtrlEscapeTakesItDownUnswitched)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            pressWithControl("Escape");
-            EXPECT_FALSE(m_shell.tabSwitch().isOpen()) << m_read;
-            PureGlUi::postControlRelease(mainWindow());
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                pressWithControl("Escape");
+                EXPECT_FALSE(m_shell.tabSwitch().isOpen()) << m_read;
+                PureGlUi::postControlRelease(mainWindow());
+            }
+        },
+        m_shell);
     EXPECT_TRUE(m_activated.empty()) << m_read;
 }
 
@@ -273,16 +273,16 @@ TEST_F(TabSwitcherTest, CtrlEscapeTakesItDownUnswitched)
 TEST_F(TabSwitcherTest, AShortcutBehindTheOpenListNeverRuns)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            pressWithControl("Next");
-            EXPECT_TRUE(m_shell.tabSwitch().isOpen()) << m_read;
-            EXPECT_TRUE(m_activated.empty()) << m_read;
-            PureGlUi::postControlRelease(mainWindow());
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                pressWithControl("Next");
+                EXPECT_TRUE(m_shell.tabSwitch().isOpen()) << m_read;
+                EXPECT_TRUE(m_activated.empty()) << m_read;
+                PureGlUi::postControlRelease(mainWindow());
+            }
+        },
+        m_shell);
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { 1 })) << m_read;
 }
 
@@ -290,13 +290,13 @@ TEST_F(TabSwitcherTest, AShortcutBehindTheOpenListNeverRuns)
 TEST_F(TabSwitcherTest, AKeyWithCtrlUpSwitchesFirst)
 {
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            pressKey("a", {});
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                pressKey("a", {});
+            }
+        },
+        m_shell);
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { 1 })) << m_read;
     EXPECT_FALSE(m_shell.tabSwitch().isOpen()) << m_read;
 }
@@ -311,24 +311,24 @@ TEST_F(TabSwitcherTest, AHoveredRowIsWhatCtrlGoingUpTakes)
     int         step     = 0;
     std::size_t selected = 0;
     PureGlUi::runPasses(
-    [this, &step, &selected](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
-            return;
-        }
-        if (m_shell.windowManager().tabSwitcherWindow() == nullptr) {
-            return;
-        }
-        if (step == 0) {
-            postAtRow(2, PureGlUi::postPointerMove);
-        } else if (step == 1) {
-            selected = m_shell.tabSwitch().selectedRow();
-            PureGlUi::postControlRelease(mainWindow());
-        }
-        ++step;
-    },
-    m_shell);
+        [this, &step, &selected](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
+                return;
+            }
+            if (m_shell.windowManager().tabSwitcher().window() == nullptr) {
+                return;
+            }
+            if (step == 0) {
+                postAtRow(2, PureGlUi::postPointerMove);
+            } else if (step == 1) {
+                selected = m_shell.tabSwitch().selectedRow();
+                PureGlUi::postControlRelease(mainWindow());
+            }
+            ++step;
+        },
+        m_shell);
     ASSERT_GE(step, 2) << "the list went up too late to hover it; " << m_read;
     EXPECT_EQ(selected, 2U) << m_read;
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { 2 })) << m_read;
@@ -339,23 +339,23 @@ TEST_F(TabSwitcherTest, AClickOnARowSwitchesToItsTab)
 {
     bool isClicked = false;
     PureGlUi::runPasses(
-    [this, &isClicked](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
-            return;
-        }
-        if (isClicked || m_shell.windowManager().tabSwitcherWindow() == nullptr) {
-            return;
-        }
-        postAtRow(2, PureGlUi::postPointerPress);
-        postAtRow(2, PureGlUi::postPointerRelease);
-        isClicked = true;
-    },
-    m_shell);
+        [this, &isClicked](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
+                return;
+            }
+            if (isClicked || m_shell.windowManager().tabSwitcher().window() == nullptr) {
+                return;
+            }
+            postAtRow(2, PureGlUi::postPointerPress);
+            postAtRow(2, PureGlUi::postPointerRelease);
+            isClicked = true;
+        },
+        m_shell);
     ASSERT_TRUE(isClicked) << "the list never went up; " << m_read;
     EXPECT_EQ(m_activated, (std::vector<Ui::id_t> { 2 })) << m_read;
-    EXPECT_FALSE(m_shell.windowManager().hasTabSwitcher()) << m_read;
+    EXPECT_FALSE(m_shell.windowManager().tabSwitcher().isOpen()) << m_read;
 }
 
 // A click on a row's close button closes its tab, switching to none: the list stays up, Ctrl
@@ -366,24 +366,24 @@ TEST_F(TabSwitcherTest, AClickOnARowsCloseButtonClosesItsTabTheListStayingUp)
     closeAsAHost();
     bool isClicked = false;
     PureGlUi::runPasses(
-    [this, &isClicked](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
-            return;
-        }
-        if (isClicked || m_shell.windowManager().tabSwitcherWindow() == nullptr) {
-            return;
-        }
-        postAtClose(2, PureGlUi::postPointerPress);
-        postAtClose(2, PureGlUi::postPointerRelease);
-        isClicked = true;
-    },
-    m_shell);
+        [this, &isClicked](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
+                return;
+            }
+            if (isClicked || m_shell.windowManager().tabSwitcher().window() == nullptr) {
+                return;
+            }
+            postAtClose(2, PureGlUi::postPointerPress);
+            postAtClose(2, PureGlUi::postPointerRelease);
+            isClicked = true;
+        },
+        m_shell);
     ASSERT_TRUE(isClicked) << "the list never went up; " << m_read;
     EXPECT_EQ(m_closed, (std::vector<Ui::id_t> { 2 })) << m_read;
     EXPECT_TRUE(m_activated.empty()) << m_read;
-    EXPECT_TRUE(m_shell.windowManager().hasTabSwitcher()) << m_read;
+    EXPECT_TRUE(m_shell.windowManager().tabSwitcher().isOpen()) << m_read;
     EXPECT_EQ(m_shell.tabSwitch().ids(), (std::vector<Ui::id_t> { 3, 1 })) << m_read;
     EXPECT_EQ(m_shell.tabSwitch().selectedId(), 1U) << m_read;
 }
@@ -395,24 +395,24 @@ TEST_F(TabSwitcherTest, ACloseButtonLetGoOfOffItClosesNothing)
     closeAsAHost();
     bool isClicked = false;
     PureGlUi::runPasses(
-    [this, &isClicked](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
-            return;
-        }
-        if (isClicked || m_shell.windowManager().tabSwitcherWindow() == nullptr) {
-            return;
-        }
-        postAtClose(2, PureGlUi::postPointerPress);
-        postAtRow(2, PureGlUi::postPointerRelease);
-        isClicked = true;
-    },
-    m_shell);
+        [this, &isClicked](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
+                return;
+            }
+            if (isClicked || m_shell.windowManager().tabSwitcher().window() == nullptr) {
+                return;
+            }
+            postAtClose(2, PureGlUi::postPointerPress);
+            postAtRow(2, PureGlUi::postPointerRelease);
+            isClicked = true;
+        },
+        m_shell);
     ASSERT_TRUE(isClicked) << "the list never went up; " << m_read;
     EXPECT_TRUE(m_closed.empty()) << m_read;
     EXPECT_TRUE(m_activated.empty()) << m_read;
-    EXPECT_TRUE(m_shell.windowManager().hasTabSwitcher()) << m_read;
+    EXPECT_TRUE(m_shell.windowManager().tabSwitcher().isOpen()) << m_read;
 }
 // The pointer over the list hovers a row; moved off onto the main window it hovers none, or a row
 // Ctrl+Tab highlights since would be taken back by the next move
@@ -423,38 +423,38 @@ TEST_F(TabSwitcherTest, APointerMovedOffTheListHoversNoRow)
     std::optional<std::size_t>  overRow; // hovered with the pointer over the list
     std::optional<std::size_t>  offRow;  // hovered with it moved off
     PureGlUi::runPasses(
-    [this, &windowManager, &step, &overRow, &offRow](int pass) {
-        if (pass == 0) {
-            m_shell.actions().dispatch("OpenTabSwitcher", "next");
-            Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
-            return;
-        }
-        const Ui::Window::Popup::PopupWindow * list = windowManager.tabSwitcherWindow();
-        if (list == nullptr) {
-            return;
-        }
-        const Ui::Res::Type::bound_t bound = list->bound();
-        if (step == 0) {
-            // Its middle: on a window of its own at its own px, drawn into the main window at the main window's
-            if (Ui::g_config.isCompositing) {
-                PureGlUi::postPointerMove(mainWindow(),
-                                          Ui::roundToInt(bound.x + (bound.w / 2.0F)),
-                                          Ui::roundToInt(bound.y + (bound.h / 2.0F)));
-            } else {
-                PureGlUi::postPointerMove(*list, Ui::roundToInt(bound.w / 2.0F), Ui::roundToInt(bound.h / 2.0F));
+        [this, &windowManager, &step, &overRow, &offRow](int pass) {
+            if (pass == 0) {
+                m_shell.actions().dispatch("OpenTabSwitcher", "next");
+                Common::Time::sleepFor(std::chrono::milliseconds(m_shell.resManager().input().tabSwitcherDelayMs + 50));
+                return;
             }
-        } else if (step == 1) {
-            overRow = windowManager.tabSwitcherHoveredRow();
-            // Left of it, on the main window
-            PureGlUi::postPointerMove(mainWindow(),
-                                      Ui::roundToInt(bound.x / 2.0F),
-                                      Ui::roundToInt(bound.y + (bound.h / 2.0F)));
-        } else if (step == 2) {
-            offRow = windowManager.tabSwitcherHoveredRow();
-        }
-        ++step;
-    },
-    m_shell);
+            const Ui::Window::Popup::PopupWindow * list = windowManager.tabSwitcher().window();
+            if (list == nullptr) {
+                return;
+            }
+            const Ui::Res::Type::bound_t bound = list->bound();
+            if (step == 0) {
+                // Its middle: on a window of its own at its own px, drawn into the main window at the main window's
+                if (Ui::g_config.isCompositing) {
+                    PureGlUi::postPointerMove(mainWindow(),
+                                              Ui::roundToInt(bound.x + (bound.w / 2.0F)),
+                                              Ui::roundToInt(bound.y + (bound.h / 2.0F)));
+                } else {
+                    PureGlUi::postPointerMove(*list, Ui::roundToInt(bound.w / 2.0F), Ui::roundToInt(bound.h / 2.0F));
+                }
+            } else if (step == 1) {
+                overRow = windowManager.tabSwitcher().hoveredRow();
+                // Left of it, on the main window
+                PureGlUi::postPointerMove(mainWindow(),
+                                          Ui::roundToInt(bound.x / 2.0F),
+                                          Ui::roundToInt(bound.y + (bound.h / 2.0F)));
+            } else if (step == 2) {
+                offRow = windowManager.tabSwitcher().hoveredRow();
+            }
+            ++step;
+        },
+        m_shell);
     ASSERT_GE(step, 3) << "the list went up too late to move over it; " << m_read;
     ASSERT_TRUE(overRow.has_value()) << "the pointer over the list hovered no row; " << m_read;
     EXPECT_FALSE(offRow.has_value()) << "row " << offRow.value_or(0) << " still hovered off the list; " << m_read;

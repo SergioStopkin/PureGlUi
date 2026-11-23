@@ -347,9 +347,9 @@ TEST_F(DockRowLayoutTest, ACollapsedDockDrawsNoRows)
 {
     resManager.setDockState("row-collapsed", Ui::Res::Dock::dock_state_t { 0.0F, ROW_DOCK_WIDTH });
     Ui::Render::DockColumn dock(
-    1,
-    Ui::Res::Dock::dock_config_t { "row-collapsed", Ui::Res::Dock::DockAnchor::Left, 1, ROW_DOCK_WIDTH },
-    resManager);
+        1,
+        Ui::Res::Dock::dock_config_t { "row-collapsed", Ui::Res::Dock::DockAnchor::Left, 1, ROW_DOCK_WIDTH },
+        resManager);
     dock.setLayout(DOCK_TOP, ROW_DOCK_HEIGHT, ROW_DOCK_EDGE);
 
     Ui::Res::Dock::row_t row;
@@ -623,8 +623,9 @@ TEST_F(DockRowLayoutTest, ANarrowDockOffersNothingOutsideItsContent)
                 continue;
             }
             EXPECT_TRUE(isWithinX(element.bound, dock.content()))
-            << "width " << width << ": element type " << Ui::Render::toInt(element.type) << " at x=" << element.bound.x
-            << " w=" << element.bound.w << ", content x=" << dock.content().x << " w=" << dock.content().w;
+                << "width " << width << ": element type " << Ui::Render::toInt(element.type)
+                << " at x=" << element.bound.x << " w=" << element.bound.w << ", content x=" << dock.content().x
+                << " w=" << dock.content().w;
         }
     }
 }
@@ -634,7 +635,7 @@ TEST_F(DockRowLayoutTest, ANarrowDockOffersNothingOutsideItsContent)
 TEST_F(DockRowLayoutTest, ANarrowDockDrawsNoRowGlyphOutsideItsContent)
 {
     const std::string chevron = resManager.resPath().icon(
-    resManager.iconDefault(Ui::Res::Key::IconRoleKey::RowMenu).icon);
+        resManager.iconDefault(Ui::Res::Key::IconRoleKey::RowMenu).icon);
     ASSERT_FALSE(chevron.empty());
 
     for (const Ui::fpx_t width : NARROW_WIDTHS) {
@@ -647,8 +648,8 @@ TEST_F(DockRowLayoutTest, ANarrowDockDrawsNoRowGlyphOutsideItsContent)
                 continue;
             }
             EXPECT_TRUE(isWithinX(image.bound, dock.content()))
-            << "width " << width << ": chevron at x=" << image.bound.x << " w=" << image.bound.w
-            << ", content x=" << dock.content().x << " w=" << dock.content().w;
+                << "width " << width << ": chevron at x=" << image.bound.x << " w=" << image.bound.w
+                << ", content x=" << dock.content().x << " w=" << dock.content().w;
         }
     }
 }
@@ -665,9 +666,9 @@ TEST_F(DockRowLayoutTest, ADockTooNarrowForARowOffersNoScrollbar)
     dock.appendElements(layout);
 
     const bool hasScrollbar = std::any_of(
-    layout.elements().begin(),
-    layout.elements().end(),
-    [](const Ui::Render::UiElement & element) { return element.type == Ui::Render::UiElementType::DockScrollbar; });
+        layout.elements().begin(),
+        layout.elements().end(),
+        [](const Ui::Render::UiElement & element) { return element.type == Ui::Render::UiElementType::DockScrollbar; });
     EXPECT_FALSE(hasScrollbar);
 }
 

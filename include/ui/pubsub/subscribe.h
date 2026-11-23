@@ -39,14 +39,14 @@ public:
     void add(id_t source, id_t subscriber, Ui::task_fn_t callback)
     {
         m_entries.emplace_back(
-        Ui::PubSub::subscription_t { .source = source, .subscriber = subscriber, .callback = std::move(callback) });
+            Ui::PubSub::subscription_t { .source = source, .subscriber = subscriber, .callback = std::move(callback) });
     }
 
     void add(std::initializer_list<id_t> sources, id_t subscriber, const Ui::task_fn_t & callback)
     {
         for (const id_t source : sources) {
             m_entries.emplace_back(
-            Ui::PubSub::subscription_t { .source = source, .subscriber = subscriber, .callback = callback });
+                Ui::PubSub::subscription_t { .source = source, .subscriber = subscriber, .callback = callback });
         }
     }
 

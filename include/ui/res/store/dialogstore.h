@@ -84,8 +84,8 @@ public:
                 }
 
                 const std::string primaryName = Common::Sanitize::string(
-                Common::Json::string(typeDef, dialogKeyName(DialogKey::Primary)),
-                "dialog.primary");
+                    Common::Json::string(typeDef, dialogKeyName(DialogKey::Primary)),
+                    "dialog.primary");
                 Type::dialog_type_config_t config;
 
                 for (const auto & btnName : typeDef.at(buttonsKey)) {

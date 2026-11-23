@@ -60,7 +60,7 @@ protected:
     {
         const std::string captured = consumeStderr();
         EXPECT_NE(captured.find(needle), std::string::npos)
-        << "stderr did not contain expected fragment\nneedle: " << needle << "\ncaptured: " << captured;
+            << "stderr did not contain expected fragment\nneedle: " << needle << "\ncaptured: " << captured;
         // Re-open capture so any follow-up sanitize call in the test still
         // gets its log siphoned away.
         ::testing::internal::CaptureStderr();

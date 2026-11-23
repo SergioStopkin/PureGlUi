@@ -55,7 +55,7 @@ TEST(SecondMainWindow, OpensAMenuListAsTheFirstDid)
         // The frame the app draws before anyone can click a menu
         shell.windowManager().renderAll();
         shell.openPopup(menuIds.front());
-        EXPECT_NE(shell.windowManager().popupWindow(), nullptr) << "main window " << turn;
+        EXPECT_NE(shell.windowManager().menus().window(), nullptr) << "main window " << turn;
 
         shell.shutdown();
     }

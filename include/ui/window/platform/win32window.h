@@ -52,7 +52,7 @@ constexpr bool WIN32_PERF_DEBUG = false;
  *
  * Implements Ui::IWindow for Windows using Win32 for window management and WGL for OpenGL context.
  */
-class Win32Window : public WindowBase<Win32Window> {
+class Win32Window : public WindowBase {
 public:
     // User message re-posted from WndProc so pollEvent() can see it
     static constexpr UINT WM_APP_CLOSE = WM_APP + 1;
@@ -293,14 +293,14 @@ public:
                 DISPLAY_DEVICEW monitor {};
                 monitor.cb              = static_cast<DWORD>(sizeof(monitor));
                 const std::wstring name = (EnumDisplayDevicesW(device.DeviceName, 0, &monitor, 0) != 0)
-                                        ? std::wstring(monitor.DeviceString)
-                                        : std::wstring(device.DeviceName);
+                                            ? std::wstring(monitor.DeviceString)
+                                            : std::wstring(device.DeviceName);
                 displays.emplace_back(display_t {
-                .name        = Common::Unicode::toUtf8(name),
-                .width       = static_cast<int>(mode.dmPelsWidth),
-                .height      = static_cast<int>(mode.dmPelsHeight),
-                .refreshRate = (mode.dmDisplayFrequency > 1) ? static_cast<fpx_t>(mode.dmDisplayFrequency) : 0.0F,
-                .isPrimary   = (device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) != 0 });
+                    .name        = Common::Unicode::toUtf8(name),
+                    .width       = static_cast<int>(mode.dmPelsWidth),
+                    .height      = static_cast<int>(mode.dmPelsHeight),
+                    .refreshRate = (mode.dmDisplayFrequency > 1) ? static_cast<fpx_t>(mode.dmDisplayFrequency) : 0.0F,
+                    .isPrimary   = (device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) != 0 });
             }
             device.cb = static_cast<DWORD>(sizeof(device));
         }
@@ -459,7 +459,7 @@ public:
         std::cout << "[Win32Window] Window icon set from " << mainIconPath << std::endl;
     }
 
-    // -------- Win32-specific methods (called by WindowBase via CRTP) --------
+    // -------- Win32-specific methods --------
 
     // An input-transparent popup's hit test hands the pointer on to the window it
     // covers, which is this thread's, so HTTRANSPARENT reaches it
@@ -523,27 +523,6 @@ public:
         wglMakeCurrent(m_hdc, m_hglrc);
 
         return true;
-    }
-
-    void applyRoundedCorners()
-    {
-        if (!m_hwnd) {
-            return;
-        }
-        if (!m_rounded || m_cornerRadius <= 0) {
-            // Remove custom region - restore default window shape
-            SetWindowRgn(m_hwnd, NULL, TRUE);
-            return;
-        }
-        // Win32 API requires int
-        auto radius = static_cast<int>(m_cornerRadius);
-        HRGN rgn    = CreateRoundRectRgn(0,
-                                         0,
-                                         static_cast<int>(m_bound.w) + 1,
-                                         static_cast<int>(m_bound.h) + 1,
-                                         radius * 2,
-                                         radius * 2);
-        SetWindowRgn(m_hwnd, rgn, TRUE);
     }
 
     // Win32 sends WM_SIZE/WM_CLOSE directly to the WndProc (not posted to the queue).
@@ -616,7 +595,41 @@ public:
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
+protected:
+    // -------- WindowBase's hooks --------
+
+    void applyRoundedCorners() override
+    {
+        if (!m_hwnd) {
+            return;
+        }
+        if (!m_rounded || m_cornerRadius <= 0) {
+            // Remove custom region - restore default window shape
+            SetWindowRgn(m_hwnd, NULL, TRUE);
+            return;
+        }
+        // Win32 API requires int
+        auto radius = static_cast<int>(m_cornerRadius);
+        HRGN rgn    = CreateRoundRectRgn(0,
+                                         0,
+                                         static_cast<int>(m_bound.w) + 1,
+                                         static_cast<int>(m_bound.h) + 1,
+                                         radius * 2,
+                                         radius * 2);
+        SetWindowRgn(m_hwnd, rgn, TRUE);
+    }
+
 private:
+    HWND  m_hwnd       = nullptr;
+    HDC   m_hdc        = nullptr;
+    HGLRC m_hglrc      = nullptr;
+    HICON m_hIconBig   = nullptr;
+    HICON m_hIconSmall = nullptr;
+    UINT  m_dpi        = USER_DEFAULT_SCREEN_DPI; // the window's, as WM_DPICHANGED last said
+    fpx_t m_minWidth   = 0;                       // client floor, answered on WM_GETMINMAXINFO
+    fpx_t m_minHeight  = 0;
+    bool  m_isPlacing  = false; // inside moveResize, whose size wins over WM_DPICHANGED's rect
+
     // bound carries the frame origin (x, y - what screenFramePosition reports) and the CLIENT
     // size (w, h - what WM_SIZE/session store), but SetWindowPos takes the OUTER size. Convert
     // via the window's actual style - the same adjustment create() applies. For undecorated
@@ -784,16 +797,6 @@ private:
         cairo_surface_destroy(surface);
         return hIcon;
     }
-
-    HWND  m_hwnd       = nullptr;
-    HDC   m_hdc        = nullptr;
-    HGLRC m_hglrc      = nullptr;
-    HICON m_hIconBig   = nullptr;
-    HICON m_hIconSmall = nullptr;
-    UINT  m_dpi        = USER_DEFAULT_SCREEN_DPI; // the window's, as WM_DPICHANGED last said
-    fpx_t m_minWidth   = 0;                       // client floor, answered on WM_GETMINMAXINFO
-    fpx_t m_minHeight  = 0;
-    bool  m_isPlacing  = false; // inside moveResize, whose size wins over WM_DPICHANGED's rect
 };
 
 } // namespace Ui::Window::Platform

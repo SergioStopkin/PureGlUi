@@ -46,13 +46,13 @@ void registerActions(Host & host)
 {
     using Fn           = void (*)(Host &, const std::string &);
     const auto actions = std::to_array<std::pair<Ui::key_t, Fn>>({
-    { "ExitApp", &exitApp<Host> },
-    { "Reload", &reload<Host> },
-    { "SwitchThemeMode", &switchThemeMode<Host> },
-    { "SwitchTheme", &switchTheme<Host> },
-    { "OpenFile", &openFile<Host> },
-    { "CycleTab", &cycleTab<Host> },
-    { Ui::key_t { OPEN_TAB_SWITCHER }, &openTabSwitcher<Host> },
+        { "ExitApp", &exitApp<Host> },
+        { "Reload", &reload<Host> },
+        { "SwitchThemeMode", &switchThemeMode<Host> },
+        { "SwitchTheme", &switchTheme<Host> },
+        { "OpenFile", &openFile<Host> },
+        { "CycleTab", &cycleTab<Host> },
+        { Ui::key_t { OPEN_TAB_SWITCHER }, &openTabSwitcher<Host> },
     });
     for (const auto & [key, fn] : actions) {
         host.actions().on(key, [&host, fn](const std::string & arg) { fn(host, arg); });

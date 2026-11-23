@@ -109,6 +109,14 @@ public:
     [[nodiscard]] unsigned int budget() const { return m_budget; }
 
 private:
+    std::mutex                                                 m_mutex;
+    std::condition_variable                                    m_cv;
+    std::atomic<bool>                                          m_stop { false };
+    const unsigned int                                         m_budget;
+    unsigned int                                               m_available;
+    std::queue<std::pair<unsigned int, std::function<void()>>> m_queue;
+    std::vector<std::thread>                                   m_pool;
+
     void loop()
     {
         while (true) {
@@ -143,14 +151,6 @@ private:
             m_cv.notify_all();
         }
     }
-
-    const unsigned int                                         m_budget;
-    unsigned int                                               m_available;
-    std::queue<std::pair<unsigned int, std::function<void()>>> m_queue;
-    std::mutex                                                 m_mutex;
-    std::condition_variable                                    m_cv;
-    std::atomic<bool>                                          m_stop { false };
-    std::vector<std::thread>                                   m_pool;
 };
 
 /**

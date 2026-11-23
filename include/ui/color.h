@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include "ui/hsl.h"
+
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -164,28 +166,21 @@ public:
     // Lighter(p): increase HSL lightness by p percentage points (0-100)
     [[nodiscard]] Color Lighter(const float p) const
     {
-        float h = 0;
-        float s = 0;
-        float l = 0;
-        toHSL(h, s, l);
-        l = std::fmin(l + p, 100.0F);
-        return fromHSL(h, s, l, m_a);
+        hsl_t hsl     = toHSL();
+        hsl.lightness = std::fmin(hsl.lightness + p, 100.0F);
+        return fromHSL(hsl, m_a);
     }
 
     // Darker(p): decrease HSL lightness by p percentage points (0-100)
     [[nodiscard]] Color Darker(const float p) const
     {
-        float h = 0;
-        float s = 0;
-        float l = 0;
-        toHSL(h, s, l);
-        l = std::fmax(l - p, 0.0F);
-        return fromHSL(h, s, l, m_a);
+        hsl_t hsl     = toHSL();
+        hsl.lightness = std::fmax(hsl.lightness - p, 0.0F);
+        return fromHSL(hsl, m_a);
     }
 
-private:
-    // Convert RGB to HSL (h: 0-360, s: 0-100, l: 0-100)
-    void toHSL(float & h, float & s, float & l) const
+    // This colour in HSL, its alpha aside
+    [[nodiscard]] hsl_t toHSL() const
     {
         const float rf = m_r / 255.0F;
         const float gf = m_g / 255.0F;
@@ -195,35 +190,36 @@ private:
         const float cmin = std::fmin(rf, std::fmin(gf, bf));
         const float d    = cmax - cmin;
 
-        l = (cmax + cmin) / 2.0F * 100.0F;
+        hsl_t hsl;
+        hsl.lightness = (cmax + cmin) / 2.0F * 100.0F;
 
         if (d < 1e-6F) {
-            h = 0;
-            s = 0;
-            return;
+            return hsl;
         }
 
         // 2L - 1 with L = (cmax + cmin) / 2
-        s = d / (1.0F - std::fabs(cmax + cmin - 1.0F)) * 100.0F;
+        hsl.saturation = d / (1.0F - std::fabs(cmax + cmin - 1.0F)) * 100.0F;
 
         if (cmax == rf) {
-            h = 60.0F * std::fmod((gf - bf) / d, 6.0F);
+            hsl.hue = 60.0F * std::fmod((gf - bf) / d, 6.0F);
         } else if (cmax == gf) {
-            h = 60.0F * (((bf - rf) / d) + 2.0F);
+            hsl.hue = 60.0F * (((bf - rf) / d) + 2.0F);
         } else {
-            h = 60.0F * (((rf - gf) / d) + 4.0F);
+            hsl.hue = 60.0F * (((rf - gf) / d) + 4.0F);
         }
 
-        if (h < 0) {
-            h += 360.0F;
+        if (hsl.hue < 0) {
+            hsl.hue += 360.0F;
         }
+        return hsl;
     }
 
-    // Convert HSL to Color (h: 0-360, s: 0-100, l: 0-100)
-    static Color fromHSL(float h, float s, float l, uint8_t a)
+    // The colour `hsl` stands for, with `alpha`
+    [[nodiscard]] static Color fromHSL(const hsl_t & hsl, uint8_t alpha)
     {
-        s /= 100.0F;
-        l /= 100.0F;
+        const float h = hsl.hue;
+        const float s = hsl.saturation / 100.0F;
+        const float l = hsl.lightness / 100.0F;
 
         const float c = (1.0F - std::fabs((2.0F * l) - 1.0F)) * s;
         const float x = c * (1.0F - std::fabs(std::fmod(h / 60.0F, 2.0F) - 1.0F));
@@ -256,7 +252,7 @@ private:
         return { static_cast<uint8_t>(std::round((rf + m) * 255.0F)),
                  static_cast<uint8_t>(std::round((gf + m) * 255.0F)),
                  static_cast<uint8_t>(std::round((bf + m) * 255.0F)),
-                 a };
+                 alpha };
     }
 };
 

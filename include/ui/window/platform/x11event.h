@@ -176,7 +176,7 @@ private:
     static constexpr int       LONGS    = 32; // a property's or client message's format: longs
     static constexpr X11::Long ONE_LONG = 1;  // what a property read asks for, in longs
     static constexpr X11::Long FROM_APPLICATION =
-    1;                                         // _NET_ACTIVE_WINDOW's source: an application, held to the focus rules
+        1;                                     // _NET_ACTIVE_WINDOW's source: an application, held to the focus rules
     static constexpr X11::Long FROM_FIRST = 0; // a property read's offset
     static constexpr ::Window  NO_WINDOW {};   // none found
 
@@ -328,8 +328,8 @@ private:
         case X11EventTypes::KEY_PRESS: {
             event.type       = EventType::KeyPress;
             event.key.keysym = XLookupKeysym(
-            const_cast<XKeyEvent *>(&xev.xkey), // NOLINT(cppcoreguidelines-pro-type-const-cast)
-            0);
+                const_cast<XKeyEvent *>(&xev.xkey), // NOLINT(cppcoreguidelines-pro-type-const-cast)
+                0);
             event.key.modifiers = convertX11Modifiers(xev.xkey.state);
 
             // Resolve logical key name (e.g. "Return", "F1", "q")
@@ -351,8 +351,8 @@ private:
         case X11EventTypes::KEY_RELEASE: {
             event.type       = EventType::KeyRelease;
             event.key.keysym = XLookupKeysym(
-            const_cast<XKeyEvent *>(&xev.xkey), // NOLINT(cppcoreguidelines-pro-type-const-cast)
-            0);
+                const_cast<XKeyEvent *>(&xev.xkey), // NOLINT(cppcoreguidelines-pro-type-const-cast)
+                0);
             event.key.modifiers = convertX11Modifiers(xev.xkey.state);
 
             // Named as its press is, so a Ctrl going up reads as one (the Ctrl+Tab list)

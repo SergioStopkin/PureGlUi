@@ -3,7 +3,8 @@
 These are the abstract contracts hosts and backends plug into. The framework
 never talks to a concrete window, GL backend, or OS event source directly - it
 drives `[main window] + content surfaces` blind through `IWindow` + `IRenderer` +
-`IEventApp`, and executes decoded input through `IChromeCommands`. Implement one
+`IEventApp`, a pair at a time (`Ui::Window::Pairing`), and executes decoded input
+through `IChromeCommands`. Implement one
 of these to swap a backend, embed a content surface, or record behavior in a
 test.
 
@@ -197,7 +198,7 @@ Header: `include/ui/interface/iwindow.h`
 `class IWindow : ... ` derives from `IEventApp` (via the base rooting - a window
 is also a pointer-event sink). A pure presentation surface: GL context +
 geometry + visibility. It never renders or consumes events itself; a pairing
-(Connector) glues it to a renderer.
+(a `Connector`'s `Pairing`) glues it to a renderer.
 
 Pure-virtual methods:
 - `void setPosition(fpx_t x, fpx_t y)` - pre-creation position hint.

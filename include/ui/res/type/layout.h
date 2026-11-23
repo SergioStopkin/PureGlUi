@@ -41,11 +41,11 @@ struct alignas(128) layout_t final {
     Ui::Res::Type::region_t toolbarButton; // one size for every button; padding insets its icon
     Ui::Res::Type::region_t tooltip;       // height, padding round its text, margin off its button, radius
     Ui::Res::Type::region_t
-    tabSwitcher; // the Ctrl+Tab list: its narrowest width, margin off the window's edges, radius
+        tabSwitcher; // the Ctrl+Tab list: its narrowest width, margin off the window's edges, radius
     Ui::Res::Type::region_t tabSwitcherItem; // a row: its height, padding at either end and before its description
     Ui::Res::Type::region_t tabSwitcherItemActive; // the highlighted row: its inset (margin), radius
     Ui::Res::Type::region_t
-    tabSwitcherClose; // a row's close button: icon size (height), margin round it, right, radius
+        tabSwitcherClose; // a row's close button: icon size (height), margin round it, right, radius
     Ui::Res::Type::region_t statusBar;
     Ui::Res::Type::region_t workspace;
     Ui::Res::Type::region_t workspaceTab;
@@ -53,7 +53,7 @@ struct alignas(128) layout_t final {
 
     // Composite primitives
     Ui::Res::Dock::dock_layout_t
-    dockDefaults; // shared dimensional/interaction tunables (grip width, min/max, snap, click threshold)
+        dockDefaults; // shared dimensional/interaction tunables (grip width, min/max, snap, click threshold)
     theme_preview_t themePreview; // theme preview swatch geometry (rendered next to each theme submenu entry)
 
     // Borders + bounds

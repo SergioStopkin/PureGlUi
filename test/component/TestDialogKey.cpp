@@ -45,7 +45,7 @@ protected:
         if (!m_isInitialized) {
             return;
         }
-        m_shell.windowManager().setOnDialogClose([this] { ++m_closes; });
+        m_shell.windowManager().dialog().setOnClose([this] { ++m_closes; });
     }
 };
 
@@ -54,26 +54,26 @@ protected:
 TEST_F(DialogKeyTest, EscapeClosesOnceAfterItsSteps)
 {
     const Common::Time::span_t step = Ui::Animation::durationOf(
-    m_shell.resManager().transitionsFor(Ui::Res::Key::ElementKey::DialogClose));
+        m_shell.resManager().transitionsFor(Ui::Res::Key::ElementKey::DialogClose));
     ASSERT_GT(step, Common::Time::span_t::zero()) << "the shipped dialog-close has no transition";
     bool isOpenAfterKey = false;
     PureGlUi::runPasses(
-    [this, &step, &isOpenAfterKey](int pass) {
-        if (pass == 0) {
-            Ui::Res::Type::dialog_t dialog;
-            dialog.title  = "keys";
-            dialog.width  = 300.0F;
-            dialog.height = 200.0F;
-            m_shell.windowManager().openDialog(dialog);
-            m_shell.windowManager().dialogKeyPress("Escape");
-            isOpenAfterKey = m_shell.windowManager().hasDialog();
-        } else if (pass == 1) {
-            // Both steps run out, hovered then pressed: the next frame closes it
-            Common::Time::sleepFor((step * 2) + PureGlUi::GLIDE_MARGIN);
-        }
-    },
-    m_shell);
+        [this, &step, &isOpenAfterKey](int pass) {
+            if (pass == 0) {
+                Ui::Res::Type::dialog_t dialog;
+                dialog.title  = "keys";
+                dialog.width  = 300.0F;
+                dialog.height = 200.0F;
+                m_shell.windowManager().dialog().open(dialog);
+                m_shell.windowManager().dialog().keyPress("Escape");
+                isOpenAfterKey = m_shell.windowManager().dialog().isOpen();
+            } else if (pass == 1) {
+                // Both steps run out, hovered then pressed: the next frame closes it
+                Common::Time::sleepFor((step * 2) + PureGlUi::GLIDE_MARGIN);
+            }
+        },
+        m_shell);
     EXPECT_TRUE(isOpenAfterKey) << "the key closed it before its steps; " << m_read;
-    EXPECT_FALSE(m_shell.windowManager().hasDialog()) << m_read;
+    EXPECT_FALSE(m_shell.windowManager().dialog().isOpen()) << m_read;
     EXPECT_EQ(m_closes, 1) << m_read;
 }

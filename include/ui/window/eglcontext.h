@@ -192,7 +192,7 @@ public:
         // which static_cast cannot express - sanctioned reinterpret_cast exception.
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         auto eglGetPlatformDisplayEXT = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
-        eglGetProcAddress("eglGetPlatformDisplayEXT"));
+            eglGetProcAddress("eglGetPlatformDisplayEXT"));
 
         if (platform == EglPlatform::Wayland) {
 #ifdef HAVE_WAYLAND

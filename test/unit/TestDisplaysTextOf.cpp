@@ -32,10 +32,10 @@ using Ui::Window::displaysTextOf;
 TEST(DisplaysTextOf, OneLinePerDisplayThePrimaryMarked)
 {
     EXPECT_EQ(
-    displaysTextOf(
-    { display_t { .name = "eDP-1", .width = 2560, .height = 1600, .refreshRate = 89.9499F, .isPrimary = true },
-      display_t { .name = "HDMI-1", .width = 1920, .height = 1080, .refreshRate = 60.0F } }),
-    "eDP-1: 2560x1600, 89.95 Hz, primary\nHDMI-1: 1920x1080, 60 Hz");
+        displaysTextOf(
+            { display_t { .name = "eDP-1", .width = 2560, .height = 1600, .refreshRate = 89.9499F, .isPrimary = true },
+              display_t { .name = "HDMI-1", .width = 1920, .height = 1080, .refreshRate = 60.0F } }),
+        "eDP-1: 2560x1600, 89.95 Hz, primary\nHDMI-1: 1920x1080, 60 Hz");
 }
 
 // A display that gives no rate, or no name, is still listed

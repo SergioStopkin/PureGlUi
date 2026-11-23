@@ -58,9 +58,9 @@ struct alignas(sizeof(E)) flags_t final {
     constexpr bool operator==(E flag) const { return m_bits == bitsOf(flag); }
 
 private:
-    static constexpr bits_t bitsOf(E flag) { return static_cast<bits_t>(flag); }
-
     bits_t m_bits {};
+
+    static constexpr bits_t bitsOf(E flag) { return static_cast<bits_t>(flag); }
 };
 
 } // namespace Common

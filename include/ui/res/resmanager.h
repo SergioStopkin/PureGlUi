@@ -148,24 +148,24 @@ public:
         const auto app = Common::loadJson(m_resPath.appFile());
         m_title = Common::Sanitize::string(Common::Json::string(app, appKeyName(AppKey::Title), m_title), "app.title");
         m_sessionDir = Common::Sanitize::filePath(
-        Common::Json::string(app, appKeyName(AppKey::SessionDir), m_sessionDir),
-        "app.sessionDir");
+            Common::Json::string(app, appKeyName(AppKey::SessionDir), m_sessionDir),
+            "app.sessionDir");
         m_sessionFile = Common::Sanitize::filePath(
-        Common::Json::string(app, appKeyName(AppKey::SessionFile), m_sessionFile),
-        "app.sessionFile");
+            Common::Json::string(app, appKeyName(AppKey::SessionFile), m_sessionFile),
+            "app.sessionFile");
 
         // Native open-dialog config (optional). Absent/empty filters => the
         // dialog offers any file.
         const auto & openFile = Common::Json::object(app, appKeyName(AppKey::OpenFile));
         m_openFileTitle       = Common::Sanitize::string(
-        Common::Json::string(openFile, appKeyName(AppKey::Title), m_openFileTitle),
-        "app.openFile.title");
+            Common::Json::string(openFile, appKeyName(AppKey::Title), m_openFileTitle),
+            "app.openFile.title");
         for (const auto & filter : Common::Json::array(openFile, appKeyName(AppKey::Filters))) {
             m_openFileFilters.push_back(
-            { .name = Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Name)),
-                                               "app.filter.name"),
-              .spec = Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Spec)),
-                                               "app.filter.spec") });
+                { .name = Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Name)),
+                                                   "app.filter.name"),
+                  .spec = Common::Sanitize::string(Common::Json::string(filter, appKeyName(AppKey::Spec)),
+                                                   "app.filter.spec") });
         }
 
         std::cout << "[ResManager] Loaded app.json: title=" << m_title << " sessionDir=" << m_sessionDir << std::endl;
@@ -505,23 +505,23 @@ public:
     void registerPersistedSettings()
     {
         registerPersisted(
-        Ui::Res::Key::SectionKey::View,
-        Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::Theme),
-        [this] { return m_themeStore.themeName(); },
-        [this](const std::string & v) { m_themeStore.setThemeNameValue(v); });
+            Ui::Res::Key::SectionKey::View,
+            Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::Theme),
+            [this] { return m_themeStore.themeName(); },
+            [this](const std::string & v) { m_themeStore.setThemeNameValue(v); });
         registerPersisted(
-        Ui::Res::Key::SectionKey::View,
-        Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::ThemeMode),
-        [this] { return m_themeStore.themeMode(); },
-        [this](const std::string & v) { m_themeStore.setThemeModeValue(v); });
+            Ui::Res::Key::SectionKey::View,
+            Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::ThemeMode),
+            [this] { return m_themeStore.themeMode(); },
+            [this](const std::string & v) { m_themeStore.setThemeModeValue(v); });
         // Host domain settings live outside this fw registry; a host persists its
         // own state directly through its session (free-form string keys).
         registerPersisted(
-        Ui::Res::Key::SectionKey::Paths,
-        Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::LastOpenDir),
-        [this] { return m_lastOpenDir; },
-        [this](const std::string & v) { m_lastOpenDir = Common::Sanitize::path(v, "lastOpenDir"); },
-        /*skipIfEmpty=*/true);
+            Ui::Res::Key::SectionKey::Paths,
+            Ui::Res::Key::sessionKeyName(Ui::Res::Key::SessionKey::LastOpenDir),
+            [this] { return m_lastOpenDir; },
+            [this](const std::string & v) { m_lastOpenDir = Common::Sanitize::path(v, "lastOpenDir"); },
+            /*skipIfEmpty=*/true);
         // Window geometry is NOT in this string registry: it lives in the typed
         // "mainWindow" block serializeSession writes directly - keeping it in
         // both places duplicated the same four values in every session.json.
@@ -653,10 +653,9 @@ public:
         // Session format v2 (sectioned; see SectionKey/SessionKey). version
         // is the app version from the build (CMake PROJECT_VERSION); lastUpdate
         // is epoch milliseconds of this save.
+        const auto now                            = std::chrono::system_clock::now().time_since_epoch();
         j[sessionKeyName(SessionKey::Version)]    = APP_VERSION;
-        j[sessionKeyName(SessionKey::LastUpdate)] = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                    std::chrono::system_clock::now().time_since_epoch())
-                                                    .count();
+        j[sessionKeyName(SessionKey::LastUpdate)] = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
 
         // Geometry only once committed - zeros would mask the layout defaults.
         if (m_sessionWindowWidth > 0 && m_sessionWindowHeight > 0) {
@@ -743,7 +742,7 @@ public:
                                      Common::Json::number(mainWindow, sessionKeyName(SessionKey::Width), 0),
                                      Common::Json::number(mainWindow, sessionKeyName(SessionKey::Height), 0));
             setSessionWindowFullscreen(
-            Common::Json::boolean(mainWindow, sessionKeyName(SessionKey::Fullscreen), false));
+                Common::Json::boolean(mainWindow, sessionKeyName(SessionKey::Fullscreen), false));
         }
 
         for (const auto & setting : m_persistedSettings) {
@@ -836,7 +835,7 @@ public:
                                                   "dock.name",
                                                   Store::DockStore::MAX_DOCK_NAME_LENGTH);
             cfg.anchor = Ui::Res::Dock::dockAnchorFromName(
-            Common::Json::string(j, dockKeyName(DockKey::Anchor), "left"));
+                Common::Json::string(j, dockKeyName(DockKey::Anchor), "left"));
             cfg.order        = Common::Json::number(j, dockKeyName(DockKey::Order), 1);
             cfg.defaultWidth = Ui::Convert::str2fpx(Common::Json::string(j, dockKeyName(DockKey::DefaultWidth)));
             if (cfg.name.empty()) {

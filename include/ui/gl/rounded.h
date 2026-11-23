@@ -412,6 +412,33 @@ public:
     }
 
 private:
+    // Rounded rect shader
+    GLuint m_program     = 0;
+    GLuint m_vao         = 0;
+    GLuint m_vbo         = 0;
+    GLint  m_uProjection = -1;
+    GLint  m_uRect       = -1;
+    GLint  m_uRadii      = -1;
+    GLint  m_uColor      = -1;
+    GLint  m_uColor2     = -1;
+    GLint  m_uSplitAngle = -1;
+    GLint  m_uBgColor    = -1;
+    GLint  m_uAA         = -1;
+    fpx_t  m_aa          = 0.5F;
+
+    // Corner texture shader
+    GLuint m_cornerProgram    = 0;
+    GLuint m_cornerVao        = 0;
+    GLint  m_cornerProjection = -1;
+    GLint  m_cornerTexUniform = -1;
+
+    // Corner textures and radii (physical pixels)
+    std::array<GLuint, 4>   m_cornerTex = { 0, 0, 0, 0 };
+    Ui::Res::Type::border_t m_cornerRadii {};
+    GLuint                  m_underlayTex = 0; // what stands under the whole window, see-through; 0 none
+
+    bool m_hasAlpha = false;
+
     void init()
     {
         const char * vertSrc = R"(
@@ -615,33 +642,6 @@ private:
         }
         Ui::Gl::Util::deleteTexture(m_underlayTex);
     }
-
-    // Rounded rect shader
-    GLuint m_program     = 0;
-    GLuint m_vao         = 0;
-    GLuint m_vbo         = 0;
-    GLint  m_uProjection = -1;
-    GLint  m_uRect       = -1;
-    GLint  m_uRadii      = -1;
-    GLint  m_uColor      = -1;
-    GLint  m_uColor2     = -1;
-    GLint  m_uSplitAngle = -1;
-    GLint  m_uBgColor    = -1;
-    GLint  m_uAA         = -1;
-    fpx_t  m_aa          = 0.5F;
-
-    // Corner texture shader
-    GLuint m_cornerProgram    = 0;
-    GLuint m_cornerVao        = 0;
-    GLint  m_cornerProjection = -1;
-    GLint  m_cornerTexUniform = -1;
-
-    // Corner textures and radii (physical pixels)
-    std::array<GLuint, 4>   m_cornerTex = { 0, 0, 0, 0 };
-    Ui::Res::Type::border_t m_cornerRadii {};
-    GLuint                  m_underlayTex = 0; // what stands under the whole window, see-through; 0 none
-
-    bool m_hasAlpha = false;
 };
 
 } // namespace Ui::Gl

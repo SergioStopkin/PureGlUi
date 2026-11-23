@@ -64,8 +64,8 @@ public:
         for (const AnimatedProperty property :
              { AnimatedProperty::Left, AnimatedProperty::Top, AnimatedProperty::Width, AnimatedProperty::Height }) {
             const auto member = memberOf(property);
-            drawn
-            .*member = glide(trackOf(motion, property), { target.*member }, transitionFor(transitions, property)).at(0);
+            drawn.*member =
+                glide(trackOf(motion, property), { target.*member }, transitionFor(transitions, property)).at(0);
         }
         return drawn;
     }
@@ -133,6 +133,10 @@ public:
     }
 
 private:
+    std::unordered_map<Key, motion_t> m_motions;
+    Common::Time::point_t             m_now;   // when the frame being drawn began (beginFrame)
+    Common::Time::point_t             m_until; // when every glide begun so far has ended
+
     motion_t & seen(const Key & key)
     {
         motion_t & motion = m_motions[key];
@@ -237,10 +241,6 @@ private:
                  byteOf(channels.at(2) / alpha),
                  byteOf(alpha) };
     }
-
-    std::unordered_map<Key, motion_t> m_motions;
-    Common::Time::point_t             m_now;   // when the frame being drawn began (beginFrame)
-    Common::Time::point_t             m_until; // when every glide begun so far has ended
 };
 
 } // namespace Ui::Animation

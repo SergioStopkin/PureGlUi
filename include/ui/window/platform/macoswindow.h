@@ -47,7 +47,7 @@ namespace Ui::Window::Platform {
  *
  * Implements Ui::IWindow for macOS using Cocoa for window management and NSOpenGL for OpenGL context.
  */
-class MacOsWindow : public WindowBase<MacOsWindow> {
+class MacOsWindow : public WindowBase {
 public:
     explicit MacOsWindow(Ui::PubSub::Subscribe& subscribe, id_t subscribeId = Ui::INVALID_ID)
         : WindowBase(subscribe, subscribeId)
@@ -648,7 +648,7 @@ public:
         glClear(Common::Bit::Or(GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT));
     }
 
-    // -------- macOS-specific methods (called by WindowBase via CRTP) --------
+    // -------- macOS-specific methods --------
 
     // Apply per-corner mask via CAShapeLayer. Used for popups/submenus/dialogs with per-corner radii
     // (some corners flat). Values are in physical pixels (converted to points internally).
@@ -721,7 +721,10 @@ public:
         content.layer.mask = mask;
     }
 
-    void applyRoundedCorners()
+protected:
+    // -------- WindowBase's hooks --------
+
+    void applyRoundedCorners() override
     {
         if (!m_nsWindow) {
             return;
@@ -757,6 +760,13 @@ public:
     }
 
 private:
+    inline static NSMenuItem* s_quitItem = nil; // made once per process, each main window its target
+    NSWindow* m_nsWindow = nullptr;
+    NSOpenGLView* m_glView = nullptr;
+    // Diagnostic: logs makeCurrent only when the resolved context changes, to detect
+    // content-surface setView swaps and context detach issues without flooding logs per frame.
+    mutable void* m_lastCtxLog = nullptr;
+
     // The app launched as NSApplicationMain launches one, once per process, as GLFW does:
     // [NSApp run] until AppKit says it has finished, the menu bar made just before. One
     // that calls finishLaunching itself, started from a terminal, is neither made active
@@ -846,13 +856,6 @@ private:
         }
         return [NSCursor arrowCursor];
     }
-
-    inline static NSMenuItem* s_quitItem = nil; // made once per process, each main window its target
-    NSWindow* m_nsWindow = nullptr;
-    NSOpenGLView* m_glView = nullptr;
-    // Diagnostic: logs makeCurrent only when the resolved context changes, to detect
-    // content-surface setView swaps and context detach issues without flooding logs per frame.
-    mutable void* m_lastCtxLog = nullptr;
 };
 
 } // namespace Ui::Window::Platform

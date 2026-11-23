@@ -131,6 +131,19 @@ public:
     [[nodiscard]] bool isGliding() const { return m_animator.isRunning(); }
 
 protected:
+    // -- Shared members --
+
+    const Ui::Res::ResManager & m_resManager;
+    Ui::task_fn_t               m_makeCurrent; // makes this renderer's window context current (for GL teardown)
+    fpx_t                       m_width  = 0;
+    fpx_t                       m_height = 0;
+    Ui::Gl::FontRenderer        m_fontRenderer;
+    Ui::Gl::SvgRenderer         m_svgRenderer;
+    Ui::Gl::Rounded             m_rounded;
+
+    // A popup lives as long as what it shows, so nothing in it is swept
+    Ui::Animation::Animator<id_t> m_animator;
+
     // Begin a render frame: clear, viewport, blend, corner underlay. An opaque
     // window clears to its own background.
     // Returns true if premultiplied alpha is active.
@@ -260,19 +273,6 @@ protected:
     {
         return m_animator.colorsOf(key, target, m_resManager.transitionsFor(block));
     }
-
-    // -- Shared members --
-
-    const Ui::Res::ResManager & m_resManager;
-    Ui::task_fn_t               m_makeCurrent; // makes this renderer's window context current (for GL teardown)
-    fpx_t                       m_width  = 0;
-    fpx_t                       m_height = 0;
-    Ui::Gl::FontRenderer        m_fontRenderer;
-    Ui::Gl::SvgRenderer         m_svgRenderer;
-    Ui::Gl::Rounded             m_rounded;
-
-    // A popup lives as long as what it shows, so nothing in it is swept
-    Ui::Animation::Animator<id_t> m_animator;
 };
 
 } // namespace Ui::Render::Popup

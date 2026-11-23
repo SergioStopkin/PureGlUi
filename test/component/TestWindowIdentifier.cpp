@@ -62,15 +62,15 @@ bool isExporterOffered()
     const Common::c_ptr_t<wl_registry, wl_registry_destroy> registry(wl_display_get_registry(display.get()));
     static constexpr wl_registry_listener                   LISTENER = {
         .global =
-        [](void * isOffered,
-           wl_registry * /*registry*/,
-           uint32_t /*name*/,
-           const char * interface,
-           uint32_t /*version*/) {
-            if (std::string_view(interface) == "zxdg_exporter_v2") {
-                *static_cast<bool *>(isOffered) = true;
-            }
-        },
+            [](void * isOffered,
+               wl_registry * /*registry*/,
+               uint32_t /*name*/,
+               const char * interface,
+               uint32_t /*version*/) {
+                if (std::string_view(interface) == "zxdg_exporter_v2") {
+                    *static_cast<bool *>(isOffered) = true;
+                }
+            },
         .global_remove = [](void * /*isOffered*/, wl_registry * /*registry*/, uint32_t /*name*/) { },
     };
     bool isOffered = false;

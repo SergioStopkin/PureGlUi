@@ -573,11 +573,11 @@ private:
         const int                            width     = static_cast<int>(image->width);
         const int                            height    = static_cast<int>(image->height);
         const Ui::Window::cursor_placement_t placement = Ui::Window::cursorPlacementOf(
-        width,
-        height,
-        static_cast<int>(image->hotspot_x),
-        static_cast<int>(image->hotspot_y),
-        m_bufferScale);
+            width,
+            height,
+            static_cast<int>(image->hotspot_x),
+            static_cast<int>(image->hotspot_y),
+            m_bufferScale);
         wl_surface_set_buffer_scale(m_cursorSurface, placement.bufferScale);
         wl_surface_attach(m_cursorSurface, buf, 0, 0);
         wl_surface_damage(m_cursorSurface, 0, 0, width / placement.bufferScale, height / placement.bufferScale);

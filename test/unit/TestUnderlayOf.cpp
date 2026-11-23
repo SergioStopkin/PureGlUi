@@ -178,16 +178,16 @@ TEST(UnderlayOfTest, AContentSurfaceIsOverTheWindow)
     const bound_t content { .x = 20.0F, .y = 10.0F, .w = 10.0F, .h = 10.0F };
     const bound_t area { .x = 15.0F, .y = 5.0F, .w = 20.0F, .h = 20.0F };
     const auto    underlay = underlayOf(area, WINDOW_W, WINDOW_H, BACKGROUND, readWindow, content, readContent);
-    EXPECT_EQ(
-    mismatchesOf(underlay,
-                 area,
-                 [&content](int x, int y) {
-                     const bool isOverContent = x >= 20 && y >= 10 && x < 30 && y < 20;
-                     return isOverContent
-                          ? patternAt(x - static_cast<int>(content.x), y - static_cast<int>(content.y), FROM_CONTENT)
-                          : windowOrBackgroundAt(x, y);
-                 }),
-    "");
+    EXPECT_EQ(mismatchesOf(underlay,
+                           area,
+                           [&content](int x, int y) {
+                               const bool isOverContent = x >= 20 && y >= 10 && x < 30 && y < 20;
+                               return isOverContent ? patternAt(x - static_cast<int>(content.x),
+                                                                y - static_cast<int>(content.y),
+                                                                FROM_CONTENT)
+                                                    : windowOrBackgroundAt(x, y);
+                           }),
+              "");
 }
 
 // A content surface clear of the area is never read
@@ -197,10 +197,10 @@ TEST(UnderlayOfTest, AContentSurfaceClearOfTheAreaIsNotRead)
     const bound_t area { .x = 0.0F, .y = 0.0F, .w = 10.0F, .h = 10.0F };
     bool          isRead = false;
     const auto    underlay =
-    underlayOf(area, WINDOW_W, WINDOW_H, BACKGROUND, readWindow, content, [&isRead](const bound_t & region) {
-        isRead = true;
-        return readContent(region);
-    });
+        underlayOf(area, WINDOW_W, WINDOW_H, BACKGROUND, readWindow, content, [&isRead](const bound_t & region) {
+            isRead = true;
+            return readContent(region);
+        });
     EXPECT_FALSE(isRead);
     EXPECT_EQ(mismatchesOf(underlay, area, windowOrBackgroundAt), "");
 }
@@ -224,12 +224,12 @@ TEST(UnderlayOfTest, AWindowReadOfTheWrongSizeIsLeftOut)
 
 TEST(UnderlayOfTest, NoAreaNoPixels)
 {
-    EXPECT_TRUE(underlayOf({ .x = 5.0F, .y = 5.0F, .w = 0.0F, .h = 4.0F },
-                           WINDOW_W,
-                           WINDOW_H,
-                           BACKGROUND,
-                           readWindow,
-                           std::nullopt,
-                           readNothing)
-                .empty());
+    const auto pixels = underlayOf({ .x = 5.0F, .y = 5.0F, .w = 0.0F, .h = 4.0F },
+                                   WINDOW_W,
+                                   WINDOW_H,
+                                   BACKGROUND,
+                                   readWindow,
+                                   std::nullopt,
+                                   readNothing);
+    EXPECT_TRUE(pixels.empty());
 }

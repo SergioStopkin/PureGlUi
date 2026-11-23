@@ -88,12 +88,12 @@ TEST_F(FullscreenTest, AWindowMadeFullscreenIsSavedSo)
     const Ui::fpx_t widthBefore = mainWindow().bound().w;
     bool            isEnlarged  = false;
     PureGlUi::runPasses(
-    [this, &isEnlarged](int pass) {
-        if (pass == 1) {
-            isEnlarged = PureGlUi::setEnlarged(mainWindow(), true);
-        }
-    },
-    m_shell);
+        [this, &isEnlarged](int pass) {
+            if (pass == 1) {
+                isEnlarged = PureGlUi::setEnlarged(mainWindow(), true);
+            }
+        },
+        m_shell);
     ASSERT_TRUE(isEnlarged) << "AppKit gave no fullscreen here";
     EXPECT_TRUE(mainWindow().isFullscreen()) << m_read;
     EXPECT_TRUE(m_shell.resManager().isSessionWindowFullscreen()) << m_read;
@@ -107,14 +107,14 @@ TEST_F(FullscreenTest, AWindowMadeWindowedAgainIsSavedNotFullscreen)
     bool            isEnlarged  = false;
     bool            isRestored  = false;
     PureGlUi::runPasses(
-    [this, &isEnlarged, &isRestored](int pass) {
-        if (pass == 1) {
-            isEnlarged = PureGlUi::setEnlarged(mainWindow(), true);
-        } else if (pass == 4) {
-            isRestored = PureGlUi::setEnlarged(mainWindow(), false);
-        }
-    },
-    m_shell);
+        [this, &isEnlarged, &isRestored](int pass) {
+            if (pass == 1) {
+                isEnlarged = PureGlUi::setEnlarged(mainWindow(), true);
+            } else if (pass == 4) {
+                isRestored = PureGlUi::setEnlarged(mainWindow(), false);
+            }
+        },
+        m_shell);
     ASSERT_TRUE(isEnlarged) << "AppKit gave no fullscreen here";
     ASSERT_TRUE(isRestored) << "AppKit never left fullscreen";
     EXPECT_FALSE(mainWindow().isFullscreen()) << m_read;
@@ -127,12 +127,12 @@ TEST_F(FullscreenRestoreMacTest, AWindowSavedFullscreenStartsFullscreen)
 {
     bool isReached = false;
     PureGlUi::runPasses(
-    [this, &isReached](int pass) {
-        if (pass == 1) {
-            isReached = PureGlUi::waitUntil(mainWindow(), [this] { return mainWindow().isFullscreen(); });
-        }
-    },
-    m_shell);
+        [this, &isReached](int pass) {
+            if (pass == 1) {
+                isReached = PureGlUi::waitUntil(mainWindow(), [this] { return mainWindow().isFullscreen(); });
+            }
+        },
+        m_shell);
     EXPECT_TRUE(isReached) << m_read;
     EXPECT_TRUE(m_shell.resManager().isSessionWindowFullscreen()) << m_read;
 }
@@ -146,12 +146,12 @@ TEST_F(FullscreenTest, AWindowMadeFullscreenIsSavedSo)
 {
     const Ui::fpx_t widthBefore = mainWindow().bound().w;
     PureGlUi::runPasses(
-    [this](int pass) {
-        if (pass == 1) {
-            mainWindow().setFullscreen(true);
-        }
-    },
-    m_shell);
+        [this](int pass) {
+            if (pass == 1) {
+                mainWindow().setFullscreen(true);
+            }
+        },
+        m_shell);
     if (mainWindow().bound().w == widthBefore) {
         GTEST_SKIP() << "the compositor gave no fullscreen here";
     }
@@ -166,16 +166,16 @@ TEST_F(FullscreenTest, AWindowMadeWindowedAgainIsSavedNotFullscreen)
     const Ui::fpx_t widthBefore   = mainWindow().bound().w;
     bool            wasFullscreen = false;
     PureGlUi::runPasses(
-    [this, &wasFullscreen](int pass) {
-        if (pass == 1) {
-            mainWindow().setFullscreen(true);
-        } else if (pass == 3) {
-            wasFullscreen = mainWindow().isFullscreen();
-        } else if (pass == 4) {
-            mainWindow().setFullscreen(false);
-        }
-    },
-    m_shell);
+        [this, &wasFullscreen](int pass) {
+            if (pass == 1) {
+                mainWindow().setFullscreen(true);
+            } else if (pass == 3) {
+                wasFullscreen = mainWindow().isFullscreen();
+            } else if (pass == 4) {
+                mainWindow().setFullscreen(false);
+            }
+        },
+        m_shell);
     if (!wasFullscreen) {
         GTEST_SKIP() << "the compositor gave no fullscreen here";
     }
@@ -188,7 +188,7 @@ TEST_F(FullscreenTest, AWindowMadeWindowedAgainIsSavedNotFullscreen)
 void configure(xdg_toplevel * toplevel, int32_t width, int32_t height, bool isFullscreen)
 {
     const auto * listener = static_cast<const xdg_toplevel_listener *>(
-    wl_proxy_get_listener(PureGlUi::proxyOf(toplevel)));
+        wl_proxy_get_listener(PureGlUi::proxyOf(toplevel)));
     wl_array states {};
     wl_array_init(&states);
     if (isFullscreen) {
@@ -227,12 +227,12 @@ TEST_F(FullscreenTest, AWindowMadeFullscreenAtItsOwnSizeIsSavedSo)
     const int      width    = Ui::roundToInt(mainWindow().bound().w / mainWindow().bufferScale());
     const int      height   = Ui::roundToInt(mainWindow().bound().h / mainWindow().bufferScale());
     PureGlUi::runPasses(
-    [toplevel, width, height](int pass) {
-        if (pass == 1) {
-            configure(toplevel, width, height, true);
-        }
-    },
-    m_shell);
+        [toplevel, width, height](int pass) {
+            if (pass == 1) {
+                configure(toplevel, width, height, true);
+            }
+        },
+        m_shell);
     EXPECT_TRUE(mainWindow().isFullscreen()) << m_read;
     EXPECT_TRUE(m_shell.resManager().isSessionWindowFullscreen()) << m_read;
 }
@@ -256,14 +256,14 @@ TEST_F(FullscreenRestoreTest, AWindowSavedFullscreenComesBackAtItsSavedSize)
 {
     bool wasFullscreen = false;
     PureGlUi::runPasses(
-    [this, &wasFullscreen](int pass) {
-        if (pass == 3) {
-            wasFullscreen = mainWindow().isFullscreen();
-        } else if (pass == 4) {
-            mainWindow().setFullscreen(false);
-        }
-    },
-    m_shell);
+        [this, &wasFullscreen](int pass) {
+            if (pass == 3) {
+                wasFullscreen = mainWindow().isFullscreen();
+            } else if (pass == 4) {
+                mainWindow().setFullscreen(false);
+            }
+        },
+        m_shell);
     if (!wasFullscreen) {
         GTEST_SKIP() << "the compositor gave no fullscreen here";
     }
